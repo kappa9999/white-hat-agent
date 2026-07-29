@@ -71,34 +71,7 @@ See [MCP integration](docs/mcp.md) for Streamable HTTP, PATH troubleshooting, an
 
 ## How it works
 
-```mermaid
-flowchart TB
-    subgraph Inputs["Inputs"]
-        direction LR
-        K["Community knowledge"]
-        S["Scope and campaign"]
-        C["Agent capabilities"]
-    end
-
-    T["1 · Ingest and trust<br/>Preserve sources · compile playbooks · review versions"]
-    P["2 · Compose and plan<br/>Match artifacts · capabilities · scope · budgets"]
-    D["3 · Dispatch and discover<br/>Lease typed work · run explicit adapters"]
-    V["4 · Verify and remember<br/>Bind evidence · test causality · retain negatives"]
-    O["Verified findings<br/>Reproducible reports · reusable learning"]
-
-    K --> T
-    S --> P
-    C --> P
-    T --> P --> D --> V --> O
-    O -. reviewed learning .-> T
-
-    classDef input fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-width:1px;
-    classDef core fill:#eff6ff,stroke:#2563eb,color:#0f172a,stroke-width:2px;
-    classDef output fill:#ecfdf5,stroke:#059669,color:#064e3b,stroke-width:2px;
-    class K,S,C input;
-    class T,P,D,V core;
-    class O output;
-```
+[![White Hat Agent system flow from community knowledge to verified findings](docs/assets/system-flow.webp)](docs/assets/system-flow.webp)
 
 | Layer | What it contributes |
 |---|---|
