@@ -27,9 +27,6 @@ jobs:
     env:
       UV_NO_CONFIG: "1"
       UV_NO_PROGRESS: "1"
-      UV_TOOL_DIR: ${{ runner.temp }}/white-hat-agent-tools
-      UV_TOOL_BIN_DIR: ${{ runner.temp }}/white-hat-agent-bin
-      UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/white-hat-agent-python
       WHA_UV_BIN: uv
       WHA_PACKAGE: .
       WHA_SKIP_PATH_UPDATE: "1"
@@ -43,8 +40,16 @@ jobs:
       - name: Validate POSIX syntax
         run: sh -n install.sh
       - name: Run installer
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/white-hat-agent-python
         run: sh ./install.sh
       - name: Verify installed CLI and workspace
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/white-hat-agent-python
         run: |
           "$UV_TOOL_BIN_DIR/wha" --version
           "$UV_TOOL_BIN_DIR/wha" init "$RUNNER_TEMP/white-hat-workspace" > "$RUNNER_TEMP/init.json"
@@ -57,9 +62,6 @@ jobs:
     env:
       UV_NO_CONFIG: "1"
       UV_NO_PROGRESS: "1"
-      UV_TOOL_DIR: ${{ runner.temp }}\white-hat-agent-tools
-      UV_TOOL_BIN_DIR: ${{ runner.temp }}\white-hat-agent-bin
-      UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}\white-hat-agent-python
       WHA_UV_BIN: uv
       WHA_PACKAGE: .
       WHA_SKIP_PATH_UPDATE: "1"
@@ -86,9 +88,17 @@ jobs:
           }
       - name: Run installer
         shell: powershell
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}\white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}\white-hat-agent-python
         run: .\install.ps1
       - name: Verify installed CLI and workspace
         shell: powershell
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}\white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}\white-hat-agent-python
         run: |
           $Wha = Join-Path $env:UV_TOOL_BIN_DIR "wha.exe"
           & $Wha --version
