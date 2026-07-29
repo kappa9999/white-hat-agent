@@ -1,0 +1,24 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "CVE-2026-54666 inert sentinel",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://example.invalid"
+    }
+  ],
+  "paths": {
+    "/api/${\"STA_PATH_SENTINEL_54666\"}/items": {
+      "get": {
+        "operationId": "sentinelPath",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  }
+}

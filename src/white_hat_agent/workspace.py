@@ -13,6 +13,7 @@ from pydantic import Field
 from .campaign.fleet import FleetStore
 from .capabilities.catalog import CapabilityCatalog
 from .evidence.store import EvidenceStore
+from .intelligence.store import IntelligenceStore
 from .knowledge.corpus import Corpus
 from .models import StrictModel
 
@@ -24,9 +25,15 @@ class WorkspaceConfig(StrictModel):
     submissions_dir: str = ".whitehat/submissions"
     campaigns_dir: str = ".whitehat/campaigns"
     artifacts_dir: str = ".whitehat/artifacts"
+    intelligence_dir: str = ".whitehat/intelligence"
     state_database: str = ".whitehat/state/whitehat.db"
     max_tool_response_bytes: int = Field(default=262144, ge=4096, le=16777216)
     max_evidence_import_bytes: int = Field(default=104857600, ge=1, le=10737418240)
+    max_intelligence_snapshot_bytes: int = Field(
+        default=67108864,
+        ge=1048576,
+        le=1073741824,
+    )
 
 
 class DoctorCheck(StrictModel):
@@ -58,6 +65,7 @@ class Workspace:
             workspace.submissions_dir,
             workspace.campaigns_dir,
             workspace.artifacts_dir,
+            workspace.intelligence_dir,
             workspace.state_database.parent,
             workspace.corpus_dir,
             workspace.capability_catalog_path.parent,
@@ -65,6 +73,7 @@ class Workspace:
             path.mkdir(parents=True, exist_ok=True)
         workspace.fleet.initialize()
         workspace.evidence.initialize()
+        workspace.intelligence.initialize()
         if copy_builtin_corpus:
             workspace._copy_builtin_corpus()
         workspace._copy_builtin_capabilities()
@@ -122,6 +131,10 @@ class Workspace:
         return self._resolve(self.config.artifacts_dir)
 
     @property
+    def intelligence_dir(self) -> Path:
+        return self._resolve(self.config.intelligence_dir)
+
+    @property
     def state_database(self) -> Path:
         return self._resolve(self.config.state_database)
 
@@ -145,6 +158,14 @@ class Workspace:
             max_import_bytes=self.config.max_evidence_import_bytes,
         )
 
+    @property
+    def intelligence(self) -> IntelligenceStore:
+        return IntelligenceStore(
+            self.state_database,
+            self.intelligence_dir / "snapshots",
+            max_snapshot_bytes=self.config.max_intelligence_snapshot_bytes,
+        )
+
     def doctor(self) -> DoctorReport:
         checks: list[DoctorCheck] = [
             DoctorCheck(
@@ -164,6 +185,7 @@ class Workspace:
             ("submissions", self.submissions_dir),
             ("campaigns", self.campaigns_dir),
             ("artifacts", self.artifacts_dir),
+            ("intelligence", self.intelligence_dir),
         ):
             checks.append(DoctorCheck(name=name, ok=path.is_dir(), detail=str(path)))
         corpus = Corpus(self.corpus_dir)
@@ -216,6 +238,29 @@ class Workspace:
             else f"{state_detail}; missing={sorted(evidence_tables - tables)}"
         )
         checks.append(DoctorCheck(name="evidence-store", ok=evidence_ok, detail=evidence_detail))
+        intelligence_tables = {
+            "intelligence_snapshots",
+            "intelligence_advisories",
+            "intelligence_identifiers",
+            "intelligence_source_records",
+            "intelligence_advisory_sources",
+            "intelligence_advisory_ecosystems",
+            "intelligence_source_state",
+            "intelligence_sync_runs",
+        }
+        intelligence_ok = state_ok and self.intelligence_dir.is_dir() and intelligence_tables.issubset(tables)
+        intelligence_detail = (
+            str(self.intelligence_dir)
+            if intelligence_ok
+            else f"{state_detail}; missing={sorted(intelligence_tables - tables)}"
+        )
+        checks.append(
+            DoctorCheck(
+                name="intelligence-store",
+                ok=intelligence_ok,
+                detail=intelligence_detail,
+            )
+        )
         return DoctorReport(
             workspace=str(self.root),
             healthy=all(item.ok for item in checks),
@@ -235,6 +280,7 @@ class Workspace:
             self.config.submissions_dir,
             self.config.campaigns_dir,
             self.config.artifacts_dir,
+            self.config.intelligence_dir,
             self.config.state_database,
         ):
             self._resolve(value)
@@ -265,9 +311,11 @@ capability_catalog = "capabilities/catalog.yaml"
 submissions_dir = ".whitehat/submissions"
 campaigns_dir = ".whitehat/campaigns"
 artifacts_dir = ".whitehat/artifacts"
+intelligence_dir = ".whitehat/intelligence"
 state_database = ".whitehat/state/whitehat.db"
 max_tool_response_bytes = 262144
 max_evidence_import_bytes = 104857600
+max_intelligence_snapshot_bytes = 67108864
 """
 
 

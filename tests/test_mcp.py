@@ -34,6 +34,8 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
             "campaign_plan",
             "campaign_scope_check",
             "campaign_enqueue",
+            "intelligence_sync",
+            "intelligence_status",
             "opportunity_add",
             "opportunity_rank",
             "evidence_import_file",
@@ -46,6 +48,10 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
         assert "whitehat://capability/capabilities/catalog" in resources
         assert "whitehat://knowledge/playbook/{playbook_id}" in templates
         assert "knowledge_compile_submission" in prompts
+
+        intelligence_status = await client.call_tool("intelligence_status", {})
+        assert not intelligence_status.is_error
+        assert intelligence_status.structured_content["initialized"] is True
 
         search = await client.call_tool("knowledge_search", {"query": "http"})
         assert not search.is_error

@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "attribution": {
+      "minLength": 1,
+      "title": "Attribution",
+      "type": "string"
+    },
+    "dataset": {
+      "minLength": 1,
+      "title": "Dataset",
+      "type": "string"
+    },
+    "license_name": {
+      "minLength": 1,
+      "title": "License Name",
+      "type": "string"
+    },
+    "license_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "License Url"
+    },
+    "publisher": {
+      "minLength": 1,
+      "title": "Publisher",
+      "type": "string"
+    }
+  },
+  "required": [
+    "publisher",
+    "dataset",
+    "attribution",
+    "license_name"
+  ],
+  "title": "SourceAttribution",
+  "type": "object"
+}

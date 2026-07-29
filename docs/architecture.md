@@ -24,6 +24,7 @@ flowchart TB
       KI[Knowledge intake]
       CO[Corpus and composer]
       CA[Capabilities]
+      IN[Public intelligence]
       OP[Opportunity ranking]
       SC[Scope evaluation]
       FL[Fleet leases]
@@ -38,6 +39,7 @@ flowchart TB
     Interfaces --> Brain
     KI --> CO
     CA --> CO
+    IN --> OP
     OP --> SC
     CO --> FL
     SC --> FL
@@ -60,11 +62,25 @@ corpus/playbooks/             reviewed public knowledge
 capabilities/catalog.yaml    provider-neutral adapter contracts
 .whitehat/submissions/       untrusted intake drafts
 .whitehat/artifacts/         content-addressed evidence blobs
-.whitehat/state/whitehat.db  opportunity, campaign, fleet, evidence, finding state
+.whitehat/intelligence/      source snapshots and production reports
+.whitehat/state/whitehat.db  intelligence, opportunity, campaign, fleet, evidence, finding state
 schemas/                     generated public contracts
 ```
 
 Bundled starter assets seed a new workspace but never overwrite an existing file.
+
+### Public intelligence
+
+The production intelligence boundary uses fixed official endpoints, explicit response/time/item limits, overlapping
+incremental windows, and content-addressed raw snapshots. Normalized advisories retain source-native identity,
+aliases, timestamps, status, affected ranges, references, source URI, and attribution. CVE is an optional alias, not
+the database key. Records from CISA KEV and OSV remain independently attributable even when they describe the same
+vulnerability; FIRST EPSS is a dated prioritization signal, not proof of exploitation.
+
+Ranking is deterministic and inspectable. Confirmed KEV exploitation dominates probabilistic EPSS, while recency,
+severity, applicability, and evidence completeness refine the queue. Collection never converts an advisory into an
+executable target. The ordinary scope and campaign gates still apply before an adapter can interact with anything
+beyond the public feed itself. See [production-loop.md](production-loop.md).
 
 ### Knowledge and composition
 

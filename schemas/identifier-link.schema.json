@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "IdentifierRelation": {
+      "enum": [
+        "alias",
+        "related"
+      ],
+      "title": "IdentifierRelation",
+      "type": "string"
+    },
+    "IntelligenceSource": {
+      "enum": [
+        "cisa-kev",
+        "osv",
+        "epss"
+      ],
+      "title": "IntelligenceSource",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "left": {
+      "minLength": 1,
+      "title": "Left",
+      "type": "string"
+    },
+    "relation": {
+      "$ref": "#/$defs/IdentifierRelation"
+    },
+    "right": {
+      "minLength": 1,
+      "title": "Right",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/IntelligenceSource"
+    }
+  },
+  "required": [
+    "left",
+    "right",
+    "relation",
+    "source"
+  ],
+  "title": "IdentifierLink",
+  "type": "object"
+}

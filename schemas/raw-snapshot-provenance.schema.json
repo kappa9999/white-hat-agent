@@ -1,0 +1,200 @@
+{
+  "$defs": {
+    "IntelligenceSource": {
+      "enum": [
+        "cisa-kev",
+        "osv",
+        "epss"
+      ],
+      "title": "IntelligenceSource",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "SnapshotKind": {
+      "enum": [
+        "full-feed",
+        "index-prefix",
+        "selection-manifest",
+        "source-record",
+        "enrichment"
+      ],
+      "title": "SnapshotKind",
+      "type": "string"
+    },
+    "SourceAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "dataset": {
+          "minLength": 1,
+          "title": "Dataset",
+          "type": "string"
+        },
+        "license_name": {
+          "minLength": 1,
+          "title": "License Name",
+          "type": "string"
+        },
+        "license_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Url"
+        },
+        "publisher": {
+          "minLength": 1,
+          "title": "Publisher",
+          "type": "string"
+        }
+      },
+      "required": [
+        "publisher",
+        "dataset",
+        "attribution",
+        "license_name"
+      ],
+      "title": "SourceAttribution",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Immutable metadata for one content-addressed upstream payload.",
+  "properties": {
+    "attribution": {
+      "$ref": "#/$defs/SourceAttribution"
+    },
+    "byte_length": {
+      "minimum": 0,
+      "title": "Byte Length",
+      "type": "integer"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    },
+    "etag": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Etag"
+    },
+    "http_status": {
+      "default": 200,
+      "maximum": 599,
+      "minimum": 100,
+      "title": "Http Status",
+      "type": "integer"
+    },
+    "kind": {
+      "$ref": "#/$defs/SnapshotKind"
+    },
+    "last_modified": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Modified"
+    },
+    "media_type": {
+      "minLength": 1,
+      "title": "Media Type",
+      "type": "string"
+    },
+    "retrieved_at": {
+      "format": "date-time",
+      "title": "Retrieved At",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "snapshot_id": {
+      "minLength": 1,
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/IntelligenceSource"
+    },
+    "source_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Source Metadata",
+      "type": "object"
+    },
+    "source_record_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Record Id"
+    },
+    "source_schema_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Schema Version"
+    },
+    "source_url": {
+      "minLength": 1,
+      "title": "Source Url",
+      "type": "string"
+    },
+    "storage_path": {
+      "minLength": 1,
+      "title": "Storage Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "source",
+    "kind",
+    "source_url",
+    "retrieved_at",
+    "content_sha256",
+    "byte_length",
+    "media_type",
+    "attribution",
+    "storage_path"
+  ],
+  "title": "RawSnapshotProvenance",
+  "type": "object"
+}

@@ -1,0 +1,150 @@
+{
+  "additionalProperties": false,
+  "description": "Fully disclosed inputs for deterministic KEV-first priority ranking.",
+  "properties": {
+    "algorithm_version": {
+      "const": "kev-epss-recency-severity-evidence-v1",
+      "default": "kev-epss-recency-severity-evidence-v1",
+      "title": "Algorithm Version",
+      "type": "string"
+    },
+    "as_of": {
+      "format": "date-time",
+      "title": "As Of",
+      "type": "string"
+    },
+    "confirmed_kev": {
+      "title": "Confirmed Kev",
+      "type": "boolean"
+    },
+    "epss_component": {
+      "minimum": 0.0,
+      "title": "Epss Component",
+      "type": "number"
+    },
+    "epss_probability": {
+      "anyOf": [
+        {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Epss Probability"
+    },
+    "epss_weight": {
+      "default": 100.0,
+      "title": "Epss Weight",
+      "type": "number"
+    },
+    "evidence_completeness": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Evidence Completeness",
+      "type": "number"
+    },
+    "evidence_component": {
+      "minimum": 0.0,
+      "title": "Evidence Component",
+      "type": "number"
+    },
+    "evidence_weight": {
+      "default": 20.0,
+      "title": "Evidence Weight",
+      "type": "number"
+    },
+    "kev_component": {
+      "minimum": 0.0,
+      "title": "Kev Component",
+      "type": "number"
+    },
+    "kev_weight": {
+      "default": 1000.0,
+      "title": "Kev Weight",
+      "type": "number"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "recency_age_days": {
+      "anyOf": [
+        {
+          "minimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Recency Age Days"
+    },
+    "recency_component": {
+      "minimum": 0.0,
+      "title": "Recency Component",
+      "type": "number"
+    },
+    "recency_score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Recency Score",
+      "type": "number"
+    },
+    "recency_weight": {
+      "default": 40.0,
+      "title": "Recency Weight",
+      "type": "number"
+    },
+    "recency_window_days": {
+      "default": 90.0,
+      "title": "Recency Window Days",
+      "type": "number"
+    },
+    "severity_component": {
+      "minimum": 0.0,
+      "title": "Severity Component",
+      "type": "number"
+    },
+    "severity_score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Severity Score",
+      "type": "number"
+    },
+    "severity_weight": {
+      "default": 60.0,
+      "title": "Severity Weight",
+      "type": "number"
+    },
+    "total_score": {
+      "minimum": 0.0,
+      "title": "Total Score",
+      "type": "number"
+    }
+  },
+  "required": [
+    "as_of",
+    "confirmed_kev",
+    "kev_component",
+    "epss_component",
+    "recency_score",
+    "recency_component",
+    "severity_score",
+    "severity_component",
+    "evidence_completeness",
+    "evidence_component",
+    "total_score",
+    "reasons"
+  ],
+  "title": "PriorityFactors",
+  "type": "object"
+}

@@ -1,0 +1,46 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "White Hat Agent benign code-generator control",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://example.invalid"
+    }
+  ],
+  "paths": {
+    "/api/users/{id}/items": {
+      "get": {
+        "operationId": "listUserItems",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Benign control response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

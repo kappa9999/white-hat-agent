@@ -49,7 +49,8 @@ uv run --project /absolute/path/to/white-hat-agent \
 
 ## Surface design
 
-Mounted names become `knowledge_search`, `campaign_enqueue`, and so on. Tools use strict structured input/output.
+Mounted names become `knowledge_search`, `intelligence_sync`, `campaign_enqueue`, and so on. Tools use strict
+structured input/output.
 Resources expose workspace health, the corpus manifest, playbooks, and the capability catalog. Prompts help a host
 model compile submissions, normalize opportunities, and plan campaigns without requiring one provider's API.
 
@@ -57,6 +58,12 @@ model compile submissions, normalize opportunities, and plan campaigns without r
 artifacts, an execution ceiling, and available adapter capabilities, it composes corpus playbooks and emits ordered
 stages. Each stage carries its own `ProbeIntent` and freshly evaluated `ScopeDecision`. Planning is read-only; the
 operator or host agent still persists the manifest, explicitly transitions its lifecycle, and enqueues chosen stages.
+
+`intelligence_sync` is the only built-in open-world network tool. It performs bounded GET requests to fixed official
+CISA, OSV, and optional FIRST EPSS endpoints, then mutates only the local workspace state and snapshot store. It does
+not contact advisory targets. The remaining intelligence tools resolve aliases, rank local records, report freshness,
+and render briefs without network access. Clients should require approval for synchronization when outbound network
+access is not already part of the operator's policy.
 
 Mutating tools are visibly annotated and use explicit identifiers. Response limiting applies at the root, mounted
 servers mask error details consistently, tool lists are bounded, and HTTP sessions are stateless. Tool results still

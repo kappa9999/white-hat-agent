@@ -55,6 +55,10 @@ jobs:
           uv run python scripts/export_schemas.py
           uv run wha corpus index --workspace . --out corpus/manifest.json
           git diff --exit-code -- schemas corpus/manifest.json
+          if [ -n "$(git status --porcelain --untracked-files=all -- schemas corpus/manifest.json)" ]; then
+            git status --short --untracked-files=all -- schemas corpus/manifest.json
+            exit 1
+          fi
       - name: Build distributions
         if: matrix.python-version == '3.12'
         run: uv build

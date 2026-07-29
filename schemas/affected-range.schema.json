@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "JsonValue": {},
+    "RangeType": {
+      "enum": [
+        "ecosystem",
+        "git",
+        "semver",
+        "unknown"
+      ],
+      "title": "RangeType",
+      "type": "string"
+    },
+    "VersionEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "fixed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed"
+        },
+        "introduced": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Introduced"
+        },
+        "last_affected": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Affected"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        }
+      },
+      "title": "VersionEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "database_specific": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Database Specific",
+      "type": "object"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/VersionEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "raw_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Type"
+    },
+    "repository": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Repository"
+    },
+    "type": {
+      "$ref": "#/$defs/RangeType"
+    }
+  },
+  "required": [
+    "type"
+  ],
+  "title": "AffectedRange",
+  "type": "object"
+}

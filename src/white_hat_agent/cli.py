@@ -31,6 +31,12 @@ from .evaluation import evaluate_simulation
 from .evidence.models import EvidenceDescriptor, FindingRecord
 from .evidence.store import EvidenceError
 from .expansion import ReplayExpansionTranscript, ReplayHypothesisGenerator
+from .intelligence import (
+    IntelligenceError,
+    IntelligenceService,
+    IntelligenceSource,
+    SyncStatus,
+)
 from .knowledge.compiler import compile_heuristic
 from .knowledge.compose import CompositionRequest, compose_playbooks
 from .knowledge.corpus import Corpus, dump_playbook
@@ -48,9 +54,11 @@ from .workspace import Workspace
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wha",
-        description="White Hat Agent Core: cyber knowledge, campaigns, fleets, and discovery",
+        description=(
+            "White Hat Agent Core: public intelligence, cyber knowledge, campaigns, fleets, and discovery"
+        ),
     )
-    parser.add_argument("--version", action="version", version="White Hat Agent Core 0.1.0")
+    parser.add_argument("--version", action="version", version="White Hat Agent Core 0.2.0")
     commands = parser.add_subparsers(dest="command", required=True)
 
     initialize = commands.add_parser("init", help="initialize an approachable local workspace")
@@ -186,6 +194,69 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_enqueue.add_argument("--payload", type=Path)
     campaign_enqueue.add_argument("--priority", type=int, default=50)
 
+    intelligence = commands.add_parser(
+        "intelligence",
+        help="synchronize, rank, and inspect bounded public vulnerability intelligence",
+    )
+    intelligence_commands = intelligence.add_subparsers(
+        dest="intelligence_command",
+        required=True,
+    )
+    intelligence_sync = intelligence_commands.add_parser(
+        "sync",
+        help="synchronize fixed official sources into immutable local state",
+    )
+    _workspace_option(intelligence_sync)
+    intelligence_sync.add_argument(
+        "--source",
+        action="append",
+        choices=[IntelligenceSource.CISA_KEV.value, IntelligenceSource.OSV.value],
+    )
+    intelligence_sync.add_argument("--since-hours", type=float, default=24.0)
+    intelligence_sync.add_argument("--ecosystem", action="append", default=[])
+    intelligence_sync.add_argument(
+        "--limit-per-source",
+        type=int,
+        default=1000,
+        help="OSV/EPSS selection ceiling; CISA always diffs the complete bounded catalog",
+    )
+    intelligence_sync.add_argument("--enrich-epss", action="store_true")
+    intelligence_sync.add_argument(
+        "--require-success",
+        action="store_true",
+        help="return a failure after writing the report unless every requested primary source succeeds",
+    )
+    intelligence_sync.add_argument("--out", type=Path)
+
+    intelligence_get = intelligence_commands.add_parser(
+        "get",
+        help="resolve one advisory by native ID or alias",
+    )
+    _workspace_option(intelligence_get)
+    intelligence_get.add_argument("advisory_id")
+    intelligence_get.add_argument("--out", type=Path)
+
+    intelligence_list = intelligence_commands.add_parser(
+        "list",
+        help="list locally stored advisories by transparent priority",
+    )
+    _add_intelligence_filters(intelligence_list)
+    intelligence_list.add_argument("--out", type=Path)
+
+    intelligence_status = intelligence_commands.add_parser(
+        "status",
+        help="show source freshness, record counts, and the latest sync result",
+    )
+    _workspace_option(intelligence_status)
+    intelligence_status.add_argument("--out", type=Path)
+
+    intelligence_brief = intelligence_commands.add_parser(
+        "brief",
+        help="render a deterministic Markdown intelligence brief",
+    )
+    _add_intelligence_filters(intelligence_brief)
+    intelligence_brief.add_argument("--out", type=Path)
+
     opportunity = commands.add_parser(
         "opportunity", help="intake and rank bug-bounty, open-source, lab, or private targets"
     )
@@ -301,6 +372,34 @@ def _workspace_option(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--workspace", type=Path)
 
 
+def _add_intelligence_filters(parser: argparse.ArgumentParser) -> None:
+    _workspace_option(parser)
+    parser.add_argument(
+        "--source",
+        action="append",
+        choices=[item.value for item in IntelligenceSource],
+    )
+    parser.add_argument("--ecosystem", action="append", default=[])
+    exploited = parser.add_mutually_exclusive_group()
+    exploited.add_argument(
+        "--known-exploited",
+        dest="known_exploited",
+        action="store_true",
+    )
+    exploited.add_argument(
+        "--not-known-exploited",
+        dest="known_exploited",
+        action="store_false",
+    )
+    parser.set_defaults(known_exploited=None)
+    parser.add_argument(
+        "--include-withdrawn",
+        action="store_true",
+        help="include withdrawn advisories instead of returning active records only",
+    )
+    parser.add_argument("--limit", type=int, default=20)
+
+
 def _add_planner_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--plateau-window", type=int, default=3)
     parser.add_argument("--plateau-progress-threshold", type=float, default=0.08)
@@ -332,8 +431,18 @@ def _read_data(path: Path) -> Any:
     return json.loads(content)
 
 
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, dict):
+        return {str(key): _jsonable(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(child) for child in value]
+    return value
+
+
 def _render(value: BaseModel | dict[str, Any] | list[Any]) -> str:
-    payload = value.model_dump(mode="json", exclude_none=True) if isinstance(value, BaseModel) else value
+    payload = _jsonable(value)
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
@@ -344,6 +453,15 @@ def _emit(value: BaseModel | dict[str, Any] | list[Any], output: Path | None = N
         return
     output.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(output, payload)
+    sys.stdout.write(f"wrote {output}\n")
+
+
+def _emit_text(value: str, output: Path | None = None) -> None:
+    if output is None:
+        sys.stdout.write(value)
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(output, value)
     sys.stdout.write(f"wrote {output}\n")
 
 
@@ -387,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
             _emit(evaluate_scope(scope, intent), args.out)
         elif args.command == "campaign":
             _run_campaign(args)
+        elif args.command == "intelligence":
+            _run_intelligence(args)
         elif args.command == "opportunity":
             _run_opportunity(args)
         elif args.command == "fleet":
@@ -406,6 +526,7 @@ def main(argv: list[str] | None = None) -> int:
         FileNotFoundError,
         EvidenceError,
         FleetError,
+        IntelligenceError,
         KeyError,
         OSError,
         json.JSONDecodeError,
@@ -552,6 +673,62 @@ def _run_campaign(args: argparse.Namespace) -> None:
                 payload=payload,
             )
         )
+
+
+def _run_intelligence(args: argparse.Namespace) -> None:
+    workspace = _workspace(args)
+    store = workspace.intelligence
+    store.initialize()
+    service = IntelligenceService(store)
+    if args.intelligence_command == "sync":
+        report = service.sync(
+            sources=args.source,
+            since_hours=args.since_hours,
+            ecosystems=args.ecosystem,
+            limit_per_source=args.limit_per_source,
+            enrich_epss=args.enrich_epss,
+        )
+        _emit(report, args.out)
+        if args.require_success:
+            required = set(report.requested_sources)
+            unsuccessful = [
+                result.source.value
+                for result in report.results
+                if result.source in required and result.status != SyncStatus.SUCCESS
+            ]
+            if unsuccessful:
+                raise IntelligenceError(
+                    "required intelligence source did not synchronize successfully: "
+                    + ", ".join(unsuccessful)
+                )
+    elif args.intelligence_command == "get":
+        _emit(service.get(args.advisory_id), args.out)
+    elif args.intelligence_command == "list":
+        _emit(
+            service.list(
+                sources=args.source,
+                ecosystems=args.ecosystem,
+                known_exploited=args.known_exploited,
+                withdrawn=None if args.include_withdrawn else False,
+                limit=args.limit,
+            ),
+            args.out,
+        )
+    elif args.intelligence_command == "status":
+        _emit(service.status(), args.out)
+    elif args.intelligence_command == "brief":
+        _emit_text(
+            service.brief(
+                sources=args.source,
+                ecosystems=args.ecosystem,
+                known_exploited=args.known_exploited,
+                withdrawn=None if args.include_withdrawn else False,
+                limit=args.limit,
+            ),
+            args.out,
+        )
+    else:  # pragma: no cover - argparse enforces command choices
+        raise AssertionError(f"unknown intelligence command: {args.intelligence_command}")
 
 
 def _run_opportunity(args: argparse.Namespace) -> None:

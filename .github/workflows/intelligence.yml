@@ -1,0 +1,159 @@
+name: Vulnerability intelligence
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      since_hours:
+        description: Closed lookback window for incremental sources
+        required: false
+        default: "48"
+      limit_per_source:
+        description: OSV and EPSS ceiling; CISA always validates its complete bounded catalog
+        required: false
+        default: "1000"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: vulnerability-intelligence
+  cancel-in-progress: false
+
+env:
+  UV_LOCKED: "1"
+  UV_NO_PROGRESS: "1"
+  WHA_WORKSPACE: ${{ github.workspace }}
+  SINCE_HOURS: ${{ inputs.since_hours || '48' }}
+  LIMIT_PER_SOURCE: ${{ inputs.limit_per_source || '1000' }}
+
+jobs:
+  synchronize:
+    name: Synchronize official sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Restore latest successful intelligence state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous_run="$(gh run list \
+            --workflow intelligence.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // empty')"
+          if [ -z "$previous_run" ]; then
+            exit 0
+          fi
+          state_name="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${previous_run}/artifacts" \
+            --jq '[.artifacts[] | select(.expired == false) | select(.name | startswith("intelligence-state-"))] | sort_by(.created_at) | last | .name // empty')"
+          if [ -z "$state_name" ]; then
+            echo "No unexpired state handoff is available; starting from a fresh bounded sync."
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/previous-intelligence-state"
+          gh run download "$previous_run" \
+            --name "$state_name" \
+            --dir "$RUNNER_TEMP/previous-intelligence-state"
+          state_archive="$(find "$RUNNER_TEMP/previous-intelligence-state" \
+            -type f -name intelligence-state.tar.gz -print -quit)"
+          if [ -n "$state_archive" ]; then
+            tar -xzf "$state_archive" -C .
+          fi
+
+      - name: Install locked package
+        run: uv sync --locked
+
+      - name: Initialize workspace
+        run: uv run wha init . > "$RUNNER_TEMP/whitehat-init.json"
+
+      - name: Capture pre-run snapshot inventory
+        run: |
+          find .whitehat/intelligence/snapshots -type f -printf '%P\n' \
+            | sort > "$RUNNER_TEMP/intelligence-snapshots-before.txt"
+
+      - name: Synchronize CISA KEV, OSV, and EPSS
+        run: |
+          mkdir -p .whitehat/intelligence/reports
+          uv run wha intelligence sync \
+            --source cisa-kev \
+            --source osv \
+            --since-hours "$SINCE_HOURS" \
+            --ecosystem npm \
+            --ecosystem PyPI \
+            --ecosystem Go \
+            --ecosystem "GitHub Actions" \
+            --limit-per-source "$LIMIT_PER_SOURCE" \
+            --enrich-epss \
+            --require-success \
+            --out .whitehat/intelligence/reports/sync.json
+
+      - name: Render ranked outputs
+        run: |
+          uv run wha intelligence list \
+            --source osv \
+            --limit 1000 \
+            --out .whitehat/intelligence/reports/advisories.json
+          uv run wha intelligence status \
+            --out .whitehat/intelligence/reports/status.json
+          uv run wha intelligence brief \
+            --source osv \
+            --limit 25 \
+            --out .whitehat/intelligence/reports/brief.md
+          cat .whitehat/intelligence/reports/brief.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage snapshots used or created by this run
+        if: ${{ always() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/intelligence-snapshots-before.txt" ]; then
+            uv run python scripts/stage_intelligence_run.py \
+              --workspace . \
+              --reports .whitehat/intelligence/reports \
+              --before "$RUNNER_TEMP/intelligence-snapshots-before.txt" \
+              --out .whitehat/intelligence/run-snapshots
+          fi
+
+      - name: Pack longitudinal state
+        if: ${{ success() }}
+        run: |
+          tar -czf "$RUNNER_TEMP/intelligence-state.tar.gz" \
+            .whitehat/state \
+            .whitehat/intelligence/snapshots
+
+      - name: Upload short-lived longitudinal state
+        if: ${{ success() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: intelligence-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/intelligence-state.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+
+      - name: Upload immutable run evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vulnerability-intelligence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .whitehat/intelligence/reports/
+            .whitehat/intelligence/run-snapshots/
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 6

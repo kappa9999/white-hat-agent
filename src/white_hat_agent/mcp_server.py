@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
@@ -35,6 +35,14 @@ from .capabilities.catalog import (
 from .capabilities.models import CapabilityDefinition
 from .episode import apply_observation
 from .evidence.models import EvidenceDescriptor, EvidenceRecord, FindingRecord
+from .intelligence import (
+    IntelligenceService,
+    IntelligenceSource,
+    IntelligenceStatus,
+    IntelligenceSyncReport,
+    NormalizedAdvisory,
+    RankedAdvisory,
+)
 from .knowledge.compiler import compile_heuristic, compiler_prompt
 from .knowledge.compose import CompositePlaybook, CompositionRequest, compose_playbooks
 from .knowledge.corpus import CorpusSearchHit
@@ -83,7 +91,7 @@ def create_server(workspace_root: str | Path | None = None) -> FastMCP:
 
     root = FastMCP(
         name="White Hat Agent Core",
-        version="0.1.0",
+        version="0.2.0",
         instructions=(
             "Model-neutral cyber knowledge and campaign brain. Search and compose the corpus "
             "before inventing a new method. Every campaign operation uses exact scope, target, "
@@ -100,6 +108,7 @@ def create_server(workspace_root: str | Path | None = None) -> FastMCP:
     root.mount(_knowledge_server(workspace), namespace="knowledge")
     root.mount(_capability_server(workspace), namespace="capability")
     root.mount(_campaign_server(workspace), namespace="campaign")
+    root.mount(_intelligence_server(workspace), namespace="intelligence")
     root.mount(_opportunity_server(workspace), namespace="opportunity")
     root.mount(_fleet_server(workspace), namespace="fleet")
     root.mount(_evidence_server(workspace), namespace="evidence")
@@ -115,6 +124,111 @@ def create_server(workspace_root: str | Path | None = None) -> FastMCP:
         return workspace.doctor().model_dump_json(indent=2)
 
     return root
+
+
+def _intelligence_server(workspace: Workspace) -> FastMCP:
+    server = FastMCP(
+        "White Hat Agent Intelligence",
+        strict_input_validation=True,
+        mask_error_details=True,
+    )
+    store = workspace.intelligence
+    store.initialize()
+    service = IntelligenceService(store)
+
+    @server.tool(
+        name="sync",
+        version="1.0",
+        description=(
+            "Synchronize fixed official public advisory sources into immutable local snapshots. "
+            "This contacts CISA, OSV, and optionally FIRST EPSS; it never contacts affected targets."
+        ),
+        annotations={"readOnlyHint": False, "idempotentHint": False, "openWorldHint": True},
+        tags={"intelligence", "network", "write"},
+    )
+    def sync(
+        sources: list[Literal["cisa-kev", "osv"]] | None = None,
+        since_hours: float = 24.0,
+        ecosystems: list[str] | None = None,
+        limit_per_source: int = 1000,
+        enrich_epss: bool = False,
+    ) -> IntelligenceSyncReport:
+        return service.sync(
+            sources=sources,
+            since_hours=since_hours,
+            ecosystems=ecosystems,
+            limit_per_source=limit_per_source,
+            enrich_epss=enrich_epss,
+        )
+
+    @server.tool(
+        name="get",
+        version="1.0",
+        description="Resolve one locally stored advisory through its source-native ID or any known alias.",
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"intelligence", "read"},
+    )
+    def get(advisory_id: str) -> NormalizedAdvisory:
+        return service.get(advisory_id)
+
+    @server.tool(
+        name="list",
+        version="1.0",
+        description=(
+            "Rank locally stored advisories with inspectable KEV, EPSS, recency, severity, "
+            "and evidence factors."
+        ),
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"intelligence", "planning", "read"},
+    )
+    def list_items(
+        sources: list[IntelligenceSource] | None = None,
+        ecosystems: list[str] | None = None,
+        known_exploited: bool | None = None,
+        include_withdrawn: bool = False,
+        limit: int = 20,
+    ) -> list[RankedAdvisory]:
+        return service.list(
+            sources=sources,
+            ecosystems=ecosystems,
+            known_exploited=known_exploited,
+            withdrawn=None if include_withdrawn else False,
+            limit=limit,
+        )
+
+    @server.tool(
+        name="status",
+        version="1.0",
+        description="Return local source freshness, record counts, and the latest sync result.",
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"intelligence", "read", "status"},
+    )
+    def status() -> IntelligenceStatus:
+        return service.status()
+
+    @server.tool(
+        name="brief",
+        version="1.0",
+        description="Render a deterministic Markdown brief from locally stored ranked advisories.",
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"intelligence", "read", "report"},
+    )
+    def brief(
+        sources: list[IntelligenceSource] | None = None,
+        ecosystems: list[str] | None = None,
+        known_exploited: bool | None = None,
+        include_withdrawn: bool = False,
+        limit: int = 20,
+    ) -> str:
+        return service.brief(
+            sources=sources,
+            ecosystems=ecosystems,
+            known_exploited=known_exploited,
+            withdrawn=None if include_withdrawn else False,
+            limit=limit,
+        )
+
+    return server
 
 
 def _opportunity_server(workspace: Workspace) -> FastMCP:
