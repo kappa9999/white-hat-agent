@@ -1,0 +1,39 @@
+schema_version: "1.0"
+scope_id: example-lab-scope
+program_kind: lab
+program_name: Example reserved-domain fixture
+program_url: https://example.test/security
+rules_url: https://example.test/security/scope
+rules_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+authorization_reference: Reserved .test fixture; no network adapter is invoked by this example.
+valid_from: 2026-07-29T00:00:00Z
+valid_until: 2030-07-29T00:00:00Z
+targets:
+  - rule_id: example-api
+    kind: domain
+    pattern: api.example.test
+    in_scope: true
+    environment: synthetic
+    notes: [Reserved RFC 2606-style test namespace used only as an identity fixture.]
+  - rule_id: excluded-admin
+    kind: domain
+    pattern: admin.example.test
+    in_scope: false
+    environment: synthetic
+    notes: [Demonstrates exclusion precedence.]
+allowed_execution_classes: [analysis, read-only, controlled-active]
+allowed_capabilities: [http.request, http.capture, data.diff, evidence.write]
+prohibited_capabilities: [account.delete]
+prohibited_action_tags: [denial-of-service]
+rate_limits:
+  requests_per_second: 1.0
+  burst: 2
+  max_requests_per_task: 10
+  max_concurrency: 1
+data_handling: [Synthetic fixture data only.]
+disclosure:
+  channel: local-fixture-report
+  encryption_required: false
+  public_disclosure_allowed: false
+  instructions: [Do not interpret this fixture as a real public program.]
+captured_at: 2026-07-29T12:00:00Z

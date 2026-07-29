@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+import yaml
+from fastmcp import Client
+
+from white_hat_agent.mcp_server import create_server
+from white_hat_agent.workspace import Workspace
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.asyncio
+async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
+    Workspace.initialize(tmp_path)
+    server = create_server(tmp_path)
+
+    async with Client(server) as client:
+        tools = {tool.name for tool in await client.list_tools()}
+        resources = {str(resource.uri) for resource in await client.list_resources()}
+        prompts = {prompt.name for prompt in await client.list_prompts()}
+        templates = {str(item.uriTemplate) for item in await client.list_resource_templates()}
+
+        assert {
+            "knowledge_search",
+            "knowledge_intake",
+            "knowledge_learning_candidates",
+            "knowledge_intake_learning",
+            "knowledge_compose",
+            "capability_search",
+            "capability_gaps",
+            "campaign_plan",
+            "campaign_scope_check",
+            "campaign_enqueue",
+            "opportunity_add",
+            "opportunity_rank",
+            "evidence_import_file",
+            "evidence_add_finding",
+            "fleet_claim",
+            "discovery_verify",
+        }.issubset(tools)
+        assert "whitehat://status" in resources
+        assert "whitehat://knowledge/corpus/manifest" in resources
+        assert "whitehat://capability/capabilities/catalog" in resources
+        assert "whitehat://knowledge/playbook/{playbook_id}" in templates
+        assert "knowledge_compile_submission" in prompts
+
+        search = await client.call_tool("knowledge_search", {"query": "http"})
+        assert not search.is_error
+        assert search.structured_content["result"][0]["playbook_id"] == "http-response-surface-map"
+
+        intake = await client.call_tool(
+            "knowledge_intake",
+            {
+                "text": "1. Capturar la línea base.\n2. Verificar la diferencia.",
+                "language": "es",
+                "title": "Diferencial HTTP",
+            },
+        )
+        assert not intake.is_error
+        assert intake.structured_content["draft_playbook"]["metadata"]["original_languages"] == ["es"]
+
+        planning_payload = yaml.safe_load(
+            (REPOSITORY_ROOT / "examples/campaigns/planning-request.yaml").read_text(encoding="utf-8")
+        )
+        planned = await client.call_tool("campaign_plan", {"request": planning_payload})
+        assert not planned.is_error
+        assert planned.structured_content["complete"] is True
+        assert len(planned.structured_content["targets"][0]["stages"]) == 2

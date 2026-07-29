@@ -1,0 +1,183 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: patch-diff-hypothesis-seeding
+  version: 1.0.0
+  title: Seed vulnerability hypotheses from a vulnerable and fixed artifact pair
+  summary: Bind exact artifact identities, isolate semantic changes, and rank changed trust boundaries for validation.
+  domains: [binary, reverse-engineering, variant-analysis]
+  tags: [patch-diff, causal, hypothesis-generation]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-29T12:00:00Z
+  updated_at: 2026-07-29T12:00:00Z
+applicability:
+  target_kinds: [binary, mobile-app, repository, package]
+  platforms: []
+  technologies: []
+  preconditions:
+    - Both vulnerable and fixed artifacts are available with stable content digests.
+  assumptions:
+    - The artifacts are meaningfully related versions of the same component.
+  exclusions:
+    - Unrelated builds whose broad compiler or dependency drift overwhelms the security change.
+scope:
+  minimum_execution_class: analysis
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 0
+  recommended_concurrency: 2
+  action_tags: [static-analysis]
+  data_classes: [binary-artifact, source-artifact]
+taxonomies:
+  - scheme: CWE
+    identifier: CWE-1000
+    relationship: may-map-to
+inputs:
+  - name: vulnerable-build
+    semantic_type: artifact/vulnerable-build
+    description: Exact vulnerable artifact and build identity.
+    required: true
+    secret: false
+    examples: []
+  - name: fixed-build
+    semantic_type: artifact/fixed-build
+    description: Exact fixed artifact and build identity.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: changed-boundaries
+    semantic_type: surface/changed-boundaries
+    description: Ranked functions, data flows, checks, and authority boundaries changed by the fix.
+    required: true
+    secret: false
+    examples: []
+  - name: variant-hypotheses
+    semantic_type: hypothesis/variant
+    description: Falsifiable hypotheses tied to exact changed behavior.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: bind-identities
+    kind: prepare
+    title: Bind exact artifacts
+    instruction: Record build identifiers, content digests, architecture, symbols, dependencies, and normalization settings for both variants.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [artifact.hash, artifact.inspect]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Both variants have unambiguous identities and comparable normalization metadata.
+    failure_signals:
+      - One artifact is missing, corrupted, or cannot be related to the other.
+    evidence:
+      - evidence_type: evidence/artifact-identity
+        description: Digest and build metadata for each variant.
+        minimum_count: 2
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 300
+    max_repetitions: 1
+  - step_id: derive-semantic-diff
+    kind: analyze
+    title: Derive a semantic diff
+    instruction: Normalize layout and symbol noise, then compare functions, callers, constants, validation branches, data structures, and dependency changes.
+    localized_instructions: {}
+    depends_on: [bind-identities]
+    required_capabilities: [binary.diff, code.search]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Changed behavior is separated from compiler, relocation, and packaging noise.
+    failure_signals:
+      - The diff is dominated by unrelated build drift.
+    evidence:
+      - evidence_type: evidence/semantic-diff
+        description: Machine-readable list of changed semantic units.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 3600
+    max_repetitions: 2
+  - step_id: rank-trust-boundaries
+    kind: hypothesize
+    title: Rank changed trust boundaries
+    instruction: Prioritize changes that alter parsing, memory safety, identity, authorization, serialization, state transitions, or external inputs.
+    localized_instructions: {}
+    depends_on: [derive-semantic-diff]
+    required_capabilities: [graph.reason]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Every ranked boundary references a concrete changed semantic unit.
+    failure_signals:
+      - A hypothesis is based only on naming or generic vulnerability likelihood.
+    evidence:
+      - evidence_type: hypothesis/variant
+        description: Falsifiable changed-boundary hypothesis.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+  - step_id: define-differential-probes
+    kind: verify
+    title: Define discriminating probes
+    instruction: For each top hypothesis, specify an identical probe whose expected outcome differs between vulnerable and fixed variants.
+    localized_instructions: {}
+    depends_on: [rank-trust-boundaries]
+    required_capabilities: [experiment.design]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Each hypothesis has a vulnerable-success and fixed-rejection prediction.
+    failure_signals:
+      - The proposed experiment cannot distinguish the candidate mechanism from an alternate path.
+    evidence:
+      - evidence_type: experiment/differential-plan
+        description: Matched variant experiment specification.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+composition:
+  consumes: [artifact/vulnerable-build, artifact/fixed-build]
+  provides: [surface/changed-boundaries, hypothesis/variant, finding/candidate]
+  compatible_after: []
+  compatible_before: [causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: evidence/semantic-diff
+    description: Normalized behavioral changes between exact variants.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Overfitting to symbol names or patch notes instead of changed behavior.
+  - Treating a fixed-version rejection as causal proof without observing the candidate path.
+variations:
+  - Source-level commit diff, decompiler diff, dependency-version diff, or configuration-schema diff.
+sources:
+  - source_id: project-zero-naptime
+    kind: publication
+    title: Project Naptime - Evaluating Offensive Security Capabilities of Large Language Models
+    url: https://googleprojectzero.blogspot.com/2024/06/project-naptime.html
+    authors: [Google Project Zero]
+    license: source-terms
+    notes: Inspiration for variant-guided agent harness design; playbook wording is original.
+validation:
+  fixture_ids: [corpus-contract-patch-diff]
+  test_commands: ["pytest tests/test_corpus.py"]
+  known_limitations:
+    - Adapter-specific binary tooling and target behavior require separate integration validation.
+  last_validated_at: 2026-07-29T12:00:00Z
+  validated_by: [white-hat-agent-test-suite]

@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LOCKED: "1"
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
+      - name: Check formatting
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Test
+        run: uv run pytest --cov=white_hat_agent --cov-report=term-missing --cov-fail-under=80
+      - name: Validate corpus and capability contracts
+        run: |
+          uv run wha corpus validate --workspace .
+          uv run wha capability validate --workspace .
+      - name: Validate bundled assets and examples
+        run: |
+          uv run python scripts/check_builtin_assets.py
+          uv run python scripts/validate_examples.py
+      - name: Verify generated schemas
+        run: |
+          uv run python scripts/export_schemas.py
+          uv run wha corpus index --workspace . --out corpus/manifest.json
+          git diff --exit-code -- schemas corpus/manifest.json
+      - name: Build distributions
+        if: matrix.python-version == '3.12'
+        run: uv build
+
+  package-smoke:
+    name: Wheel smoke test
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.12"
+      - name: Build and test the wheel in isolation
+        run: uv run --extra dev python scripts/smoke_distribution.py

@@ -1,0 +1,150 @@
+{
+  "$defs": {
+    "CorpusEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "consumes": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Consumes",
+          "type": "array"
+        },
+        "digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "domains": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Domains",
+          "type": "array"
+        },
+        "playbook_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "provides": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Provides",
+          "type": "array"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "review_state": {
+          "$ref": "#/$defs/ReviewState"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playbook_id",
+        "version",
+        "digest",
+        "relative_path",
+        "title",
+        "summary",
+        "domains",
+        "tags",
+        "review_state",
+        "capabilities",
+        "consumes",
+        "provides"
+      ],
+      "title": "CorpusEntry",
+      "type": "object"
+    },
+    "ReviewState": {
+      "enum": [
+        "draft",
+        "proposed",
+        "reviewed",
+        "validated",
+        "deprecated"
+      ],
+      "title": "ReviewState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "corpus_version": {
+      "title": "Corpus Version",
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/CorpusEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "manifest_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Manifest Digest"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "corpus_version",
+    "generated_at",
+    "entries"
+  ],
+  "title": "CorpusManifest",
+  "type": "object"
+}

@@ -1,0 +1,58 @@
+{
+  "$defs": {
+    "CapabilityCompatibilityIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_id": {
+          "title": "Capability Id",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "playbook_id": {
+          "title": "Playbook Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playbook_id",
+        "capability_id",
+        "code",
+        "message"
+      ],
+      "title": "CapabilityCompatibilityIssue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/CapabilityCompatibilityIssue"
+      },
+      "title": "Issues",
+      "type": "array"
+    },
+    "playbook_count": {
+      "minimum": 0,
+      "title": "Playbook Count",
+      "type": "integer"
+    },
+    "valid": {
+      "title": "Valid",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "playbook_count"
+  ],
+  "title": "CapabilityCompatibilityReport",
+  "type": "object"
+}

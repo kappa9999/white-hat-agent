@@ -1,0 +1,268 @@
+{
+  "$defs": {
+    "BlockedHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "hypothesis_id": {
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "hypothesis_id",
+        "reasons"
+      ],
+      "title": "BlockedHypothesis",
+      "type": "object"
+    },
+    "GoalWeights": {
+      "additionalProperties": false,
+      "properties": {
+        "blast_radius": {
+          "default": 0.8,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Blast Radius",
+          "type": "number"
+        },
+        "causal_verifiability": {
+          "default": 1.4,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Causal Verifiability",
+          "type": "number"
+        },
+        "cost": {
+          "default": 0.8,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Cost",
+          "type": "number"
+        },
+        "diversity_bonus": {
+          "default": 0.8,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Diversity Bonus",
+          "type": "number"
+        },
+        "evidence_strength": {
+          "default": 1.2,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Evidence Strength",
+          "type": "number"
+        },
+        "impact": {
+          "default": 1.0,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Impact",
+          "type": "number"
+        },
+        "information_gain": {
+          "default": 1.2,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Information Gain",
+          "type": "number"
+        },
+        "novelty": {
+          "default": 1.0,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Novelty",
+          "type": "number"
+        },
+        "plateau_diversity_bonus": {
+          "default": 2.0,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Plateau Diversity Bonus",
+          "type": "number"
+        },
+        "reachability": {
+          "default": 1.0,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Reachability",
+          "type": "number"
+        },
+        "redundancy": {
+          "default": 1.0,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Redundancy",
+          "type": "number"
+        },
+        "retry_penalty": {
+          "default": 0.7,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Retry Penalty",
+          "type": "number"
+        },
+        "transferability": {
+          "default": 0.7,
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Transferability",
+          "type": "number"
+        }
+      },
+      "title": "GoalWeights",
+      "type": "object"
+    },
+    "HypothesisFamily": {
+      "enum": [
+        "active-data",
+        "variant-analysis",
+        "native-memory",
+        "managed-runtime",
+        "script-bridge",
+        "protocol",
+        "state-machine",
+        "authority",
+        "supply-chain",
+        "forensics",
+        "other"
+      ],
+      "title": "HypothesisFamily",
+      "type": "string"
+    },
+    "PlanMode": {
+      "enum": [
+        "explore",
+        "exploit",
+        "plateau-recovery",
+        "complete",
+        "budget-exhausted",
+        "stalled"
+      ],
+      "title": "PlanMode",
+      "type": "string"
+    },
+    "RankedHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "bonuses": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Bonuses",
+          "type": "object"
+        },
+        "family": {
+          "$ref": "#/$defs/HypothesisFamily"
+        },
+        "hypothesis_id": {
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "penalty_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Penalty Score",
+          "type": "number"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "reward_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Reward Score",
+          "type": "number"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "hypothesis_id",
+        "family",
+        "score",
+        "reward_score",
+        "penalty_score"
+      ],
+      "title": "RankedHypothesis",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "blocked": {
+      "items": {
+        "$ref": "#/$defs/BlockedHypothesis"
+      },
+      "title": "Blocked",
+      "type": "array"
+    },
+    "effective_goal_weights": {
+      "$ref": "#/$defs/GoalWeights"
+    },
+    "episode_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Episode Digest",
+      "type": "string"
+    },
+    "episode_id": {
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "graph_revision": {
+      "minimum": 1,
+      "title": "Graph Revision",
+      "type": "integer"
+    },
+    "mode": {
+      "$ref": "#/$defs/PlanMode"
+    },
+    "plan_id": {
+      "title": "Plan Id",
+      "type": "string"
+    },
+    "plateau_detected": {
+      "title": "Plateau Detected",
+      "type": "boolean"
+    },
+    "rationale": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rationale",
+      "type": "array"
+    },
+    "selected": {
+      "items": {
+        "$ref": "#/$defs/RankedHypothesis"
+      },
+      "title": "Selected",
+      "type": "array"
+    }
+  },
+  "required": [
+    "plan_id",
+    "episode_id",
+    "episode_digest",
+    "graph_revision",
+    "mode",
+    "plateau_detected",
+    "effective_goal_weights"
+  ],
+  "title": "DiscoveryPlan",
+  "type": "object"
+}

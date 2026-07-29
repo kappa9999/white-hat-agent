@@ -1,0 +1,99 @@
+{
+  "$defs": {
+    "JsonValue": {},
+    "RedactionState": {
+      "enum": [
+        "unreviewed",
+        "sanitized",
+        "withheld"
+      ],
+      "title": "RedactionState",
+      "type": "string"
+    },
+    "Sensitivity": {
+      "enum": [
+        "public",
+        "program-confidential",
+        "personal-data",
+        "secret"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "captured_at": {
+      "format": "date-time",
+      "title": "Captured At",
+      "type": "string"
+    },
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "evidence_type": {
+      "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+      "title": "Evidence Type",
+      "type": "string"
+    },
+    "producer": {
+      "minLength": 1,
+      "title": "Producer",
+      "type": "string"
+    },
+    "provenance": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Provenance",
+      "type": "object"
+    },
+    "redaction_state": {
+      "$ref": "#/$defs/RedactionState",
+      "default": "unreviewed"
+    },
+    "sensitivity": {
+      "$ref": "#/$defs/Sensitivity",
+      "default": "program-confidential"
+    },
+    "target": {
+      "minLength": 1,
+      "title": "Target",
+      "type": "string"
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Task Id"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "target",
+    "evidence_type",
+    "title",
+    "description",
+    "producer"
+  ],
+  "title": "EvidenceDescriptor",
+  "type": "object"
+}

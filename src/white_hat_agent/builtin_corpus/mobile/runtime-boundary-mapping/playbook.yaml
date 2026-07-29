@@ -1,0 +1,178 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: mobile-runtime-boundary-map
+  version: 1.0.0
+  title: Map a mobile application's runtime trust boundaries
+  summary: Correlate static entry points with minimal runtime observations and exact build identity.
+  domains: [mobile, reverse-engineering, runtime]
+  tags: [android, ios, instrumentation, trust-boundary]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-29T12:00:00Z
+  updated_at: 2026-07-29T12:00:00Z
+applicability:
+  target_kinds: [mobile-app]
+  platforms: [android, ios]
+  technologies: []
+  preconditions:
+    - The exact app build and test device or emulator identity are recorded.
+  assumptions:
+    - Observation hooks can be attached without changing the behavior under study.
+  exclusions:
+    - Production accounts or devices whose state cannot be restored.
+scope:
+  minimum_execution_class: read-only
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 0
+  recommended_concurrency: 1
+  action_tags: [runtime-instrumentation]
+  data_classes: [mobile-runtime-trace]
+taxonomies:
+  - scheme: OWASP
+    identifier: MASVS-RESILIENCE
+    relationship: informed-by
+inputs:
+  - name: target-context
+    semantic_type: target/context
+    description: App identifier, build digest, runtime environment, and scope decision.
+    required: true
+    secret: false
+    examples: []
+  - name: mobile-build
+    semantic_type: artifact/mobile-build
+    description: Exact APK, AAB-derived APK, IPA, or installed app build.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: runtime-boundaries
+    semantic_type: surface/runtime-boundaries
+    description: Correlated native, managed, script, transport, storage, and server-authority boundaries.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: static-entry-inventory
+    kind: discover
+    title: Inventory static entry points
+    instruction: Map app entry points, native and managed modules, script runtimes, IPC, storage, transport, and integrity controls.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [mobile.static-inspect, artifact.hash]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Every candidate boundary references an exact artifact location or symbol identity.
+    failure_signals:
+      - Build identity or extraction provenance is missing.
+    evidence:
+      - evidence_type: surface/static-map
+        description: Static entry and boundary inventory.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 1800
+    max_repetitions: 1
+  - step_id: minimal-runtime-observation
+    kind: observe
+    title: Observe one boundary at a time
+    instruction: Add the smallest read-only hook that confirms arguments, return values, callers, and state transitions for one candidate boundary.
+    localized_instructions: {}
+    depends_on: [static-entry-inventory]
+    required_capabilities: [mobile.runtime-observe, trace.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - A timestamped trace correlates the exact static boundary to live behavior.
+    failure_signals:
+      - The hook destabilizes the app or cannot be tied to the captured build.
+    evidence:
+      - evidence_type: evidence/runtime-trace
+        description: Minimal boundary trace with exact build and runtime identity.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup:
+      - Detach instrumentation and confirm the original app state remains available.
+    timeout_seconds: 600
+    max_repetitions: 20
+  - step_id: assign-authority
+    kind: analyze
+    title: Assign client and server authority
+    instruction: Mark which observed values are client-derived, server-validated, cached, signed, replayable, or only presentation state.
+    localized_instructions: {}
+    depends_on: [minimal-runtime-observation]
+    required_capabilities: [graph.reason]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Every claim distinguishes client behavior from server-observable authority.
+    failure_signals:
+      - A UI or local-memory effect is presented as a server finding without server evidence.
+    evidence:
+      - evidence_type: surface/runtime-boundaries
+        description: Authority-labelled runtime graph.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+  - step_id: seed-hypotheses
+    kind: hypothesize
+    title: Seed falsifiable boundary hypotheses
+    instruction: Generate separate hypotheses for parsing, state, authorization, replay, integrity, and cross-runtime assumptions anchored in observed edges.
+    localized_instructions: {}
+    depends_on: [assign-authority]
+    required_capabilities: [graph.reason, hypothesis.generate]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Each hypothesis names its anchor, predicted effect, probe, and falsifier.
+    failure_signals:
+      - A hypothesis lacks an observed anchor or confuses local and server authority.
+    evidence:
+      - evidence_type: finding/candidate
+        description: Falsifiable runtime-boundary candidate.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+composition:
+  consumes: [target/context, artifact/mobile-build]
+  provides: [surface/runtime-boundaries, evidence/runtime-trace, finding/candidate]
+  compatible_after: []
+  compatible_before: [causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: evidence/runtime-trace
+    description: Trace tied to exact app and runtime identities.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Instrumentation changes the code path being measured.
+  - Cached or presentation-only state is mistaken for durable authority.
+variations:
+  - Native, managed, Lua, JavaScript, WebView, IPC, and serialization boundaries.
+sources:
+  - source_id: owasp-mas
+    kind: standard
+    title: OWASP Mobile Application Security
+    url: https://mas.owasp.org/
+    authors: [OWASP Foundation]
+    license: CC-BY-SA-4.0
+    notes: Taxonomy and testing context; this workflow is original.
+validation:
+  fixture_ids: [corpus-contract-mobile-runtime]
+  test_commands: ["pytest tests/test_corpus.py"]
+  known_limitations:
+    - Runtime instrumentation behavior is target- and platform-specific.
+  last_validated_at: 2026-07-29T12:00:00Z
+  validated_by: [white-hat-agent-test-suite]

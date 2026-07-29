@@ -1,0 +1,329 @@
+{
+  "$defs": {
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "FleetTask": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "campaign_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "dedup_key": {
+          "title": "Dedup Key",
+          "type": "string"
+        },
+        "estimated_cost_units": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Estimated Cost Units",
+          "type": "number"
+        },
+        "execution_class": {
+          "$ref": "#/$defs/ExecutionClass"
+        },
+        "intent_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Intent Digest",
+          "type": "string"
+        },
+        "intent_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Intent Id",
+          "type": "string"
+        },
+        "lease_expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lease Expires At"
+        },
+        "lease_owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lease Owner"
+        },
+        "max_attempts": {
+          "default": 3,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "payload": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Payload",
+          "type": "object"
+        },
+        "playbook_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Playbook Digest",
+          "type": "string"
+        },
+        "playbook_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "playbook_version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Playbook Version",
+          "type": "string"
+        },
+        "priority": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "required_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "scope_decision_id": {
+          "title": "Scope Decision Id",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState",
+          "default": "queued"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "target_kind": {
+          "$ref": "#/$defs/TargetKind"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "campaign_id",
+        "target_kind",
+        "target",
+        "intent_id",
+        "intent_digest",
+        "scope_decision_id",
+        "playbook_id",
+        "playbook_version",
+        "playbook_digest",
+        "execution_class",
+        "dedup_key"
+      ],
+      "title": "FleetTask",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "RateLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "burst": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Burst",
+          "type": "integer"
+        },
+        "max_concurrency": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Max Concurrency",
+          "type": "integer"
+        },
+        "max_requests_per_task": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Requests Per Task",
+          "type": "integer"
+        },
+        "requests_per_second": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Requests Per Second",
+          "type": "number"
+        }
+      },
+      "title": "RateLimits",
+      "type": "object"
+    },
+    "ScopeDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "title": "Allowed",
+          "type": "boolean"
+        },
+        "decision_id": {
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "effective_limits": {
+          "$ref": "#/$defs/RateLimits"
+        },
+        "evaluated_at": {
+          "format": "date-time",
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "intent_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Intent Digest",
+          "type": "string"
+        },
+        "intent_id": {
+          "title": "Intent Id",
+          "type": "string"
+        },
+        "matched_rule_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matched Rule Id"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "scope_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Scope Digest",
+          "type": "string"
+        },
+        "scope_id": {
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "decision_id",
+        "scope_id",
+        "scope_digest",
+        "intent_id",
+        "intent_digest",
+        "evaluated_at",
+        "allowed",
+        "reasons",
+        "effective_limits"
+      ],
+      "title": "ScopeDecision",
+      "type": "object"
+    },
+    "TargetKind": {
+      "enum": [
+        "domain",
+        "url",
+        "ip",
+        "cidr",
+        "repository",
+        "package",
+        "mobile-app",
+        "binary",
+        "cloud-account",
+        "api",
+        "generic"
+      ],
+      "title": "TargetKind",
+      "type": "string"
+    },
+    "TaskState": {
+      "enum": [
+        "queued",
+        "leased",
+        "completed",
+        "failed",
+        "blocked",
+        "cancelled"
+      ],
+      "title": "TaskState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "decision": {
+      "$ref": "#/$defs/ScopeDecision"
+    },
+    "duplicate": {
+      "title": "Duplicate",
+      "type": "boolean"
+    },
+    "task": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FleetTask"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "accepted",
+    "duplicate",
+    "decision"
+  ],
+  "title": "EnqueueOutcome",
+  "type": "object"
+}

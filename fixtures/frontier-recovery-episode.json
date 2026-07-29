@@ -1,0 +1,106 @@
+{
+  "attempts": [],
+  "budget": {
+    "max_attempts": 12,
+    "max_cost_units": 12.0,
+    "max_iterations": 12,
+    "used_attempts": 0,
+    "used_cost_units": 0.0,
+    "used_iterations": 0
+  },
+  "created_at": "2026-01-01T12:00:00Z",
+  "episode_id": "episode-frontier-recovery-001",
+  "evidence": [],
+  "expansions": [],
+  "graph": {
+    "edges": [
+      {
+        "confidence": 0.75,
+        "edge_id": "edge-input-parser",
+        "evidence_ids": [],
+        "hypothesis_ids": [],
+        "relation": "flows-to",
+        "source": "n-input",
+        "target": "n-parser"
+      }
+    ],
+    "nodes": [
+      {
+        "authority": 0.1,
+        "confidence": 1.0,
+        "evidence_ids": [],
+        "kind": "artifact",
+        "label": "serialized analysis bundle",
+        "node_id": "n-bundle",
+        "tags": [
+          "fixture"
+        ]
+      },
+      {
+        "authority": 0.2,
+        "confidence": 0.9,
+        "evidence_ids": [],
+        "kind": "input",
+        "label": "embedded active-data field",
+        "node_id": "n-input",
+        "tags": [
+          "attacker-influenced"
+        ]
+      },
+      {
+        "authority": 0.5,
+        "confidence": 0.8,
+        "evidence_ids": [],
+        "kind": "parser",
+        "label": "bundle parser",
+        "node_id": "n-parser",
+        "tags": []
+      }
+    ],
+    "revision": 1
+  },
+  "hypotheses": [],
+  "objective": {
+    "allowed_capabilities": [
+      "artifact.read"
+    ],
+    "allowed_modes": [
+      "offline"
+    ],
+    "goal_weights": {
+      "blast_radius": 0.8,
+      "causal_verifiability": 1.4,
+      "cost": 0.8,
+      "diversity_bonus": 0.8,
+      "evidence_strength": 1.2,
+      "impact": 1.0,
+      "information_gain": 1.2,
+      "novelty": 1.0,
+      "plateau_diversity_bonus": 2.0,
+      "reachability": 1.0,
+      "redundancy": 1.0,
+      "retry_penalty": 0.7,
+      "transferability": 0.7
+    },
+    "maximum_mutation_level": "none",
+    "minimum_alignment": 0.55,
+    "minimum_anchor_confidence": 0.25,
+    "objective_id": "discover-active-data-boundary",
+    "statement": "Identify and causally verify an unexpected active-data execution boundary",
+    "success_criteria": [
+      "observe the intended execution path",
+      "reproduce the effect",
+      "reject the same probe on a neutralized variant"
+    ],
+    "target": {
+      "artifacts": {
+        "bundle.bin": "a447824121f1d19899354e8c62c226c9e47c5eac022d4dedfdc3033b900caa1b"
+      },
+      "build_id": "fixture-build-1",
+      "environment_fingerprint": "b8ab18a9d189e20572529c2f7ce1b9198a70086112b0ba0ec4a6f48a446ef20b",
+      "target_id": "synthetic-active-data-pipeline"
+    }
+  },
+  "schema_version": "1.0",
+  "updated_at": "2026-01-01T12:00:00Z"
+}

@@ -1,0 +1,165 @@
+schema_version: "1.0"
+capabilities:
+  - capability_id: artifact.hash
+    title: Hash an artifact
+    description: Compute and report a stable content digest without changing the source artifact.
+    execution_class: analysis
+    input_types: [artifact/file]
+    output_types: [evidence/artifact-identity]
+    adapter_contract: [Preserve the hash algorithm, byte length, path identity, and read errors.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: artifact.inspect
+    title: Inspect artifact metadata
+    description: Extract bounded format, architecture, build, symbol, and dependency metadata.
+    execution_class: analysis
+    input_types: [artifact/file]
+    output_types: [artifact/metadata]
+    adapter_contract: [Report the exact artifact digest and every parser or tool version used.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: binary.diff
+    title: Diff binary semantics
+    description: Compare related binary artifacts after normalizing known layout and symbol noise.
+    execution_class: analysis
+    input_types: [artifact/vulnerable-build, artifact/fixed-build]
+    output_types: [evidence/semantic-diff]
+    adapter_contract: [Preserve exact input digests and normalization settings.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: code.search
+    title: Search code or decompiler text
+    description: Run bounded structural or textual searches over a captured code corpus.
+    execution_class: analysis
+    input_types: [artifact/code]
+    output_types: [evidence/code-location]
+    adapter_contract: [Return query, corpus identity, exact locations, and truncation state.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: graph.reason
+    title: Reason over an evidence graph
+    description: Derive explicit candidate relationships while retaining anchors and uncertainty.
+    execution_class: analysis
+    input_types: [evidence/graph]
+    output_types: [hypothesis/candidate]
+    adapter_contract: [Separate observed edges from inferred edges and cite every anchor.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: hypothesis.generate
+    title: Generate falsifiable hypotheses
+    description: Propose diverse hypotheses with predictions, probes, falsifiers, and evidence anchors.
+    execution_class: analysis
+    input_types: [evidence/graph]
+    output_types: [hypothesis/candidate]
+    adapter_contract: [Never represent a hypothesis as a confirmed fact.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: experiment.design
+    title: Design a discriminating experiment
+    description: Specify a bounded experiment that distinguishes a candidate mechanism from alternatives.
+    execution_class: analysis
+    input_types: [hypothesis/candidate]
+    output_types: [experiment/plan]
+    adapter_contract: [Declare exact controls, predicted outcomes, side effects, budget, and cleanup.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: experiment.replay
+    title: Replay a bounded experiment
+    description: Repeat an exact captured operation against an exact target identity.
+    execution_class: controlled-active
+    input_types: [experiment/plan]
+    output_types: [evidence/reproduction]
+    adapter_contract: [Reject target or input drift and correlate every run.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: experiment.intervene
+    title: Run a narrow intervention
+    description: Change one controlled variable to test whether a candidate primitive is causal.
+    execution_class: state-changing
+    input_types: [experiment/plan]
+    output_types: [evidence/intervention]
+    side_effects: [May temporarily change a controlled target.]
+    adapter_contract: [Require explicit mutation authority, pre-state evidence, cleanup, and post-state verification.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: evidence.capture
+    title: Capture evidence
+    description: Preserve an immutable observation with content identity and provenance.
+    execution_class: read-only
+    input_types: [observation/raw]
+    output_types: [evidence/artifact]
+    adapter_contract: [Return content digest, timestamp, target identity, source, and truncation state.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: evidence.write
+    title: Write evidence metadata
+    description: Persist structured evidence and negative results without changing the target.
+    execution_class: analysis
+    input_types: [evidence/artifact]
+    output_types: [evidence/record]
+    adapter_contract: [Use immutable IDs and atomic writes; never place secrets in logs.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: finding.write
+    title: Write a finding record
+    description: Persist a proof-tiered candidate, verified finding, refutation, or alternate path.
+    execution_class: analysis
+    input_types: [finding/candidate, evidence/record]
+    output_types: [finding/record]
+    adapter_contract: [Separate observed effect, intended path, mechanism, impact, and remaining unknowns.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: trace.capture
+    title: Capture an execution trace
+    description: Observe a bounded call, data-flow, protocol, or state-transition trace.
+    execution_class: read-only
+    input_types: [target/context]
+    output_types: [evidence/trace]
+    adapter_contract: [Bind the trace to target and environment identities and disclose dropped events.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: http.request
+    title: Send an HTTP request
+    description: Send one typed, scope-checked HTTP request through a rate-limited adapter.
+    execution_class: controlled-active
+    input_types: [request/http]
+    output_types: [response/http]
+    adapter_contract: [Enforce target match, timeout, request budget, rate limit, redirect policy, and body bounds.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: http.capture
+    title: Capture an HTTP transaction
+    description: Preserve bounded request and response metadata with secret-aware redaction.
+    execution_class: read-only
+    input_types: [request/http, response/http]
+    output_types: [evidence/http-transaction]
+    adapter_contract: [Record omitted and redacted fields explicitly and preserve body digests.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: data.diff
+    title: Diff structured observations
+    description: Normalize declared volatile fields and compare two evidence artifacts.
+    execution_class: analysis
+    input_types: [evidence/artifact]
+    output_types: [evidence/differential]
+    adapter_contract: [Record normalization rules and retain both original evidence identities.]
+    status: stable
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: mobile.static-inspect
+    title: Inspect a mobile application statically
+    description: Inventory code, runtime, manifest, signing, storage, IPC, and transport surfaces.
+    execution_class: analysis
+    input_types: [artifact/mobile-build]
+    output_types: [surface/static-map]
+    adapter_contract: [Bind every extracted location to the exact application build digest.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z
+  - capability_id: mobile.runtime-observe
+    title: Observe a mobile runtime boundary
+    description: Attach one bounded read-only observation hook to an exact application build.
+    execution_class: read-only
+    input_types: [artifact/mobile-build]
+    output_types: [evidence/runtime-trace]
+    adapter_contract: [Detect attach failure or destabilization and preserve cleanup state.]
+    status: experimental
+    updated_at: 2026-07-29T12:00:00Z

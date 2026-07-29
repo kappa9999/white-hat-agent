@@ -1,0 +1,19 @@
+objective: Map an HTTP response surface and causally verify any candidate mechanism.
+target_kind: url
+domains: [web, api]
+platforms: []
+technologies: [http]
+available_capabilities:
+  - http.request
+  - http.capture
+  - data.diff
+  - evidence.write
+  - experiment.replay
+  - evidence.capture
+  - trace.capture
+  - experiment.intervene
+  - finding.write
+initial_artifacts: [target/context]
+desired_artifacts: [finding/verified]
+execution_ceiling: state-changing
+max_playbooks: 4

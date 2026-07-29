@@ -1,0 +1,13 @@
+campaign_id: example-lab-campaign
+task_id: task-replace-with-claimed-id
+target: api.example.test
+evidence_type: evidence/http-transaction
+title: Example HTTP transaction
+description: Replace with a bounded replay artifact produced for the claimed fixture task.
+producer: example-http-agent
+sensitivity: program-confidential
+redaction_state: unreviewed
+captured_at: 2026-07-29T12:00:00Z
+provenance:
+  adapter_mode: replay-only
+  target_fixture: true

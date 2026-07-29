@@ -1,0 +1,235 @@
+{
+  "$defs": {
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "OpportunityState": {
+      "enum": [
+        "discovered",
+        "triaged",
+        "active",
+        "submitted",
+        "resolved",
+        "closed"
+      ],
+      "title": "OpportunityState",
+      "type": "string"
+    },
+    "ProgramKind": {
+      "enum": [
+        "hackerone",
+        "bugcrowd",
+        "intigriti",
+        "yeswehack",
+        "open-source",
+        "private",
+        "lab",
+        "custom"
+      ],
+      "title": "ProgramKind",
+      "type": "string"
+    },
+    "TargetKind": {
+      "enum": [
+        "domain",
+        "url",
+        "ip",
+        "cidr",
+        "repository",
+        "package",
+        "mobile-app",
+        "binary",
+        "cloud-account",
+        "api",
+        "generic"
+      ],
+      "title": "TargetKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "allowed_execution_classes": {
+      "items": {
+        "$ref": "#/$defs/ExecutionClass"
+      },
+      "title": "Allowed Execution Classes",
+      "type": "array"
+    },
+    "automation_permitted": {
+      "default": false,
+      "title": "Automation Permitted",
+      "type": "boolean"
+    },
+    "discovered_at": {
+      "format": "date-time",
+      "title": "Discovered At",
+      "type": "string"
+    },
+    "domains": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Domains",
+      "type": "array"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "last_verified_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Verified At"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Metadata",
+      "type": "object"
+    },
+    "opportunity_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Opportunity Id",
+      "type": "string"
+    },
+    "program_kind": {
+      "$ref": "#/$defs/ProgramKind"
+    },
+    "program_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Program Url"
+    },
+    "required_capabilities": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Required Capabilities",
+      "type": "array"
+    },
+    "reward_currency": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reward Currency"
+    },
+    "reward_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reward Hint"
+    },
+    "reward_max": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reward Max"
+    },
+    "scope_reference": {
+      "minLength": 1,
+      "title": "Scope Reference",
+      "type": "string"
+    },
+    "scope_snapshot_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope Snapshot Digest"
+    },
+    "state": {
+      "$ref": "#/$defs/OpportunityState",
+      "default": "discovered"
+    },
+    "strategic_priority": {
+      "default": 0.5,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Strategic Priority",
+      "type": "number"
+    },
+    "target_kinds": {
+      "items": {
+        "$ref": "#/$defs/TargetKind"
+      },
+      "title": "Target Kinds",
+      "type": "array"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity_id",
+    "program_kind",
+    "title",
+    "scope_reference"
+  ],
+  "title": "Opportunity",
+  "type": "object"
+}

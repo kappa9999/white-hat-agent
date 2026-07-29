@@ -1,0 +1,173 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: causal-differential-verification
+  version: 1.0.0
+  title: Verify a candidate finding through causal and differential evidence
+  summary: Separate visible effect, intended path, candidate primitive, alternate paths, and remediation closure.
+  domains: [cross-domain, verification]
+  tags: [causal, differential, reproduction, evidence]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-29T12:00:00Z
+  updated_at: 2026-07-29T12:00:00Z
+applicability:
+  target_kinds: [generic-asset]
+  platforms: []
+  technologies: []
+  preconditions:
+    - A falsifiable candidate finding and exact target identity exist.
+  assumptions:
+    - At least one independent evidence or intervention path is available.
+  exclusions: []
+scope:
+  minimum_execution_class: state-changing
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 2
+  recommended_concurrency: 1
+  action_tags: [controlled-intervention]
+  data_classes: [finding-evidence]
+taxonomies: []
+inputs:
+  - name: candidate-finding
+    semantic_type: finding/candidate
+    description: Candidate mechanism, predicted effect, intended path, probe, and falsifier.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: verified-finding
+    semantic_type: finding/verified
+    description: Confirmed, supported, alternate, inconclusive, or refuted finding with proof tier.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: reproduce-effect
+    kind: verify
+    title: Reproduce the target effect
+    instruction: Repeat the exact probe on the exact target identity and require at least two clean, correlated runs.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [experiment.replay, evidence.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The target effect occurs in at least two clean runs with matching target identity.
+    failure_signals:
+      - The effect cannot be reproduced or depends on uncontrolled drift.
+    evidence:
+      - evidence_type: evidence/reproduction
+        description: Correlated reproduction runs.
+        minimum_count: 2
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 1800
+    max_repetitions: 5
+  - step_id: observe-intended-path
+    kind: observe
+    title: Observe the intended path and primitive
+    instruction: Capture direct evidence that the intended path executes and reaches the candidate primitive when the effect occurs.
+    localized_instructions: {}
+    depends_on: [reproduce-effect]
+    required_capabilities: [trace.capture, evidence.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The intended path and primitive are directly correlated with the effect.
+    failure_signals:
+      - The effect occurs through another path or the primitive is never observed.
+    evidence:
+      - evidence_type: evidence/trace
+        description: Direct path and primitive trace.
+        minimum_count: 1
+        independent: true
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 1800
+    max_repetitions: 3
+  - step_id: run-intervention
+    kind: execute
+    title: Run a narrow intervention or fixed-variant differential
+    instruction: Neutralize only the candidate primitive or repeat the identical probe on a fixed variant, then compare outcomes.
+    localized_instructions: {}
+    depends_on: [observe-intended-path]
+    required_capabilities: [experiment.intervene, evidence.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The effect disappears after narrow neutralization or the fixed variant rejects the identical probe.
+    failure_signals:
+      - The effect persists or the intervention changed unrelated variables.
+    evidence:
+      - evidence_type: evidence/differential
+        description: Matched vulnerable/fixed or original/neutralized result.
+        minimum_count: 1
+        independent: true
+    side_effects:
+      - The controlled target may be temporarily modified for the narrow intervention.
+    cleanup:
+      - Restore the target to its captured pre-intervention state and verify the identity.
+    timeout_seconds: 3600
+    max_repetitions: 3
+  - step_id: classify-proof
+    kind: document
+    title: Classify the finding and preserve alternate paths
+    instruction: Emit the strongest supported proof tier; preserve any different success path as a separate adjacent finding.
+    localized_instructions: {}
+    depends_on: [run-intervention]
+    required_capabilities: [finding.write]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The report distinguishes effect, path, primitive, intervention, shortcuts, and reproducibility.
+    failure_signals:
+      - A visible effect is credited to a mechanism without causal evidence.
+    evidence:
+      - evidence_type: finding/verified
+        description: Proof-tiered finding or explicit refutation.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+composition:
+  consumes: [finding/candidate]
+  provides: [finding/verified, evidence/causal-report]
+  compatible_after: [http-response-surface-map, patch-diff-hypothesis-seeding, mobile-runtime-boundary-map]
+  compatible_before: []
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: evidence/reproduction
+    description: At least two clean reproductions.
+    minimum_count: 2
+    independent: false
+  - evidence_type: evidence/differential
+    description: Fixed-variant or narrow-intervention evidence.
+    minimum_count: 1
+    independent: true
+failure_modes:
+  - An alternate success path is mistaken for proof of the intended mechanism.
+  - The fixed and vulnerable targets differ in uncontrolled ways.
+variations:
+  - Fixed-build rejection, feature-flag neutralization, hook bypass, configuration toggle, or mock dependency.
+sources:
+  - source_id: exploitgym
+    kind: publication
+    title: ExploitGym - Cybersecurity Evaluation and Training Environments for LLM Agents
+    url: https://github.com/sunblaze-ucb/exploitgym
+    authors: [ExploitGym contributors]
+    license: repository-license
+    notes: Agent-harness inspiration; verification workflow is original.
+validation:
+  fixture_ids: [corpus-contract-causal-verification]
+  test_commands: ["pytest tests/test_corpus.py tests/test_composition.py"]
+  known_limitations:
+    - A target adapter must define the actual intervention and independent evidence channels.
+  last_validated_at: 2026-07-29T12:00:00Z
+  validated_by: [white-hat-agent-test-suite]

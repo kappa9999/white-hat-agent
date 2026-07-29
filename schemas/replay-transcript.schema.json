@@ -1,0 +1,744 @@
+{
+  "$defs": {
+    "AttemptOutcome": {
+      "enum": [
+        "succeeded",
+        "negative",
+        "failed",
+        "inconclusive",
+        "blocked"
+      ],
+      "title": "AttemptOutcome",
+      "type": "string"
+    },
+    "DiscoveryObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "adjacent_hypotheses": {
+          "items": {
+            "$ref": "#/$defs/Hypothesis"
+          },
+          "title": "Adjacent Hypotheses",
+          "type": "array"
+        },
+        "conclusive": {
+          "default": false,
+          "title": "Conclusive",
+          "type": "boolean"
+        },
+        "cost_units": {
+          "exclusiveMinimum": 0,
+          "title": "Cost Units",
+          "type": "number"
+        },
+        "hypothesis_id": {
+          "minLength": 1,
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "hypothesis_revision": {
+          "minimum": 1,
+          "title": "Hypothesis Revision",
+          "type": "integer"
+        },
+        "new_edges": {
+          "items": {
+            "$ref": "#/$defs/SurfaceEdge"
+          },
+          "title": "New Edges",
+          "type": "array"
+        },
+        "new_evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRecord"
+          },
+          "title": "New Evidence",
+          "type": "array"
+        },
+        "new_nodes": {
+          "items": {
+            "$ref": "#/$defs/SurfaceNode"
+          },
+          "title": "New Nodes",
+          "type": "array"
+        },
+        "observation_id": {
+          "minLength": 1,
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AttemptOutcome"
+        },
+        "progress_delta": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Progress Delta",
+          "type": "number"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observation_id",
+        "hypothesis_id",
+        "hypothesis_revision",
+        "outcome",
+        "summary",
+        "progress_delta",
+        "cost_units",
+        "started_at",
+        "observed_at"
+      ],
+      "title": "DiscoveryObservation",
+      "type": "object"
+    },
+    "EvidenceKind": {
+      "enum": [
+        "artifact",
+        "static",
+        "runtime",
+        "protocol",
+        "differential",
+        "reproduction",
+        "intervention",
+        "trace",
+        "other"
+      ],
+      "title": "EvidenceKind",
+      "type": "string"
+    },
+    "EvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "content_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EvidenceKind"
+        },
+        "source_ref": {
+          "minLength": 1,
+          "title": "Source Ref",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "kind",
+        "source_ref",
+        "content_sha256",
+        "summary",
+        "confidence",
+        "captured_at"
+      ],
+      "title": "EvidenceRecord",
+      "type": "object"
+    },
+    "ExecutionMode": {
+      "enum": [
+        "offline",
+        "sandbox",
+        "live-readonly",
+        "live-active"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor_node_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Anchor Node Ids",
+          "type": "array"
+        },
+        "attempt_limit": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Attempt Limit",
+          "type": "integer"
+        },
+        "blockers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "dependency_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dependency Ids",
+          "type": "array"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "family": {
+          "$ref": "#/$defs/HypothesisFamily"
+        },
+        "hypothesis_id": {
+          "minLength": 1,
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "measures": {
+          "$ref": "#/$defs/HypothesisMeasures"
+        },
+        "probe": {
+          "$ref": "#/$defs/ProbeSpec"
+        },
+        "revision": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "statement": {
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/HypothesisStatus",
+          "default": "proposed"
+        },
+        "target_node_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Node Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypothesis_id",
+        "title",
+        "statement",
+        "family",
+        "anchor_node_ids",
+        "measures",
+        "probe"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "HypothesisFamily": {
+      "enum": [
+        "active-data",
+        "variant-analysis",
+        "native-memory",
+        "managed-runtime",
+        "script-bridge",
+        "protocol",
+        "state-machine",
+        "authority",
+        "supply-chain",
+        "forensics",
+        "other"
+      ],
+      "title": "HypothesisFamily",
+      "type": "string"
+    },
+    "HypothesisMeasures": {
+      "additionalProperties": false,
+      "properties": {
+        "blast_radius": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Blast Radius",
+          "type": "number"
+        },
+        "causal_verifiability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Causal Verifiability",
+          "type": "number"
+        },
+        "cost": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Cost",
+          "type": "number"
+        },
+        "evidence_strength": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Evidence Strength",
+          "type": "number"
+        },
+        "impact": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Impact",
+          "type": "number"
+        },
+        "information_gain": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Information Gain",
+          "type": "number"
+        },
+        "novelty": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Novelty",
+          "type": "number"
+        },
+        "objective_alignment": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Objective Alignment",
+          "type": "number"
+        },
+        "reachability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Reachability",
+          "type": "number"
+        },
+        "redundancy": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Redundancy",
+          "type": "number"
+        },
+        "transferability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Transferability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "objective_alignment",
+        "impact",
+        "reachability",
+        "evidence_strength",
+        "information_gain",
+        "novelty",
+        "causal_verifiability",
+        "transferability",
+        "cost",
+        "blast_radius",
+        "redundancy"
+      ],
+      "title": "HypothesisMeasures",
+      "type": "object"
+    },
+    "HypothesisStatus": {
+      "enum": [
+        "proposed",
+        "testing",
+        "supported",
+        "refuted",
+        "inconclusive",
+        "blocked"
+      ],
+      "title": "HypothesisStatus",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "MutationLevel": {
+      "enum": [
+        "none",
+        "target-local",
+        "external-state"
+      ],
+      "title": "MutationLevel",
+      "type": "string"
+    },
+    "ProbeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "minLength": 1,
+          "title": "Action",
+          "type": "string"
+        },
+        "adapter_id": {
+          "minLength": 1,
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "cost_units": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Cost Units",
+          "type": "number"
+        },
+        "expected_observations": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Expected Observations",
+          "type": "array"
+        },
+        "falsifiers": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Falsifiers",
+          "type": "array"
+        },
+        "max_seconds": {
+          "default": 300,
+          "minimum": 1,
+          "title": "Max Seconds",
+          "type": "integer"
+        },
+        "max_steps": {
+          "default": 20,
+          "minimum": 1,
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/ExecutionMode",
+          "default": "offline"
+        },
+        "mutation_level": {
+          "$ref": "#/$defs/MutationLevel",
+          "default": "none"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "action",
+        "expected_observations",
+        "falsifiers"
+      ],
+      "title": "ProbeSpec",
+      "type": "object"
+    },
+    "Relation": {
+      "enum": [
+        "flows-to",
+        "reads",
+        "writes",
+        "invokes",
+        "loads",
+        "serializes",
+        "validates",
+        "mints",
+        "delegates",
+        "trusts",
+        "variant-of",
+        "correlates",
+        "causes",
+        "other"
+      ],
+      "title": "Relation",
+      "type": "string"
+    },
+    "ReplayRule": {
+      "additionalProperties": false,
+      "properties": {
+        "hypothesis_id": {
+          "minLength": 1,
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "hypothesis_revision": {
+          "minimum": 1,
+          "title": "Hypothesis Revision",
+          "type": "integer"
+        },
+        "observation": {
+          "$ref": "#/$defs/DiscoveryObservation"
+        },
+        "probe_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Probe Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypothesis_id",
+        "hypothesis_revision",
+        "probe_digest",
+        "observation"
+      ],
+      "title": "ReplayRule",
+      "type": "object"
+    },
+    "SurfaceEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "edge_id": {
+          "minLength": 1,
+          "title": "Edge Id",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "hypothesis_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hypothesis Ids",
+          "type": "array"
+        },
+        "relation": {
+          "$ref": "#/$defs/Relation"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "edge_id",
+        "source",
+        "target",
+        "relation",
+        "confidence"
+      ],
+      "title": "SurfaceEdge",
+      "type": "object"
+    },
+    "SurfaceKind": {
+      "enum": [
+        "artifact",
+        "input",
+        "parser",
+        "interpreter",
+        "module",
+        "function",
+        "message",
+        "identity",
+        "service",
+        "state",
+        "control",
+        "evidence",
+        "other"
+      ],
+      "title": "SurfaceKind",
+      "type": "string"
+    },
+    "SurfaceNode": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Authority",
+          "type": "number"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/SurfaceKind"
+        },
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "title": "Node Id",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "node_id",
+        "kind",
+        "label",
+        "confidence"
+      ],
+      "title": "SurfaceNode",
+      "type": "object"
+    },
+    "TargetIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "additionalProperties": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "title": "Artifacts",
+          "type": "object"
+        },
+        "build_id": {
+          "minLength": 1,
+          "title": "Build Id",
+          "type": "string"
+        },
+        "environment_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Environment Fingerprint"
+        },
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "build_id"
+      ],
+      "title": "TargetIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapter_id": {
+      "minLength": 1,
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "modes": {
+      "items": {
+        "$ref": "#/$defs/ExecutionMode"
+      },
+      "title": "Modes",
+      "type": "array"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/ReplayRule"
+      },
+      "minItems": 1,
+      "title": "Rules",
+      "type": "array"
+    },
+    "target": {
+      "$ref": "#/$defs/TargetIdentity"
+    },
+    "transcript_id": {
+      "minLength": 1,
+      "title": "Transcript Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "transcript_id",
+    "adapter_id",
+    "target",
+    "rules"
+  ],
+  "title": "ReplayTranscript",
+  "type": "object"
+}

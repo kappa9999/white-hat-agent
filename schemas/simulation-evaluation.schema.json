@@ -1,0 +1,160 @@
+{
+  "$defs": {
+    "DiscoveryMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_count": {
+          "minimum": 0,
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "causal_evidence_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Causal Evidence Ratio",
+          "type": "number"
+        },
+        "evidence_count": {
+          "minimum": 0,
+          "title": "Evidence Count",
+          "type": "integer"
+        },
+        "evidence_per_cost": {
+          "minimum": 0,
+          "title": "Evidence Per Cost",
+          "type": "number"
+        },
+        "expansion_count": {
+          "minimum": 0,
+          "title": "Expansion Count",
+          "type": "integer"
+        },
+        "family_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Family Coverage",
+          "type": "number"
+        },
+        "graph_edge_count": {
+          "minimum": 0,
+          "title": "Graph Edge Count",
+          "type": "integer"
+        },
+        "graph_node_count": {
+          "minimum": 0,
+          "title": "Graph Node Count",
+          "type": "integer"
+        },
+        "hypothesis_count": {
+          "minimum": 0,
+          "title": "Hypothesis Count",
+          "type": "integer"
+        },
+        "progress_per_cost": {
+          "minimum": 0,
+          "title": "Progress Per Cost",
+          "type": "number"
+        },
+        "refuted_count": {
+          "minimum": 0,
+          "title": "Refuted Count",
+          "type": "integer"
+        },
+        "supported_count": {
+          "minimum": 0,
+          "title": "Supported Count",
+          "type": "integer"
+        },
+        "supported_per_cost": {
+          "minimum": 0,
+          "title": "Supported Per Cost",
+          "type": "number"
+        },
+        "terminal_retry_violations": {
+          "minimum": 0,
+          "title": "Terminal Retry Violations",
+          "type": "integer"
+        },
+        "total_progress": {
+          "minimum": 0,
+          "title": "Total Progress",
+          "type": "number"
+        },
+        "used_cost_units": {
+          "minimum": 0,
+          "title": "Used Cost Units",
+          "type": "number"
+        }
+      },
+      "required": [
+        "attempt_count",
+        "expansion_count",
+        "hypothesis_count",
+        "supported_count",
+        "refuted_count",
+        "evidence_count",
+        "graph_node_count",
+        "graph_edge_count",
+        "used_cost_units",
+        "total_progress",
+        "progress_per_cost",
+        "supported_per_cost",
+        "evidence_per_cost",
+        "family_coverage",
+        "causal_evidence_ratio",
+        "terminal_retry_violations"
+      ],
+      "title": "DiscoveryMetrics",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "completed": {
+      "title": "Completed",
+      "type": "boolean"
+    },
+    "expansion_yield": {
+      "minimum": 0,
+      "title": "Expansion Yield",
+      "type": "number"
+    },
+    "improvement_targets": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Improvement Targets",
+      "type": "array"
+    },
+    "metrics": {
+      "$ref": "#/$defs/DiscoveryMetrics"
+    },
+    "plateau_recovery_plans": {
+      "minimum": 0,
+      "title": "Plateau Recovery Plans",
+      "type": "integer"
+    },
+    "score": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Score",
+      "type": "number"
+    },
+    "strengths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Strengths",
+      "type": "array"
+    }
+  },
+  "required": [
+    "score",
+    "completed",
+    "plateau_recovery_plans",
+    "expansion_yield",
+    "metrics"
+  ],
+  "title": "SimulationEvaluation",
+  "type": "object"
+}

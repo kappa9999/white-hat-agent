@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "TargetKind": {
+      "enum": [
+        "domain",
+        "url",
+        "ip",
+        "cidr",
+        "repository",
+        "package",
+        "mobile-app",
+        "binary",
+        "cloud-account",
+        "api",
+        "generic"
+      ],
+      "title": "TargetKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action_tags": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Action Tags",
+      "type": "array"
+    },
+    "capabilities": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "concurrency": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Concurrency",
+      "type": "integer"
+    },
+    "estimated_cost_units": {
+      "default": 0.0,
+      "minimum": 0,
+      "title": "Estimated Cost Units",
+      "type": "number"
+    },
+    "estimated_requests": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Estimated Requests",
+      "type": "integer"
+    },
+    "execution_class": {
+      "$ref": "#/$defs/ExecutionClass"
+    },
+    "intent_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Intent Id",
+      "type": "string"
+    },
+    "playbook_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Playbook Digest",
+      "type": "string"
+    },
+    "playbook_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Playbook Id",
+      "type": "string"
+    },
+    "playbook_version": {
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "title": "Playbook Version",
+      "type": "string"
+    },
+    "proposed_at": {
+      "format": "date-time",
+      "title": "Proposed At",
+      "type": "string"
+    },
+    "scope_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Scope Id",
+      "type": "string"
+    },
+    "side_effects": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Side Effects",
+      "type": "array"
+    },
+    "target": {
+      "minLength": 1,
+      "title": "Target",
+      "type": "string"
+    },
+    "target_kind": {
+      "$ref": "#/$defs/TargetKind"
+    }
+  },
+  "required": [
+    "intent_id",
+    "scope_id",
+    "target_kind",
+    "target",
+    "playbook_id",
+    "playbook_version",
+    "playbook_digest",
+    "execution_class"
+  ],
+  "title": "ProbeIntent",
+  "type": "object"
+}

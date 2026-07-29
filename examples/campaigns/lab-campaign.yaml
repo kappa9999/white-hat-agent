@@ -1,0 +1,67 @@
+schema_version: "1.0"
+campaign_id: example-lab-campaign
+name: Example HTTP evidence pipeline
+scope:
+  schema_version: "1.0"
+  scope_id: example-lab-scope
+  program_kind: lab
+  program_name: Example reserved-domain fixture
+  program_url: https://example.test/security
+  rules_url: https://example.test/security/scope
+  rules_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  authorization_reference: Reserved .test fixture; no network adapter is invoked by this example.
+  valid_from: 2026-07-29T00:00:00Z
+  valid_until: 2030-07-29T00:00:00Z
+  targets:
+    - rule_id: example-api
+      kind: domain
+      pattern: api.example.test
+      in_scope: true
+      environment: synthetic
+      notes: [Reserved test identity.]
+    - rule_id: excluded-admin
+      kind: domain
+      pattern: admin.example.test
+      in_scope: false
+      environment: synthetic
+      notes: [Demonstrates exclusion precedence.]
+  allowed_execution_classes: [analysis, read-only, controlled-active]
+  allowed_capabilities: [http.request, http.capture, data.diff, evidence.write]
+  prohibited_capabilities: [account.delete]
+  prohibited_action_tags: [denial-of-service]
+  rate_limits:
+    requests_per_second: 1.0
+    burst: 2
+    max_requests_per_task: 10
+    max_concurrency: 1
+  data_handling: [Synthetic fixture data only.]
+  disclosure:
+    channel: local-fixture-report
+    encryption_required: false
+    public_disclosure_allowed: false
+    instructions: [Do not interpret this fixture as a real public program.]
+  captured_at: 2026-07-29T12:00:00Z
+objective:
+  statement: Exercise scope, queue, lease, evidence, and learning state without external I/O.
+  success_criteria: [One compatible agent can lease the exact deduplicated fixture task.]
+  desired_artifacts: [finding/verified]
+  priority_domains: [web, api]
+corpus_manifest_digest: 21e9967cb0de7fbbd04741ef6604a628c927564778045123f4cf92639b10496c
+selected_playbooks: [http-response-surface-map]
+playbook_contracts:
+  - playbook_id: http-response-surface-map
+    version: 1.0.0
+    digest: a6a62e1a4ee15c230ee5f5a2649efcfe86a6a1b30e2b611d2dc3ed065c35b2e9
+    review_state: validated
+    minimum_execution_class: controlled-active
+    capabilities: [data.diff, evidence.write, http.capture, http.request]
+    action_tags: [active-probing]
+    side_effects: []
+    minimum_request_budget: 4
+budget:
+  max_tasks: 10
+  max_cost_units: 10.0
+  max_findings: 5
+  max_wall_seconds: 3600
+  max_attempts_per_task: 2
+state: draft

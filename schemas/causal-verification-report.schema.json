@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "CausalVerdict": {
+      "enum": [
+        "confirmed",
+        "supported",
+        "alternate-finding",
+        "inconclusive",
+        "refuted"
+      ],
+      "title": "CausalVerdict",
+      "type": "string"
+    },
+    "ProofTier": {
+      "enum": [
+        "signal",
+        "reproduced",
+        "causal",
+        "differential",
+        "regression-closed"
+      ],
+      "title": "ProofTier",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "failed_checks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failed Checks",
+      "type": "array"
+    },
+    "hypothesis_id": {
+      "title": "Hypothesis Id",
+      "type": "string"
+    },
+    "next_experiments": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Next Experiments",
+      "type": "array"
+    },
+    "proof_tier": {
+      "$ref": "#/$defs/ProofTier"
+    },
+    "report_id": {
+      "title": "Report Id",
+      "type": "string"
+    },
+    "satisfied_checks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Satisfied Checks",
+      "type": "array"
+    },
+    "verdict": {
+      "$ref": "#/$defs/CausalVerdict"
+    },
+    "verification_id": {
+      "title": "Verification Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "report_id",
+    "verification_id",
+    "hypothesis_id",
+    "verdict",
+    "proof_tier",
+    "confidence",
+    "satisfied_checks",
+    "failed_checks",
+    "next_experiments"
+  ],
+  "title": "CausalVerificationReport",
+  "type": "object"
+}

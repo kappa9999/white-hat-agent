@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "white-hat-agent"
+version = "0.1.0"
+description = "Model-neutral cyber knowledge, orchestration, discovery, and MCP application layer"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = [
+  "application-security",
+  "bug-bounty",
+  "cybersecurity",
+  "mcp",
+  "multi-agent",
+  "reverse-engineering",
+  "vulnerability-research",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
+dependencies = [
+  "fastmcp>=3.0,<4",
+  "pydantic>=2.11,<3",
+  "pyyaml>=6.0.2,<7",
+]
+
+[project.urls]
+Homepage = "https://github.com/kappa9999/white-hat-agent"
+Documentation = "https://github.com/kappa9999/white-hat-agent/tree/main/docs"
+Issues = "https://github.com/kappa9999/white-hat-agent/issues"
+Repository = "https://github.com/kappa9999/white-hat-agent.git"
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.3",
+  "jsonschema>=4.23",
+  "pytest>=8.3",
+  "pytest-asyncio>=1.1",
+  "pytest-cov>=6",
+  "ruff>=0.11",
+]
+
+[project.scripts]
+wha = "white_hat_agent.cli:main"
+white-hat-agent = "white_hat_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+white_hat_agent = ["py.typed", "builtin_capabilities/*.yaml", "builtin_corpus/**/*.yaml"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

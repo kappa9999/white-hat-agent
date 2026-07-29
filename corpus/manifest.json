@@ -1,0 +1,146 @@
+{
+  "corpus_version": "sha256:9e4c8c641db47191",
+  "entries": [
+    {
+      "capabilities": [
+        "evidence.capture",
+        "experiment.intervene",
+        "experiment.replay",
+        "finding.write",
+        "trace.capture"
+      ],
+      "consumes": [
+        "finding/candidate"
+      ],
+      "digest": "23fe1171c9d14e8230850d45d4da2914805f14b540746dbc9afb306b81c28045",
+      "domains": [
+        "cross-domain",
+        "verification"
+      ],
+      "playbook_id": "causal-differential-verification",
+      "provides": [
+        "finding/verified",
+        "evidence/causal-report"
+      ],
+      "relative_path": "cross-domain/causal-verification/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Separate visible effect, intended path, candidate primitive, alternate paths, and remediation closure.",
+      "tags": [
+        "causal",
+        "differential",
+        "reproduction",
+        "evidence"
+      ],
+      "title": "Verify a candidate finding through causal and differential evidence",
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "data.diff",
+        "evidence.write",
+        "http.capture",
+        "http.request"
+      ],
+      "consumes": [
+        "target/context"
+      ],
+      "digest": "a6a62e1a4ee15c230ee5f5a2649efcfe86a6a1b30e2b611d2dc3ed065c35b2e9",
+      "domains": [
+        "web",
+        "api"
+      ],
+      "playbook_id": "http-response-surface-map",
+      "provides": [
+        "evidence/http-baseline",
+        "surface/http",
+        "finding/candidate"
+      ],
+      "relative_path": "web/http-observation/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Establish a baseline, vary one request dimension at a time, and preserve response-level evidence.",
+      "tags": [
+        "http",
+        "differential",
+        "surface-mapping"
+      ],
+      "title": "Map an HTTP response surface with bounded differentials",
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "artifact.hash",
+        "graph.reason",
+        "hypothesis.generate",
+        "mobile.runtime-observe",
+        "mobile.static-inspect",
+        "trace.capture"
+      ],
+      "consumes": [
+        "target/context",
+        "artifact/mobile-build"
+      ],
+      "digest": "39975b72ec055a7d63adf96301189ffb574b4b15cf1bfdecb9dfe48599908189",
+      "domains": [
+        "mobile",
+        "reverse-engineering",
+        "runtime"
+      ],
+      "playbook_id": "mobile-runtime-boundary-map",
+      "provides": [
+        "surface/runtime-boundaries",
+        "evidence/runtime-trace",
+        "finding/candidate"
+      ],
+      "relative_path": "mobile/runtime-boundary-mapping/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Correlate static entry points with minimal runtime observations and exact build identity.",
+      "tags": [
+        "android",
+        "ios",
+        "instrumentation",
+        "trust-boundary"
+      ],
+      "title": "Map a mobile application's runtime trust boundaries",
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "artifact.hash",
+        "artifact.inspect",
+        "binary.diff",
+        "code.search",
+        "experiment.design",
+        "graph.reason"
+      ],
+      "consumes": [
+        "artifact/vulnerable-build",
+        "artifact/fixed-build"
+      ],
+      "digest": "d8d9f15f38c5ac498cf1b1723327c81309d3c5e6088bb536587056442eac6711",
+      "domains": [
+        "binary",
+        "reverse-engineering",
+        "variant-analysis"
+      ],
+      "playbook_id": "patch-diff-hypothesis-seeding",
+      "provides": [
+        "surface/changed-boundaries",
+        "hypothesis/variant",
+        "finding/candidate"
+      ],
+      "relative_path": "binary/patch-diff-triage/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Bind exact artifact identities, isolate semantic changes, and rank changed trust boundaries for validation.",
+      "tags": [
+        "patch-diff",
+        "causal",
+        "hypothesis-generation"
+      ],
+      "title": "Seed vulnerability hypotheses from a vulnerable and fixed artifact pair",
+      "version": "1.0.0"
+    }
+  ],
+  "generated_at": "2026-07-29T12:00:00Z",
+  "manifest_digest": "21e9967cb0de7fbbd04741ef6604a628c927564778045123f4cf92639b10496c",
+  "schema_version": "1.0"
+}

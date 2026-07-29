@@ -1,0 +1,240 @@
+{
+  "adapter_id": "fixture-replay",
+  "capabilities": [
+    "artifact.read"
+  ],
+  "modes": [
+    "offline"
+  ],
+  "rules": [
+    {
+      "hypothesis_id": "h-external-reference",
+      "hypothesis_revision": 1,
+      "observation": {
+        "adjacent_hypotheses": [],
+        "conclusive": true,
+        "cost_units": 1.0,
+        "hypothesis_id": "h-external-reference",
+        "hypothesis_revision": 1,
+        "new_edges": [],
+        "new_evidence": [
+          {
+            "captured_at": "2026-01-01T12:00:01Z",
+            "confidence": 0.96,
+            "content_sha256": "aad5fab7379b1fc634eb4f99622bf07825da26c1bb029881cd1e680ea59452c5",
+            "evidence_id": "ev-external-negative",
+            "kind": "static",
+            "source_ref": "fixture://bundle/parser/reference-walk",
+            "summary": "Complete reference walk contains no external resolver"
+          }
+        ],
+        "new_nodes": [],
+        "observation_id": "obs-external-negative",
+        "observed_at": "2026-01-01T12:00:01Z",
+        "outcome": "negative",
+        "progress_delta": 0.02,
+        "started_at": "2026-01-01T12:00:00Z",
+        "summary": "No resolver path was reachable; the exact external-reference hypothesis is refuted"
+      },
+      "probe_digest": "3334b274011f8a512b2f3a5db7999f762be666ebec6f66980567e3c6d27924e1"
+    },
+    {
+      "hypothesis_id": "h-template-expression",
+      "hypothesis_revision": 1,
+      "observation": {
+        "adjacent_hypotheses": [
+          {
+            "anchor_node_ids": [
+              "n-evaluator"
+            ],
+            "attempt_limit": 3,
+            "blockers": [],
+            "dependency_ids": [
+              "h-template-expression"
+            ],
+            "evidence_ids": [
+              "ev-template-trace"
+            ],
+            "family": "forensics",
+            "hypothesis_id": "h-template-causal-differential",
+            "measures": {
+              "blast_radius": 0.02,
+              "causal_verifiability": 1.0,
+              "cost": 0.08,
+              "evidence_strength": 0.86,
+              "impact": 0.9,
+              "information_gain": 0.92,
+              "novelty": 0.74,
+              "objective_alignment": 0.9,
+              "reachability": 0.94,
+              "redundancy": 0.02,
+              "transferability": 0.82
+            },
+            "probe": {
+              "action": "differential-template-evaluator",
+              "adapter_id": "fixture-replay",
+              "cost_units": 1.0,
+              "expected_observations": [
+                "the effect disappears only when evaluator dispatch is neutralized"
+              ],
+              "falsifiers": [
+                "the effect persists when evaluator dispatch is removed"
+              ],
+              "max_seconds": 60,
+              "max_steps": 10,
+              "mode": "offline",
+              "mutation_level": "none",
+              "parameters": {
+                "fixture": "active-data-pipeline"
+              },
+              "required_capabilities": [
+                "artifact.read"
+              ]
+            },
+            "revision": 1,
+            "statement": "Expression evaluation is the necessary cause of the observed active-data effect",
+            "status": "proposed",
+            "target_node_ids": [
+              "n-bundle"
+            ],
+            "title": "Template evaluator causal differential"
+          }
+        ],
+        "conclusive": true,
+        "cost_units": 1.0,
+        "hypothesis_id": "h-template-expression",
+        "hypothesis_revision": 1,
+        "new_edges": [
+          {
+            "confidence": 0.94,
+            "edge_id": "edge-parser-evaluator",
+            "evidence_ids": [
+              "ev-template-trace"
+            ],
+            "hypothesis_ids": [
+              "h-template-expression"
+            ],
+            "relation": "invokes",
+            "source": "n-parser",
+            "target": "n-evaluator"
+          }
+        ],
+        "new_evidence": [
+          {
+            "captured_at": "2026-01-01T12:00:03Z",
+            "confidence": 0.94,
+            "content_sha256": "3d5a6d5a7817ae56e77b765faa5fd77681ea53dac71078f719da6aed6e22f8fd",
+            "evidence_id": "ev-template-trace",
+            "kind": "trace",
+            "source_ref": "fixture://trace/parser-to-evaluator",
+            "summary": "The field reaches evaluator dispatch during bundle load"
+          }
+        ],
+        "new_nodes": [
+          {
+            "authority": 0.72,
+            "confidence": 0.94,
+            "evidence_ids": [
+              "ev-template-trace"
+            ],
+            "kind": "interpreter",
+            "label": "template evaluator",
+            "node_id": "n-evaluator",
+            "tags": [
+              "active-data-sink"
+            ]
+          }
+        ],
+        "observation_id": "obs-template-supported",
+        "observed_at": "2026-01-01T12:00:03Z",
+        "outcome": "succeeded",
+        "progress_delta": 0.45,
+        "started_at": "2026-01-01T12:00:02Z",
+        "summary": "A trace ties parsing of the field to evaluator dispatch; a causal differential is now testable"
+      },
+      "probe_digest": "6443e1259ac1648576f949ab11458c584480e9001b4205ec03d9b1b8ec0bc1cd"
+    },
+    {
+      "hypothesis_id": "h-template-causal-differential",
+      "hypothesis_revision": 1,
+      "observation": {
+        "adjacent_hypotheses": [],
+        "conclusive": true,
+        "cost_units": 1.0,
+        "hypothesis_id": "h-template-causal-differential",
+        "hypothesis_revision": 1,
+        "new_edges": [],
+        "new_evidence": [
+          {
+            "captured_at": "2026-01-01T12:00:05Z",
+            "confidence": 0.99,
+            "content_sha256": "5cd12a336ad957520c396328fa8fcb4ee29ba4ac79489715e11701b67aa7b19c",
+            "evidence_id": "ev-template-differential",
+            "kind": "differential",
+            "source_ref": "fixture://differential/original-vs-neutralized",
+            "summary": "Matched-run differential isolates evaluator dispatch as necessary"
+          }
+        ],
+        "new_nodes": [],
+        "observation_id": "obs-template-causal-confirmed",
+        "observed_at": "2026-01-01T12:00:05Z",
+        "outcome": "succeeded",
+        "progress_delta": 0.65,
+        "started_at": "2026-01-01T12:00:04Z",
+        "summary": "The effect reproduces on the original and disappears when only evaluator dispatch is neutralized"
+      },
+      "probe_digest": "6e1899773e5eb5f3729bc2290c901f7e7861e9c0d83632a44fd8e0d88b2ee0ac"
+    },
+    {
+      "hypothesis_id": "h-sibling-variant",
+      "hypothesis_revision": 1,
+      "observation": {
+        "adjacent_hypotheses": [],
+        "conclusive": true,
+        "cost_units": 1.0,
+        "hypothesis_id": "h-sibling-variant",
+        "hypothesis_revision": 1,
+        "new_edges": [],
+        "new_evidence": [],
+        "new_nodes": [],
+        "observation_id": "obs-sibling-negative",
+        "observed_at": "2026-01-01T12:00:07Z",
+        "outcome": "negative",
+        "progress_delta": 0.02,
+        "started_at": "2026-01-01T12:00:06Z",
+        "summary": "The sibling parser does not deserialize the active field"
+      },
+      "probe_digest": "1f1aa195b4e2b007d08dccec39cb52782e027702dfb6d5c83f1be89c99c42ea8"
+    },
+    {
+      "hypothesis_id": "h-envelope-offset",
+      "hypothesis_revision": 1,
+      "observation": {
+        "adjacent_hypotheses": [],
+        "conclusive": true,
+        "cost_units": 1.0,
+        "hypothesis_id": "h-envelope-offset",
+        "hypothesis_revision": 1,
+        "new_edges": [],
+        "new_evidence": [],
+        "new_nodes": [],
+        "observation_id": "obs-envelope-negative",
+        "observed_at": "2026-01-01T12:00:09Z",
+        "outcome": "negative",
+        "progress_delta": 0.01,
+        "started_at": "2026-01-01T12:00:08Z",
+        "summary": "All envelope offsets resolve to canonical field boundaries"
+      },
+      "probe_digest": "00426c0aac772e86f300d17e2ed82f9a94be74c5ce40f9b0e7f860cac01ca38c"
+    }
+  ],
+  "target": {
+    "artifacts": {
+      "bundle.bin": "a447824121f1d19899354e8c62c226c9e47c5eac022d4dedfdc3033b900caa1b"
+    },
+    "build_id": "fixture-build-1",
+    "environment_fingerprint": "b8ab18a9d189e20572529c2f7ce1b9198a70086112b0ba0ec4a6f48a446ef20b",
+    "target_id": "synthetic-active-data-pipeline"
+  },
+  "transcript_id": "transcript-active-data-001"
+}

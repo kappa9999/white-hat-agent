@@ -1,0 +1,19 @@
+opportunity_id: example-public-program
+program_kind: custom
+title: Example public program fixture
+program_url: https://example.test/security
+scope_reference: https://example.test/security/scope
+scope_snapshot_digest: "2222222222222222222222222222222222222222222222222222222222222222"
+automation_permitted: true
+target_kinds: [url, api]
+domains: [web, api]
+required_capabilities: [http.request, http.capture]
+allowed_execution_classes: [controlled-active]
+reward_hint: Synthetic fixture; no real reward.
+strategic_priority: 0.5
+state: discovered
+discovered_at: 2026-07-29T12:00:00Z
+last_verified_at: 2026-07-29T12:00:00Z
+expires_at: 2030-07-29T12:00:00Z
+metadata:
+  fixture: true

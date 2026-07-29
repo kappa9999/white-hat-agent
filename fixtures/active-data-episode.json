@@ -1,0 +1,317 @@
+{
+  "attempts": [],
+  "budget": {
+    "max_attempts": 12,
+    "max_cost_units": 12.0,
+    "max_iterations": 12,
+    "used_attempts": 0,
+    "used_cost_units": 0.0,
+    "used_iterations": 0
+  },
+  "created_at": "2026-01-01T12:00:00Z",
+  "episode_id": "episode-active-data-001",
+  "evidence": [],
+  "expansions": [],
+  "graph": {
+    "edges": [
+      {
+        "confidence": 0.75,
+        "edge_id": "edge-input-parser",
+        "evidence_ids": [],
+        "hypothesis_ids": [],
+        "relation": "flows-to",
+        "source": "n-input",
+        "target": "n-parser"
+      }
+    ],
+    "nodes": [
+      {
+        "authority": 0.1,
+        "confidence": 1.0,
+        "evidence_ids": [],
+        "kind": "artifact",
+        "label": "serialized analysis bundle",
+        "node_id": "n-bundle",
+        "tags": [
+          "fixture"
+        ]
+      },
+      {
+        "authority": 0.2,
+        "confidence": 0.9,
+        "evidence_ids": [],
+        "kind": "input",
+        "label": "embedded active-data field",
+        "node_id": "n-input",
+        "tags": [
+          "attacker-influenced"
+        ]
+      },
+      {
+        "authority": 0.5,
+        "confidence": 0.8,
+        "evidence_ids": [],
+        "kind": "parser",
+        "label": "bundle parser",
+        "node_id": "n-parser",
+        "tags": []
+      }
+    ],
+    "revision": 1
+  },
+  "hypotheses": [
+    {
+      "anchor_node_ids": [
+        "n-input",
+        "n-parser"
+      ],
+      "attempt_limit": 3,
+      "blockers": [],
+      "dependency_ids": [],
+      "evidence_ids": [],
+      "family": "active-data",
+      "hypothesis_id": "h-external-reference",
+      "measures": {
+        "blast_radius": 0.02,
+        "causal_verifiability": 0.88,
+        "cost": 0.1,
+        "evidence_strength": 0.66,
+        "impact": 0.92,
+        "information_gain": 0.9,
+        "novelty": 0.82,
+        "objective_alignment": 0.9,
+        "reachability": 0.9,
+        "redundancy": 0.03,
+        "transferability": 0.65
+      },
+      "probe": {
+        "action": "inspect-external-reference",
+        "adapter_id": "fixture-replay",
+        "cost_units": 1.0,
+        "expected_observations": [
+          "a resolver invocation tied to the embedded field"
+        ],
+        "falsifiers": [
+          "no resolver path is reachable from the parser"
+        ],
+        "max_seconds": 60,
+        "max_steps": 10,
+        "mode": "offline",
+        "mutation_level": "none",
+        "parameters": {
+          "fixture": "active-data-pipeline"
+        },
+        "required_capabilities": [
+          "artifact.read"
+        ]
+      },
+      "revision": 1,
+      "statement": "The parser resolves an embedded external reference while opening the bundle",
+      "status": "proposed",
+      "target_node_ids": [
+        "n-bundle"
+      ],
+      "title": "External reference resolution"
+    },
+    {
+      "anchor_node_ids": [
+        "n-input",
+        "n-parser"
+      ],
+      "attempt_limit": 3,
+      "blockers": [],
+      "dependency_ids": [],
+      "evidence_ids": [],
+      "family": "active-data",
+      "hypothesis_id": "h-template-expression",
+      "measures": {
+        "blast_radius": 0.02,
+        "causal_verifiability": 0.94,
+        "cost": 0.1,
+        "evidence_strength": 0.7,
+        "impact": 0.88,
+        "information_gain": 0.87,
+        "novelty": 0.76,
+        "objective_alignment": 0.9,
+        "reachability": 0.86,
+        "redundancy": 0.1,
+        "transferability": 0.65
+      },
+      "probe": {
+        "action": "trace-template-expression",
+        "adapter_id": "fixture-replay",
+        "cost_units": 1.0,
+        "expected_observations": [
+          "a parser-correlated evaluator trace"
+        ],
+        "falsifiers": [
+          "the field remains inert data through the complete load path"
+        ],
+        "max_seconds": 60,
+        "max_steps": 10,
+        "mode": "offline",
+        "mutation_level": "none",
+        "parameters": {
+          "fixture": "active-data-pipeline"
+        },
+        "required_capabilities": [
+          "artifact.read"
+        ]
+      },
+      "revision": 1,
+      "statement": "The active-data field crosses from parsing into expression evaluation",
+      "status": "proposed",
+      "target_node_ids": [
+        "n-bundle"
+      ],
+      "title": "Template expression evaluation"
+    },
+    {
+      "anchor_node_ids": [
+        "n-parser"
+      ],
+      "attempt_limit": 3,
+      "blockers": [],
+      "dependency_ids": [],
+      "evidence_ids": [],
+      "family": "variant-analysis",
+      "hypothesis_id": "h-sibling-variant",
+      "measures": {
+        "blast_radius": 0.02,
+        "causal_verifiability": 0.82,
+        "cost": 0.16,
+        "evidence_strength": 0.48,
+        "impact": 0.72,
+        "information_gain": 0.8,
+        "novelty": 0.96,
+        "objective_alignment": 0.9,
+        "reachability": 0.6,
+        "redundancy": 0.1,
+        "transferability": 0.65
+      },
+      "probe": {
+        "action": "compare-sibling-parser",
+        "adapter_id": "fixture-replay",
+        "cost_units": 1.0,
+        "expected_observations": [
+          "a structurally similar active-data sink"
+        ],
+        "falsifiers": [
+          "the sibling parser never handles the field"
+        ],
+        "max_seconds": 60,
+        "max_steps": 10,
+        "mode": "offline",
+        "mutation_level": "none",
+        "parameters": {
+          "fixture": "active-data-pipeline"
+        },
+        "required_capabilities": [
+          "artifact.read"
+        ]
+      },
+      "revision": 1,
+      "statement": "A sibling bundle parser preserves the same active-data behavior",
+      "status": "proposed",
+      "target_node_ids": [
+        "n-bundle"
+      ],
+      "title": "Sibling parser variant"
+    },
+    {
+      "anchor_node_ids": [
+        "n-input"
+      ],
+      "attempt_limit": 3,
+      "blockers": [],
+      "dependency_ids": [],
+      "evidence_ids": [],
+      "family": "protocol",
+      "hypothesis_id": "h-envelope-offset",
+      "measures": {
+        "blast_radius": 0.02,
+        "causal_verifiability": 0.68,
+        "cost": 0.2,
+        "evidence_strength": 0.4,
+        "impact": 0.66,
+        "information_gain": 0.74,
+        "novelty": 0.84,
+        "objective_alignment": 0.9,
+        "reachability": 0.58,
+        "redundancy": 0.1,
+        "transferability": 0.65
+      },
+      "probe": {
+        "action": "analyze-envelope-offsets",
+        "adapter_id": "fixture-replay",
+        "cost_units": 1.0,
+        "expected_observations": [
+          "an offset discrepancy reaching the active field"
+        ],
+        "falsifiers": [
+          "all envelope offsets resolve to canonical field boundaries"
+        ],
+        "max_seconds": 60,
+        "max_steps": 10,
+        "mode": "offline",
+        "mutation_level": "none",
+        "parameters": {
+          "fixture": "active-data-pipeline"
+        },
+        "required_capabilities": [
+          "artifact.read"
+        ]
+      },
+      "revision": 1,
+      "statement": "A message-envelope offset redirects parsing to an unintended active field",
+      "status": "proposed",
+      "target_node_ids": [
+        "n-parser"
+      ],
+      "title": "Envelope offset confusion"
+    }
+  ],
+  "objective": {
+    "allowed_capabilities": [
+      "artifact.read"
+    ],
+    "allowed_modes": [
+      "offline"
+    ],
+    "goal_weights": {
+      "blast_radius": 0.8,
+      "causal_verifiability": 1.4,
+      "cost": 0.8,
+      "diversity_bonus": 0.8,
+      "evidence_strength": 1.2,
+      "impact": 1.0,
+      "information_gain": 1.2,
+      "novelty": 1.0,
+      "plateau_diversity_bonus": 2.0,
+      "reachability": 1.0,
+      "redundancy": 1.0,
+      "retry_penalty": 0.7,
+      "transferability": 0.7
+    },
+    "maximum_mutation_level": "none",
+    "minimum_alignment": 0.55,
+    "minimum_anchor_confidence": 0.25,
+    "objective_id": "discover-active-data-boundary",
+    "statement": "Identify and causally verify an unexpected active-data execution boundary",
+    "success_criteria": [
+      "observe the intended execution path",
+      "reproduce the effect",
+      "reject the same probe on a neutralized variant"
+    ],
+    "target": {
+      "artifacts": {
+        "bundle.bin": "a447824121f1d19899354e8c62c226c9e47c5eac022d4dedfdc3033b900caa1b"
+      },
+      "build_id": "fixture-build-1",
+      "environment_fingerprint": "b8ab18a9d189e20572529c2f7ce1b9198a70086112b0ba0ec4a6f48a446ef20b",
+      "target_id": "synthetic-active-data-pipeline"
+    }
+  },
+  "schema_version": "1.0",
+  "updated_at": "2026-01-01T12:00:00Z"
+}

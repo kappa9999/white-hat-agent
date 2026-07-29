@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "EvidenceKind": {
+      "enum": [
+        "artifact",
+        "static",
+        "runtime",
+        "protocol",
+        "differential",
+        "reproduction",
+        "intervention",
+        "trace",
+        "other"
+      ],
+      "title": "EvidenceKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "conclusive_negative": {
+      "default": false,
+      "title": "Conclusive Negative",
+      "type": "boolean"
+    },
+    "fixed_variant_rejects": {
+      "title": "Fixed Variant Rejects",
+      "type": "boolean"
+    },
+    "hypothesis_id": {
+      "title": "Hypothesis Id",
+      "type": "string"
+    },
+    "independent_evidence_families": {
+      "items": {
+        "$ref": "#/$defs/EvidenceKind"
+      },
+      "title": "Independent Evidence Families",
+      "type": "array"
+    },
+    "intended_path_observed": {
+      "title": "Intended Path Observed",
+      "type": "boolean"
+    },
+    "neutralization_removes_effect": {
+      "title": "Neutralization Removes Effect",
+      "type": "boolean"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "primitive_observed": {
+      "title": "Primitive Observed",
+      "type": "boolean"
+    },
+    "reproducible_runs": {
+      "minimum": 0,
+      "title": "Reproducible Runs",
+      "type": "integer"
+    },
+    "shortcuts_excluded": {
+      "title": "Shortcuts Excluded",
+      "type": "boolean"
+    },
+    "target_effect_observed": {
+      "title": "Target Effect Observed",
+      "type": "boolean"
+    },
+    "verification_id": {
+      "title": "Verification Id",
+      "type": "string"
+    },
+    "vulnerable_variant_succeeds": {
+      "title": "Vulnerable Variant Succeeds",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "verification_id",
+    "hypothesis_id",
+    "target_effect_observed",
+    "intended_path_observed",
+    "primitive_observed",
+    "vulnerable_variant_succeeds",
+    "fixed_variant_rejects",
+    "neutralization_removes_effect",
+    "shortcuts_excluded",
+    "reproducible_runs"
+  ],
+  "title": "CausalVerificationInput",
+  "type": "object"
+}

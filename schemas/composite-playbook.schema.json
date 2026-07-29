@@ -1,0 +1,276 @@
+{
+  "$defs": {
+    "ComposedStep": {
+      "additionalProperties": false,
+      "properties": {
+        "instruction": {
+          "title": "Instruction",
+          "type": "string"
+        },
+        "playbook_id": {
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "playbook_version": {
+          "title": "Playbook Version",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence",
+        "playbook_id",
+        "playbook_version",
+        "step_id",
+        "title",
+        "instruction",
+        "required_capabilities"
+      ],
+      "title": "ComposedStep",
+      "type": "object"
+    },
+    "CompositionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_review_states": {
+          "items": {
+            "$ref": "#/$defs/ReviewState"
+          },
+          "title": "Allowed Review States",
+          "type": "array"
+        },
+        "available_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Available Capabilities",
+          "type": "array"
+        },
+        "desired_artifacts": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Desired Artifacts",
+          "type": "array"
+        },
+        "domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Domains",
+          "type": "array"
+        },
+        "execution_ceiling": {
+          "$ref": "#/$defs/ExecutionClass",
+          "default": "read-only"
+        },
+        "initial_artifacts": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Initial Artifacts",
+          "type": "array"
+        },
+        "max_playbooks": {
+          "default": 8,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Playbooks",
+          "type": "integer"
+        },
+        "objective": {
+          "minLength": 1,
+          "title": "Objective",
+          "type": "string"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "target_kind": {
+          "minLength": 1,
+          "title": "Target Kind",
+          "type": "string"
+        },
+        "technologies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Technologies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "objective",
+        "target_kind",
+        "desired_artifacts"
+      ],
+      "title": "CompositionRequest",
+      "type": "object"
+    },
+    "CompositionSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "consumed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Consumed",
+          "type": "array"
+        },
+        "playbook_id": {
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "provided": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Provided",
+          "type": "array"
+        },
+        "rationale": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rationale",
+          "type": "array"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playbook_id",
+        "version",
+        "score",
+        "consumed",
+        "provided",
+        "rationale"
+      ],
+      "title": "CompositionSelection",
+      "type": "object"
+    },
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "ReviewState": {
+      "enum": [
+        "draft",
+        "proposed",
+        "reviewed",
+        "validated",
+        "deprecated"
+      ],
+      "title": "ReviewState",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "available_artifacts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available Artifacts",
+      "type": "array"
+    },
+    "complete": {
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "composition_id": {
+      "title": "Composition Id",
+      "type": "string"
+    },
+    "rationale": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rationale",
+      "type": "array"
+    },
+    "request": {
+      "$ref": "#/$defs/CompositionRequest"
+    },
+    "selected": {
+      "items": {
+        "$ref": "#/$defs/CompositionSelection"
+      },
+      "title": "Selected",
+      "type": "array"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/ComposedStep"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "unresolved_artifacts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Artifacts",
+      "type": "array"
+    },
+    "unused_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unused Capabilities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "composition_id",
+    "request",
+    "selected",
+    "steps",
+    "available_artifacts",
+    "unresolved_artifacts",
+    "unused_capabilities",
+    "complete",
+    "rationale"
+  ],
+  "title": "CompositePlaybook",
+  "type": "object"
+}

@@ -1,0 +1,938 @@
+{
+  "$defs": {
+    "Applicability": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "exclusions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclusions",
+          "type": "array"
+        },
+        "platforms": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "preconditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Preconditions",
+          "type": "array"
+        },
+        "target_kinds": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Target Kinds",
+          "type": "array"
+        },
+        "technologies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Technologies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "target_kinds"
+      ],
+      "title": "Applicability",
+      "type": "object"
+    },
+    "CompositionContract": {
+      "additionalProperties": false,
+      "properties": {
+        "compatible_after": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Compatible After",
+          "type": "array"
+        },
+        "compatible_before": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Compatible Before",
+          "type": "array"
+        },
+        "conflicts_with": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Conflicts With",
+          "type": "array"
+        },
+        "consumes": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Consumes",
+          "type": "array"
+        },
+        "provides": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Provides",
+          "type": "array"
+        }
+      },
+      "title": "CompositionContract",
+      "type": "object"
+    },
+    "EvidenceRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence_type": {
+          "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+          "title": "Evidence Type",
+          "type": "string"
+        },
+        "independent": {
+          "default": false,
+          "title": "Independent",
+          "type": "boolean"
+        },
+        "minimum_count": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Minimum Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "evidence_type",
+        "description"
+      ],
+      "title": "EvidenceRequirement",
+      "type": "object"
+    },
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "KnowledgeSubmission": {
+      "additionalProperties": false,
+      "properties": {
+        "contributor_handle": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contributor Handle"
+        },
+        "domain_hints": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Domain Hints",
+          "type": "array"
+        },
+        "original_language": {
+          "default": "und",
+          "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$|^und$",
+          "title": "Original Language",
+          "type": "string"
+        },
+        "original_text": {
+          "maxLength": 1000000,
+          "minLength": 1,
+          "title": "Original Text",
+          "type": "string"
+        },
+        "rights": {
+          "$ref": "#/$defs/RightsDeclaration"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "submission_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Submission Id",
+          "type": "string"
+        },
+        "submitted_at": {
+          "format": "date-time",
+          "title": "Submitted At",
+          "type": "string"
+        },
+        "title_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title Hint"
+        }
+      },
+      "required": [
+        "submission_id",
+        "original_text",
+        "rights"
+      ],
+      "title": "KnowledgeSubmission",
+      "type": "object"
+    },
+    "Playbook": {
+      "additionalProperties": false,
+      "properties": {
+        "applicability": {
+          "$ref": "#/$defs/Applicability"
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositionContract"
+        },
+        "evidence_requirements": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence Requirements",
+          "type": "array"
+        },
+        "failure_modes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Modes",
+          "type": "array"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/ValueSpec"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "metadata": {
+          "$ref": "#/$defs/PlaybookMetadata"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "#/$defs/ValueSpec"
+          },
+          "title": "Outputs",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/ScopeRequirements"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SourceReference"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/PlaybookStep"
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "submission_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Submission Id"
+        },
+        "taxonomies": {
+          "items": {
+            "$ref": "#/$defs/TaxonomyReference"
+          },
+          "title": "Taxonomies",
+          "type": "array"
+        },
+        "validation": {
+          "$ref": "#/$defs/ValidationRecord"
+        },
+        "variations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Variations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "metadata",
+        "applicability",
+        "scope",
+        "steps"
+      ],
+      "title": "Playbook",
+      "type": "object"
+    },
+    "PlaybookMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "contributors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contributors",
+          "type": "array"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "deprecated_by": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deprecated By"
+        },
+        "domains": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Domains",
+          "type": "array"
+        },
+        "maintainers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Maintainers",
+          "type": "array"
+        },
+        "original_languages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Original Languages",
+          "type": "array"
+        },
+        "playbook_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "review_state": {
+          "$ref": "#/$defs/ReviewState",
+          "default": "draft"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playbook_id",
+        "version",
+        "title",
+        "summary",
+        "domains",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "PlaybookMetadata",
+      "type": "object"
+    },
+    "PlaybookStep": {
+      "additionalProperties": false,
+      "properties": {
+        "action_template": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action Template"
+        },
+        "cleanup": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cleanup",
+          "type": "array"
+        },
+        "depends_on": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRequirement"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "failure_signals": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Failure Signals",
+          "type": "array"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/ValueSpec"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "instruction": {
+          "minLength": 1,
+          "title": "Instruction",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/StepKind"
+        },
+        "localized_instructions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Localized Instructions",
+          "type": "object"
+        },
+        "max_repetitions": {
+          "default": 1,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Repetitions",
+          "type": "integer"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "#/$defs/ValueSpec"
+          },
+          "title": "Outputs",
+          "type": "array"
+        },
+        "required_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "side_effects": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Side Effects",
+          "type": "array"
+        },
+        "step_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "success_signals": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Success Signals",
+          "type": "array"
+        },
+        "timeout_seconds": {
+          "default": 300,
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step_id",
+        "kind",
+        "title",
+        "instruction",
+        "success_signals",
+        "failure_signals"
+      ],
+      "title": "PlaybookStep",
+      "type": "object"
+    },
+    "ReviewState": {
+      "enum": [
+        "draft",
+        "proposed",
+        "reviewed",
+        "validated",
+        "deprecated"
+      ],
+      "title": "ReviewState",
+      "type": "string"
+    },
+    "RightsDeclaration": {
+      "enum": [
+        "original-contribution",
+        "permission-granted",
+        "compatible-source-license",
+        "public-domain"
+      ],
+      "title": "RightsDeclaration",
+      "type": "string"
+    },
+    "ScopeRequirements": {
+      "additionalProperties": false,
+      "properties": {
+        "action_tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Action Tags",
+          "type": "array"
+        },
+        "authorization_evidence_required": {
+          "default": true,
+          "title": "Authorization Evidence Required",
+          "type": "boolean"
+        },
+        "data_classes": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Data Classes",
+          "type": "array"
+        },
+        "minimum_execution_class": {
+          "$ref": "#/$defs/ExecutionClass"
+        },
+        "minimum_request_budget": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Minimum Request Budget",
+          "type": "integer"
+        },
+        "recommended_concurrency": {
+          "default": 1,
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Recommended Concurrency",
+          "type": "integer"
+        },
+        "requires_scope_manifest": {
+          "default": true,
+          "title": "Requires Scope Manifest",
+          "type": "boolean"
+        },
+        "requires_target_match": {
+          "default": true,
+          "title": "Requires Target Match",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "minimum_execution_class"
+      ],
+      "title": "ScopeRequirements",
+      "type": "object"
+    },
+    "SourceKind": {
+      "enum": [
+        "first-hand",
+        "publication",
+        "advisory",
+        "code",
+        "standard",
+        "dataset",
+        "other"
+      ],
+      "title": "SourceKind",
+      "type": "string"
+    },
+    "SourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "accessed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accessed At"
+        },
+        "authors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Authors",
+          "type": "array"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "kind": {
+          "$ref": "#/$defs/SourceKind"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "source_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "source_id",
+        "kind",
+        "title"
+      ],
+      "title": "SourceReference",
+      "type": "object"
+    },
+    "StepKind": {
+      "enum": [
+        "discover",
+        "observe",
+        "analyze",
+        "hypothesize",
+        "prepare",
+        "execute",
+        "verify",
+        "document",
+        "cleanup"
+      ],
+      "title": "StepKind",
+      "type": "string"
+    },
+    "TaxonomyReference": {
+      "additionalProperties": false,
+      "properties": {
+        "identifier": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Identifier",
+          "type": "string"
+        },
+        "relationship": {
+          "default": "related-to",
+          "title": "Relationship",
+          "type": "string"
+        },
+        "scheme": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Scheme",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "scheme",
+        "identifier"
+      ],
+      "title": "TaxonomyReference",
+      "type": "object"
+    },
+    "ValidationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "fixture_ids": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Fixture Ids",
+          "type": "array"
+        },
+        "known_limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Known Limitations",
+          "type": "array"
+        },
+        "last_validated_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Validated At"
+        },
+        "test_commands": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Test Commands",
+          "type": "array"
+        },
+        "validated_by": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Validated By",
+          "type": "array"
+        }
+      },
+      "title": "ValidationRecord",
+      "type": "object"
+    },
+    "ValueSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "examples": {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Examples",
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "secret": {
+          "default": false,
+          "title": "Secret",
+          "type": "boolean"
+        },
+        "semantic_type": {
+          "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+          "title": "Semantic Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "semantic_type",
+        "description"
+      ],
+      "title": "ValueSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "compiler_id": {
+      "title": "Compiler Id",
+      "type": "string"
+    },
+    "playbook": {
+      "$ref": "#/$defs/Playbook"
+    },
+    "submission": {
+      "$ref": "#/$defs/KnowledgeSubmission"
+    },
+    "unresolved_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Fields",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "compiler_id",
+    "submission",
+    "playbook"
+  ],
+  "title": "CompilationDraft",
+  "type": "object"
+}

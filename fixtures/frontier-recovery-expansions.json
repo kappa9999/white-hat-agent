@@ -1,0 +1,71 @@
+{
+  "batches": [
+    {
+      "base_episode_digest": "984815ec14e09f77ee22b018bac87edffed1e9f0a93ebdbb78ac2383afc7a588",
+      "episode_id": "episode-frontier-recovery-001",
+      "generated_at": "2026-01-01T12:00:01Z",
+      "generator_id": "fixture-frontier-generator",
+      "hypotheses": [
+        {
+          "anchor_node_ids": [
+            "n-parser"
+          ],
+          "attempt_limit": 3,
+          "blockers": [],
+          "dependency_ids": [],
+          "evidence_ids": [],
+          "family": "forensics",
+          "hypothesis_id": "h-parser-frontier",
+          "measures": {
+            "blast_radius": 0.02,
+            "causal_verifiability": 0.82,
+            "cost": 0.1,
+            "evidence_strength": 0.62,
+            "impact": 0.78,
+            "information_gain": 0.96,
+            "novelty": 0.92,
+            "objective_alignment": 0.9,
+            "reachability": 0.88,
+            "redundancy": 0.01,
+            "transferability": 0.65
+          },
+          "probe": {
+            "action": "map-parser-dispatch-frontier",
+            "adapter_id": "fixture-replay",
+            "cost_units": 1.0,
+            "expected_observations": [
+              "a previously unmapped parser dispatch boundary"
+            ],
+            "falsifiers": [
+              "the parser has no unmodeled outgoing dispatch"
+            ],
+            "max_seconds": 60,
+            "max_steps": 10,
+            "mode": "offline",
+            "mutation_level": "none",
+            "parameters": {
+              "fixture": "active-data-pipeline"
+            },
+            "required_capabilities": [
+              "artifact.read"
+            ]
+          },
+          "revision": 1,
+          "statement": "The highest-authority untested parser node dispatches into an unmodeled processing stage",
+          "status": "proposed",
+          "target_node_ids": [
+            "n-bundle"
+          ],
+          "title": "Unmapped parser dispatch frontier"
+        }
+      ],
+      "rationale": [
+        "the portfolio is empty",
+        "n-parser is the highest-confidence untested processing frontier"
+      ],
+      "trigger": "stalled"
+    }
+  ],
+  "generator_id": "fixture-frontier-generator",
+  "transcript_id": "expansions-frontier-recovery-001"
+}

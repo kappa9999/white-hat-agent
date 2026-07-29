@@ -1,0 +1,74 @@
+campaign_id: planned-http-campaign
+name: Planned HTTP differential verification
+scope:
+  schema_version: "1.0"
+  scope_id: example-planning-scope
+  program_kind: lab
+  program_name: Example reserved-domain planning fixture
+  program_url: https://example.test/security
+  rules_url: https://example.test/security/scope
+  rules_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+  authorization_reference: Reserved .test fixture; this plan performs no network operation.
+  valid_from: 2026-07-29T00:00:00Z
+  valid_until: 2030-07-29T00:00:00Z
+  targets:
+    - rule_id: example-api
+      kind: domain
+      pattern: api.example.test
+      in_scope: true
+      environment: synthetic
+      notes: [Reserved test identity used only for deterministic planning.]
+  allowed_execution_classes: [analysis, read-only, controlled-active, state-changing]
+  allowed_capabilities:
+    - http.request
+    - http.capture
+    - data.diff
+    - evidence.write
+    - experiment.replay
+    - evidence.capture
+    - trace.capture
+    - experiment.intervene
+    - finding.write
+  prohibited_capabilities: [account.delete]
+  prohibited_action_tags: [denial-of-service]
+  rate_limits:
+    requests_per_second: 1.0
+    burst: 2
+    max_requests_per_task: 20
+    max_concurrency: 1
+  data_handling: [Synthetic fixture data only.]
+  disclosure:
+    channel: local-fixture-report
+    encryption_required: false
+    public_disclosure_allowed: false
+    instructions: [Do not interpret this fixture as a real public program.]
+  captured_at: 2026-07-29T12:00:00Z
+objective:
+  statement: Map an HTTP surface and causally verify candidate mechanisms.
+  success_criteria: [Produce a finding with differential evidence.]
+  desired_artifacts: [finding/verified]
+  priority_domains: [web, api]
+targets:
+  - target_id: example-api
+    kind: url
+    value: https://api.example.test/v1
+    technologies: [http]
+    initial_artifacts: [target/context]
+available_capabilities:
+  - http.request
+  - http.capture
+  - data.diff
+  - evidence.write
+  - experiment.replay
+  - evidence.capture
+  - trace.capture
+  - experiment.intervene
+  - finding.write
+execution_ceiling: state-changing
+budget:
+  max_tasks: 10
+  max_cost_units: 20.0
+  max_findings: 5
+  max_wall_seconds: 3600
+  max_attempts_per_task: 2
+max_playbooks_per_target: 4

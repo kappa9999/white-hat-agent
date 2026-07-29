@@ -1,0 +1,404 @@
+{
+  "$defs": {
+    "ExecutionMode": {
+      "enum": [
+        "offline",
+        "sandbox",
+        "live-readonly",
+        "live-active"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "ExpansionTrigger": {
+      "enum": [
+        "stalled",
+        "plateau",
+        "frontier",
+        "adjacent",
+        "campaign-rollover"
+      ],
+      "title": "ExpansionTrigger",
+      "type": "string"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor_node_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Anchor Node Ids",
+          "type": "array"
+        },
+        "attempt_limit": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Attempt Limit",
+          "type": "integer"
+        },
+        "blockers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "dependency_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dependency Ids",
+          "type": "array"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "family": {
+          "$ref": "#/$defs/HypothesisFamily"
+        },
+        "hypothesis_id": {
+          "minLength": 1,
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "measures": {
+          "$ref": "#/$defs/HypothesisMeasures"
+        },
+        "probe": {
+          "$ref": "#/$defs/ProbeSpec"
+        },
+        "revision": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "statement": {
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/HypothesisStatus",
+          "default": "proposed"
+        },
+        "target_node_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Node Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypothesis_id",
+        "title",
+        "statement",
+        "family",
+        "anchor_node_ids",
+        "measures",
+        "probe"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "HypothesisExpansionBatch": {
+      "additionalProperties": false,
+      "properties": {
+        "base_episode_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Base Episode Digest",
+          "type": "string"
+        },
+        "episode_id": {
+          "minLength": 1,
+          "title": "Episode Id",
+          "type": "string"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        },
+        "generator_id": {
+          "minLength": 1,
+          "title": "Generator Id",
+          "type": "string"
+        },
+        "hypotheses": {
+          "items": {
+            "$ref": "#/$defs/Hypothesis"
+          },
+          "minItems": 1,
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "rationale": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Rationale",
+          "type": "array"
+        },
+        "trigger": {
+          "$ref": "#/$defs/ExpansionTrigger"
+        }
+      },
+      "required": [
+        "generator_id",
+        "episode_id",
+        "base_episode_digest",
+        "trigger",
+        "hypotheses",
+        "rationale",
+        "generated_at"
+      ],
+      "title": "HypothesisExpansionBatch",
+      "type": "object"
+    },
+    "HypothesisFamily": {
+      "enum": [
+        "active-data",
+        "variant-analysis",
+        "native-memory",
+        "managed-runtime",
+        "script-bridge",
+        "protocol",
+        "state-machine",
+        "authority",
+        "supply-chain",
+        "forensics",
+        "other"
+      ],
+      "title": "HypothesisFamily",
+      "type": "string"
+    },
+    "HypothesisMeasures": {
+      "additionalProperties": false,
+      "properties": {
+        "blast_radius": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Blast Radius",
+          "type": "number"
+        },
+        "causal_verifiability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Causal Verifiability",
+          "type": "number"
+        },
+        "cost": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Cost",
+          "type": "number"
+        },
+        "evidence_strength": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Evidence Strength",
+          "type": "number"
+        },
+        "impact": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Impact",
+          "type": "number"
+        },
+        "information_gain": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Information Gain",
+          "type": "number"
+        },
+        "novelty": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Novelty",
+          "type": "number"
+        },
+        "objective_alignment": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Objective Alignment",
+          "type": "number"
+        },
+        "reachability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Reachability",
+          "type": "number"
+        },
+        "redundancy": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Redundancy",
+          "type": "number"
+        },
+        "transferability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Transferability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "objective_alignment",
+        "impact",
+        "reachability",
+        "evidence_strength",
+        "information_gain",
+        "novelty",
+        "causal_verifiability",
+        "transferability",
+        "cost",
+        "blast_radius",
+        "redundancy"
+      ],
+      "title": "HypothesisMeasures",
+      "type": "object"
+    },
+    "HypothesisStatus": {
+      "enum": [
+        "proposed",
+        "testing",
+        "supported",
+        "refuted",
+        "inconclusive",
+        "blocked"
+      ],
+      "title": "HypothesisStatus",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "MutationLevel": {
+      "enum": [
+        "none",
+        "target-local",
+        "external-state"
+      ],
+      "title": "MutationLevel",
+      "type": "string"
+    },
+    "ProbeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "minLength": 1,
+          "title": "Action",
+          "type": "string"
+        },
+        "adapter_id": {
+          "minLength": 1,
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "cost_units": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Cost Units",
+          "type": "number"
+        },
+        "expected_observations": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Expected Observations",
+          "type": "array"
+        },
+        "falsifiers": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Falsifiers",
+          "type": "array"
+        },
+        "max_seconds": {
+          "default": 300,
+          "minimum": 1,
+          "title": "Max Seconds",
+          "type": "integer"
+        },
+        "max_steps": {
+          "default": 20,
+          "minimum": 1,
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "mode": {
+          "$ref": "#/$defs/ExecutionMode",
+          "default": "offline"
+        },
+        "mutation_level": {
+          "$ref": "#/$defs/MutationLevel",
+          "default": "none"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "action",
+        "expected_observations",
+        "falsifiers"
+      ],
+      "title": "ProbeSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "batches": {
+      "items": {
+        "$ref": "#/$defs/HypothesisExpansionBatch"
+      },
+      "minItems": 1,
+      "title": "Batches",
+      "type": "array"
+    },
+    "generator_id": {
+      "minLength": 1,
+      "title": "Generator Id",
+      "type": "string"
+    },
+    "transcript_id": {
+      "minLength": 1,
+      "title": "Transcript Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "transcript_id",
+    "generator_id",
+    "batches"
+  ],
+  "title": "ReplayExpansionTranscript",
+  "type": "object"
+}

@@ -1,0 +1,169 @@
+{
+  "$defs": {
+    "EvidenceDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "campaign_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence_type": {
+          "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+          "title": "Evidence Type",
+          "type": "string"
+        },
+        "producer": {
+          "minLength": 1,
+          "title": "Producer",
+          "type": "string"
+        },
+        "provenance": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Provenance",
+          "type": "object"
+        },
+        "redaction_state": {
+          "$ref": "#/$defs/RedactionState",
+          "default": "unreviewed"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/Sensitivity",
+          "default": "program-confidential"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "campaign_id",
+        "target",
+        "evidence_type",
+        "title",
+        "description",
+        "producer"
+      ],
+      "title": "EvidenceDescriptor",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "RedactionState": {
+      "enum": [
+        "unreviewed",
+        "sanitized",
+        "withheld"
+      ],
+      "title": "RedactionState",
+      "type": "string"
+    },
+    "Sensitivity": {
+      "enum": [
+        "public",
+        "program-confidential",
+        "personal-data",
+        "secret"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "byte_length": {
+      "minimum": 0,
+      "title": "Byte Length",
+      "type": "integer"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    },
+    "descriptor": {
+      "$ref": "#/$defs/EvidenceDescriptor"
+    },
+    "evidence_id": {
+      "title": "Evidence Id",
+      "type": "string"
+    },
+    "external_uri": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "External Uri"
+    },
+    "media_type": {
+      "minLength": 1,
+      "title": "Media Type",
+      "type": "string"
+    },
+    "registered_at": {
+      "format": "date-time",
+      "title": "Registered At",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "storage_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Storage Path"
+    }
+  },
+  "required": [
+    "evidence_id",
+    "descriptor",
+    "content_sha256",
+    "byte_length",
+    "media_type"
+  ],
+  "title": "EvidenceRecord",
+  "type": "object"
+}

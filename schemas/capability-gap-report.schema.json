@@ -1,0 +1,46 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "available": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available",
+      "type": "array"
+    },
+    "complete": {
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "missing": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing",
+      "type": "array"
+    },
+    "required": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Required",
+      "type": "array"
+    },
+    "unknown": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unknown",
+      "type": "array"
+    }
+  },
+  "required": [
+    "required",
+    "available",
+    "missing",
+    "unknown",
+    "complete"
+  ],
+  "title": "CapabilityGapReport",
+  "type": "object"
+}

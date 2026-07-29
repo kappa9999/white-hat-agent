@@ -1,0 +1,545 @@
+{
+  "$defs": {
+    "CampaignBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts_per_task": {
+          "default": 3,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Attempts Per Task",
+          "type": "integer"
+        },
+        "max_cost_units": {
+          "default": 1000.0,
+          "exclusiveMinimum": 0,
+          "title": "Max Cost Units",
+          "type": "number"
+        },
+        "max_findings": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Findings",
+          "type": "integer"
+        },
+        "max_tasks": {
+          "default": 1000,
+          "minimum": 1,
+          "title": "Max Tasks",
+          "type": "integer"
+        },
+        "max_wall_seconds": {
+          "default": 86400,
+          "minimum": 1,
+          "title": "Max Wall Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "CampaignBudget",
+      "type": "object"
+    },
+    "CampaignObjective": {
+      "additionalProperties": false,
+      "properties": {
+        "desired_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Desired Artifacts",
+          "type": "array"
+        },
+        "priority_domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Priority Domains",
+          "type": "array"
+        },
+        "statement": {
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "success_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Success Criteria",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statement",
+        "success_criteria"
+      ],
+      "title": "CampaignObjective",
+      "type": "object"
+    },
+    "CampaignTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "initial_artifacts": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Initial Artifacts",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/TargetKind"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "target_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Target Id",
+          "type": "string"
+        },
+        "technologies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Technologies",
+          "type": "array"
+        },
+        "value": {
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "kind",
+        "value"
+      ],
+      "title": "CampaignTarget",
+      "type": "object"
+    },
+    "DisclosurePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "minLength": 1,
+          "title": "Channel",
+          "type": "string"
+        },
+        "duplicate_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duplicate Policy"
+        },
+        "embargo_days": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Embargo Days"
+        },
+        "encryption_required": {
+          "default": false,
+          "title": "Encryption Required",
+          "type": "boolean"
+        },
+        "instructions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instructions",
+          "type": "array"
+        },
+        "public_disclosure_allowed": {
+          "default": false,
+          "title": "Public Disclosure Allowed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "channel"
+      ],
+      "title": "DisclosurePolicy",
+      "type": "object"
+    },
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "ProgramKind": {
+      "enum": [
+        "hackerone",
+        "bugcrowd",
+        "intigriti",
+        "yeswehack",
+        "open-source",
+        "private",
+        "lab",
+        "custom"
+      ],
+      "title": "ProgramKind",
+      "type": "string"
+    },
+    "RateLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "burst": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Burst",
+          "type": "integer"
+        },
+        "max_concurrency": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Max Concurrency",
+          "type": "integer"
+        },
+        "max_requests_per_task": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Requests Per Task",
+          "type": "integer"
+        },
+        "requests_per_second": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Requests Per Second",
+          "type": "number"
+        }
+      },
+      "title": "RateLimits",
+      "type": "object"
+    },
+    "ScopeManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_unlisted_capabilities": {
+          "default": false,
+          "title": "Allow Unlisted Capabilities",
+          "type": "boolean"
+        },
+        "allowed_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Allowed Capabilities",
+          "type": "array"
+        },
+        "allowed_execution_classes": {
+          "items": {
+            "$ref": "#/$defs/ExecutionClass"
+          },
+          "minItems": 1,
+          "title": "Allowed Execution Classes",
+          "type": "array"
+        },
+        "authorization_reference": {
+          "minLength": 1,
+          "title": "Authorization Reference",
+          "type": "string"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "data_handling": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Data Handling",
+          "type": "array"
+        },
+        "disclosure": {
+          "$ref": "#/$defs/DisclosurePolicy"
+        },
+        "emergency_contact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Emergency Contact"
+        },
+        "program_kind": {
+          "$ref": "#/$defs/ProgramKind"
+        },
+        "program_name": {
+          "minLength": 1,
+          "title": "Program Name",
+          "type": "string"
+        },
+        "program_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Program Url"
+        },
+        "prohibited_action_tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Prohibited Action Tags",
+          "type": "array"
+        },
+        "prohibited_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Prohibited Capabilities",
+          "type": "array"
+        },
+        "rate_limits": {
+          "$ref": "#/$defs/RateLimits"
+        },
+        "rules_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rules Sha256"
+        },
+        "rules_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rules Url"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scope_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/TargetRule"
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Until"
+        }
+      },
+      "required": [
+        "scope_id",
+        "program_kind",
+        "program_name",
+        "authorization_reference",
+        "targets",
+        "allowed_execution_classes",
+        "disclosure"
+      ],
+      "title": "ScopeManifest",
+      "type": "object"
+    },
+    "TargetKind": {
+      "enum": [
+        "domain",
+        "url",
+        "ip",
+        "cidr",
+        "repository",
+        "package",
+        "mobile-app",
+        "binary",
+        "cloud-account",
+        "api",
+        "generic"
+      ],
+      "title": "TargetKind",
+      "type": "string"
+    },
+    "TargetRule": {
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Environment"
+        },
+        "in_scope": {
+          "default": true,
+          "title": "In Scope",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/TargetKind"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "pattern": {
+          "minLength": 1,
+          "title": "Pattern",
+          "type": "string"
+        },
+        "rule_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Rule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "kind",
+        "pattern"
+      ],
+      "title": "TargetRule",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "available_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available Capabilities",
+      "type": "array"
+    },
+    "budget": {
+      "$ref": "#/$defs/CampaignBudget"
+    },
+    "campaign_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "execution_ceiling": {
+      "$ref": "#/$defs/ExecutionClass",
+      "default": "read-only"
+    },
+    "max_playbooks_per_target": {
+      "default": 8,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Max Playbooks Per Target",
+      "type": "integer"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "objective": {
+      "$ref": "#/$defs/CampaignObjective"
+    },
+    "requested_at": {
+      "format": "date-time",
+      "title": "Requested At",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/ScopeManifest"
+    },
+    "targets": {
+      "items": {
+        "$ref": "#/$defs/CampaignTarget"
+      },
+      "minItems": 1,
+      "title": "Targets",
+      "type": "array"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "name",
+    "scope",
+    "objective",
+    "targets"
+  ],
+  "title": "CampaignPlanningRequest",
+  "type": "object"
+}

@@ -1,0 +1,51 @@
+{
+  "adapter_id": "fixture-replay",
+  "capabilities": [
+    "artifact.read"
+  ],
+  "modes": [
+    "offline"
+  ],
+  "rules": [
+    {
+      "hypothesis_id": "h-parser-frontier",
+      "hypothesis_revision": 1,
+      "observation": {
+        "adjacent_hypotheses": [],
+        "conclusive": true,
+        "cost_units": 1.0,
+        "hypothesis_id": "h-parser-frontier",
+        "hypothesis_revision": 1,
+        "new_edges": [],
+        "new_evidence": [
+          {
+            "captured_at": "2026-01-01T12:00:03Z",
+            "confidence": 0.95,
+            "content_sha256": "9aaa6db0eb30b4485ef6e413de4d3d72c4a290daf9bc9f65569c7be7c45a6fe8",
+            "evidence_id": "ev-parser-frontier",
+            "kind": "trace",
+            "source_ref": "fixture://trace/parser-frontier",
+            "summary": "A bounded trace identifies the next parser dispatch"
+          }
+        ],
+        "new_nodes": [],
+        "observation_id": "obs-parser-frontier-supported",
+        "observed_at": "2026-01-01T12:00:03Z",
+        "outcome": "succeeded",
+        "progress_delta": 0.55,
+        "started_at": "2026-01-01T12:00:02Z",
+        "summary": "The frontier probe mapped a deterministic dispatch into a new processing stage"
+      },
+      "probe_digest": "4d6031067a25f0d31a4f83649c6dfe144f83e4bbb01822e552938e3ed9147733"
+    }
+  ],
+  "target": {
+    "artifacts": {
+      "bundle.bin": "a447824121f1d19899354e8c62c226c9e47c5eac022d4dedfdc3033b900caa1b"
+    },
+    "build_id": "fixture-build-1",
+    "environment_fingerprint": "b8ab18a9d189e20572529c2f7ce1b9198a70086112b0ba0ec4a6f48a446ef20b",
+    "target_id": "synthetic-active-data-pipeline"
+  },
+  "transcript_id": "transcript-frontier-recovery-001"
+}

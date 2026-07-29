@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "RateLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "burst": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Burst",
+          "type": "integer"
+        },
+        "max_concurrency": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Max Concurrency",
+          "type": "integer"
+        },
+        "max_requests_per_task": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Requests Per Task",
+          "type": "integer"
+        },
+        "requests_per_second": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Requests Per Second",
+          "type": "number"
+        }
+      },
+      "title": "RateLimits",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "allowed": {
+      "title": "Allowed",
+      "type": "boolean"
+    },
+    "decision_id": {
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "effective_limits": {
+      "$ref": "#/$defs/RateLimits"
+    },
+    "evaluated_at": {
+      "format": "date-time",
+      "title": "Evaluated At",
+      "type": "string"
+    },
+    "intent_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Intent Digest",
+      "type": "string"
+    },
+    "intent_id": {
+      "title": "Intent Id",
+      "type": "string"
+    },
+    "matched_rule_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Matched Rule Id"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "scope_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Scope Digest",
+      "type": "string"
+    },
+    "scope_id": {
+      "title": "Scope Id",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision_id",
+    "scope_id",
+    "scope_digest",
+    "intent_id",
+    "intent_digest",
+    "evaluated_at",
+    "allowed",
+    "reasons",
+    "effective_limits"
+  ],
+  "title": "ScopeDecision",
+  "type": "object"
+}

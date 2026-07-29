@@ -1,0 +1,15 @@
+intent_id: example-http-map
+scope_id: example-lab-scope
+target_kind: domain
+target: api.example.test
+playbook_id: http-response-surface-map
+playbook_version: 1.0.0
+playbook_digest: a6a62e1a4ee15c230ee5f5a2649efcfe86a6a1b30e2b611d2dc3ed065c35b2e9
+execution_class: controlled-active
+capabilities: [http.request, http.capture, data.diff, evidence.write]
+action_tags: [active-probing, surface-mapping]
+estimated_requests: 4
+concurrency: 1
+side_effects: [The synthetic adapter would record request metadata.]
+estimated_cost_units: 1.0
+proposed_at: 2026-07-29T12:00:00Z

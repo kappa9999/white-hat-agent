@@ -1,0 +1,1210 @@
+{
+  "$defs": {
+    "CampaignBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts_per_task": {
+          "default": 3,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Attempts Per Task",
+          "type": "integer"
+        },
+        "max_cost_units": {
+          "default": 1000.0,
+          "exclusiveMinimum": 0,
+          "title": "Max Cost Units",
+          "type": "number"
+        },
+        "max_findings": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Findings",
+          "type": "integer"
+        },
+        "max_tasks": {
+          "default": 1000,
+          "minimum": 1,
+          "title": "Max Tasks",
+          "type": "integer"
+        },
+        "max_wall_seconds": {
+          "default": 86400,
+          "minimum": 1,
+          "title": "Max Wall Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "CampaignBudget",
+      "type": "object"
+    },
+    "CampaignManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "budget": {
+          "$ref": "#/$defs/CampaignBudget"
+        },
+        "campaign_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "corpus_manifest_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Corpus Manifest Digest",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "objective": {
+          "$ref": "#/$defs/CampaignObjective"
+        },
+        "playbook_contracts": {
+          "items": {
+            "$ref": "#/$defs/CampaignPlaybookContract"
+          },
+          "title": "Playbook Contracts",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/ScopeManifest"
+        },
+        "selected_playbooks": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Selected Playbooks",
+          "type": "array"
+        },
+        "state": {
+          "$ref": "#/$defs/CampaignState",
+          "default": "draft"
+        }
+      },
+      "required": [
+        "campaign_id",
+        "name",
+        "scope",
+        "objective",
+        "corpus_manifest_digest"
+      ],
+      "title": "CampaignManifest",
+      "type": "object"
+    },
+    "CampaignObjective": {
+      "additionalProperties": false,
+      "properties": {
+        "desired_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Desired Artifacts",
+          "type": "array"
+        },
+        "priority_domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Priority Domains",
+          "type": "array"
+        },
+        "statement": {
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "success_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Success Criteria",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statement",
+        "success_criteria"
+      ],
+      "title": "CampaignObjective",
+      "type": "object"
+    },
+    "CampaignPlanStage": {
+      "additionalProperties": false,
+      "properties": {
+        "consumes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Consumes",
+          "type": "array"
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "intent": {
+          "$ref": "#/$defs/ProbeIntent"
+        },
+        "playbook_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "playbook_version": {
+          "title": "Playbook Version",
+          "type": "string"
+        },
+        "provides": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Provides",
+          "type": "array"
+        },
+        "scope_decision": {
+          "$ref": "#/$defs/ScopeDecision"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "stage_id": {
+          "title": "Stage Id",
+          "type": "string"
+        },
+        "target_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage_id",
+        "sequence",
+        "target_id",
+        "playbook_id",
+        "playbook_version",
+        "depends_on",
+        "consumes",
+        "provides",
+        "intent",
+        "scope_decision"
+      ],
+      "title": "CampaignPlanStage",
+      "type": "object"
+    },
+    "CampaignPlaybookContract": {
+      "additionalProperties": false,
+      "properties": {
+        "action_tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Action Tags",
+          "type": "array"
+        },
+        "capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "minimum_execution_class": {
+          "$ref": "#/$defs/ExecutionClass"
+        },
+        "minimum_request_budget": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Minimum Request Budget",
+          "type": "integer"
+        },
+        "playbook_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "review_state": {
+          "$ref": "#/$defs/ReviewState"
+        },
+        "side_effects": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Side Effects",
+          "type": "array"
+        },
+        "version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playbook_id",
+        "version",
+        "digest",
+        "review_state",
+        "minimum_execution_class"
+      ],
+      "title": "CampaignPlaybookContract",
+      "type": "object"
+    },
+    "CampaignState": {
+      "enum": [
+        "draft",
+        "ready",
+        "running",
+        "paused",
+        "completed",
+        "cancelled"
+      ],
+      "title": "CampaignState",
+      "type": "string"
+    },
+    "CampaignTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "initial_artifacts": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Initial Artifacts",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/TargetKind"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "target_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Target Id",
+          "type": "string"
+        },
+        "technologies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Technologies",
+          "type": "array"
+        },
+        "value": {
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "kind",
+        "value"
+      ],
+      "title": "CampaignTarget",
+      "type": "object"
+    },
+    "ComposedStep": {
+      "additionalProperties": false,
+      "properties": {
+        "instruction": {
+          "title": "Instruction",
+          "type": "string"
+        },
+        "playbook_id": {
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "playbook_version": {
+          "title": "Playbook Version",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence",
+        "playbook_id",
+        "playbook_version",
+        "step_id",
+        "title",
+        "instruction",
+        "required_capabilities"
+      ],
+      "title": "ComposedStep",
+      "type": "object"
+    },
+    "CompositePlaybook": {
+      "additionalProperties": false,
+      "properties": {
+        "available_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Available Artifacts",
+          "type": "array"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "composition_id": {
+          "title": "Composition Id",
+          "type": "string"
+        },
+        "rationale": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rationale",
+          "type": "array"
+        },
+        "request": {
+          "$ref": "#/$defs/CompositionRequest"
+        },
+        "selected": {
+          "items": {
+            "$ref": "#/$defs/CompositionSelection"
+          },
+          "title": "Selected",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/ComposedStep"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "unresolved_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unresolved Artifacts",
+          "type": "array"
+        },
+        "unused_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unused Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "composition_id",
+        "request",
+        "selected",
+        "steps",
+        "available_artifacts",
+        "unresolved_artifacts",
+        "unused_capabilities",
+        "complete",
+        "rationale"
+      ],
+      "title": "CompositePlaybook",
+      "type": "object"
+    },
+    "CompositionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_review_states": {
+          "items": {
+            "$ref": "#/$defs/ReviewState"
+          },
+          "title": "Allowed Review States",
+          "type": "array"
+        },
+        "available_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Available Capabilities",
+          "type": "array"
+        },
+        "desired_artifacts": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Desired Artifacts",
+          "type": "array"
+        },
+        "domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Domains",
+          "type": "array"
+        },
+        "execution_ceiling": {
+          "$ref": "#/$defs/ExecutionClass",
+          "default": "read-only"
+        },
+        "initial_artifacts": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Initial Artifacts",
+          "type": "array"
+        },
+        "max_playbooks": {
+          "default": 8,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Playbooks",
+          "type": "integer"
+        },
+        "objective": {
+          "minLength": 1,
+          "title": "Objective",
+          "type": "string"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Platforms",
+          "type": "array"
+        },
+        "target_kind": {
+          "minLength": 1,
+          "title": "Target Kind",
+          "type": "string"
+        },
+        "technologies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Technologies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "objective",
+        "target_kind",
+        "desired_artifacts"
+      ],
+      "title": "CompositionRequest",
+      "type": "object"
+    },
+    "CompositionSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "consumed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Consumed",
+          "type": "array"
+        },
+        "playbook_id": {
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "provided": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Provided",
+          "type": "array"
+        },
+        "rationale": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rationale",
+          "type": "array"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "playbook_id",
+        "version",
+        "score",
+        "consumed",
+        "provided",
+        "rationale"
+      ],
+      "title": "CompositionSelection",
+      "type": "object"
+    },
+    "DisclosurePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "minLength": 1,
+          "title": "Channel",
+          "type": "string"
+        },
+        "duplicate_policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duplicate Policy"
+        },
+        "embargo_days": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Embargo Days"
+        },
+        "encryption_required": {
+          "default": false,
+          "title": "Encryption Required",
+          "type": "boolean"
+        },
+        "instructions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Instructions",
+          "type": "array"
+        },
+        "public_disclosure_allowed": {
+          "default": false,
+          "title": "Public Disclosure Allowed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "channel"
+      ],
+      "title": "DisclosurePolicy",
+      "type": "object"
+    },
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "ProbeIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "action_tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Action Tags",
+          "type": "array"
+        },
+        "capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "concurrency": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Concurrency",
+          "type": "integer"
+        },
+        "estimated_cost_units": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Estimated Cost Units",
+          "type": "number"
+        },
+        "estimated_requests": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Estimated Requests",
+          "type": "integer"
+        },
+        "execution_class": {
+          "$ref": "#/$defs/ExecutionClass"
+        },
+        "intent_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Intent Id",
+          "type": "string"
+        },
+        "playbook_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Playbook Digest",
+          "type": "string"
+        },
+        "playbook_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Playbook Id",
+          "type": "string"
+        },
+        "playbook_version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "title": "Playbook Version",
+          "type": "string"
+        },
+        "proposed_at": {
+          "format": "date-time",
+          "title": "Proposed At",
+          "type": "string"
+        },
+        "scope_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "side_effects": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Side Effects",
+          "type": "array"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        },
+        "target_kind": {
+          "$ref": "#/$defs/TargetKind"
+        }
+      },
+      "required": [
+        "intent_id",
+        "scope_id",
+        "target_kind",
+        "target",
+        "playbook_id",
+        "playbook_version",
+        "playbook_digest",
+        "execution_class"
+      ],
+      "title": "ProbeIntent",
+      "type": "object"
+    },
+    "ProgramKind": {
+      "enum": [
+        "hackerone",
+        "bugcrowd",
+        "intigriti",
+        "yeswehack",
+        "open-source",
+        "private",
+        "lab",
+        "custom"
+      ],
+      "title": "ProgramKind",
+      "type": "string"
+    },
+    "RateLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "burst": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Burst",
+          "type": "integer"
+        },
+        "max_concurrency": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Max Concurrency",
+          "type": "integer"
+        },
+        "max_requests_per_task": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Requests Per Task",
+          "type": "integer"
+        },
+        "requests_per_second": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Requests Per Second",
+          "type": "number"
+        }
+      },
+      "title": "RateLimits",
+      "type": "object"
+    },
+    "ReviewState": {
+      "enum": [
+        "draft",
+        "proposed",
+        "reviewed",
+        "validated",
+        "deprecated"
+      ],
+      "title": "ReviewState",
+      "type": "string"
+    },
+    "ScopeDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "title": "Allowed",
+          "type": "boolean"
+        },
+        "decision_id": {
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "effective_limits": {
+          "$ref": "#/$defs/RateLimits"
+        },
+        "evaluated_at": {
+          "format": "date-time",
+          "title": "Evaluated At",
+          "type": "string"
+        },
+        "intent_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Intent Digest",
+          "type": "string"
+        },
+        "intent_id": {
+          "title": "Intent Id",
+          "type": "string"
+        },
+        "matched_rule_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matched Rule Id"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "scope_digest": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Scope Digest",
+          "type": "string"
+        },
+        "scope_id": {
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "decision_id",
+        "scope_id",
+        "scope_digest",
+        "intent_id",
+        "intent_digest",
+        "evaluated_at",
+        "allowed",
+        "reasons",
+        "effective_limits"
+      ],
+      "title": "ScopeDecision",
+      "type": "object"
+    },
+    "ScopeManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_unlisted_capabilities": {
+          "default": false,
+          "title": "Allow Unlisted Capabilities",
+          "type": "boolean"
+        },
+        "allowed_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Allowed Capabilities",
+          "type": "array"
+        },
+        "allowed_execution_classes": {
+          "items": {
+            "$ref": "#/$defs/ExecutionClass"
+          },
+          "minItems": 1,
+          "title": "Allowed Execution Classes",
+          "type": "array"
+        },
+        "authorization_reference": {
+          "minLength": 1,
+          "title": "Authorization Reference",
+          "type": "string"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "data_handling": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Data Handling",
+          "type": "array"
+        },
+        "disclosure": {
+          "$ref": "#/$defs/DisclosurePolicy"
+        },
+        "emergency_contact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Emergency Contact"
+        },
+        "program_kind": {
+          "$ref": "#/$defs/ProgramKind"
+        },
+        "program_name": {
+          "minLength": 1,
+          "title": "Program Name",
+          "type": "string"
+        },
+        "program_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Program Url"
+        },
+        "prohibited_action_tags": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Prohibited Action Tags",
+          "type": "array"
+        },
+        "prohibited_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Prohibited Capabilities",
+          "type": "array"
+        },
+        "rate_limits": {
+          "$ref": "#/$defs/RateLimits"
+        },
+        "rules_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rules Sha256"
+        },
+        "rules_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rules Url"
+        },
+        "schema_version": {
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "scope_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/TargetRule"
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        },
+        "valid_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Until"
+        }
+      },
+      "required": [
+        "scope_id",
+        "program_kind",
+        "program_name",
+        "authorization_reference",
+        "targets",
+        "allowed_execution_classes",
+        "disclosure"
+      ],
+      "title": "ScopeManifest",
+      "type": "object"
+    },
+    "TargetCampaignPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "blockers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositePlaybook"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/CampaignPlanStage"
+          },
+          "title": "Stages",
+          "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/CampaignTarget"
+        }
+      },
+      "required": [
+        "target",
+        "composition",
+        "stages",
+        "complete",
+        "blockers"
+      ],
+      "title": "TargetCampaignPlan",
+      "type": "object"
+    },
+    "TargetKind": {
+      "enum": [
+        "domain",
+        "url",
+        "ip",
+        "cidr",
+        "repository",
+        "package",
+        "mobile-app",
+        "binary",
+        "cloud-account",
+        "api",
+        "generic"
+      ],
+      "title": "TargetKind",
+      "type": "string"
+    },
+    "TargetRule": {
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Environment"
+        },
+        "in_scope": {
+          "default": true,
+          "title": "In Scope",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/TargetKind"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "pattern": {
+          "minLength": 1,
+          "title": "Pattern",
+          "type": "string"
+        },
+        "rule_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Rule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "kind",
+        "pattern"
+      ],
+      "title": "TargetRule",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "blockers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blockers",
+      "type": "array"
+    },
+    "blueprint_id": {
+      "title": "Blueprint Id",
+      "type": "string"
+    },
+    "complete": {
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "manifest": {
+      "$ref": "#/$defs/CampaignManifest"
+    },
+    "targets": {
+      "items": {
+        "$ref": "#/$defs/TargetCampaignPlan"
+      },
+      "title": "Targets",
+      "type": "array"
+    }
+  },
+  "required": [
+    "blueprint_id",
+    "manifest",
+    "targets",
+    "complete",
+    "blockers"
+  ],
+  "title": "CampaignBlueprint",
+  "type": "object"
+}

@@ -1,0 +1,177 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: http-response-surface-map
+  version: 1.0.0
+  title: Map an HTTP response surface with bounded differentials
+  summary: Establish a baseline, vary one request dimension at a time, and preserve response-level evidence.
+  domains: [web, api]
+  tags: [http, differential, surface-mapping]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-29T12:00:00Z
+  updated_at: 2026-07-29T12:00:00Z
+applicability:
+  target_kinds: [url, api]
+  platforms: []
+  technologies: [http]
+  preconditions:
+    - The exact URL or API route matches a captured scope manifest.
+  assumptions:
+    - A baseline request can be repeated without changing application state.
+  exclusions:
+    - Endpoints where even a baseline request performs a prohibited state change.
+scope:
+  minimum_execution_class: controlled-active
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 4
+  recommended_concurrency: 1
+  action_tags: [active-probing]
+  data_classes: [http-metadata]
+taxonomies:
+  - scheme: OWASP
+    identifier: WSTG-INFO
+    relationship: informed-by
+inputs:
+  - name: target-context
+    semantic_type: target/context
+    description: Exact route, scope decision, authentication context, and program limits.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: http-baseline
+    semantic_type: evidence/http-baseline
+    description: Canonical request and response metadata with volatile fields normalized.
+    required: true
+    secret: false
+    examples: []
+  - name: candidate-finding
+    semantic_type: finding/candidate
+    description: Any reproducible behavior difference that warrants a separate causal hypothesis.
+    required: false
+    secret: false
+    examples: []
+steps:
+  - step_id: capture-baseline
+    kind: observe
+    title: Capture a canonical baseline
+    instruction: Send one normal request, preserving method, route, headers, body digest, status, timing, and response digest.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [http.request, http.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - A complete request and response pair is stored with a timestamp and target identity.
+    failure_signals:
+      - The response cannot be reproduced or the target identity is ambiguous.
+    evidence:
+      - evidence_type: evidence/http-transaction
+        description: Raw or losslessly normalized baseline transaction.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 60
+    max_repetitions: 2
+  - step_id: vary-one-dimension
+    kind: execute
+    title: Vary one request dimension
+    instruction: Change exactly one representation, boundary value, header, parameter, or ordering property and repeat within the request budget.
+    localized_instructions: {}
+    depends_on: [capture-baseline]
+    required_capabilities: [http.request, http.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Each variant has a unique identity and differs from the baseline in exactly one declared dimension.
+    failure_signals:
+      - Multiple dimensions changed or the response cannot be correlated to its request.
+    evidence:
+      - evidence_type: evidence/http-transaction
+        description: Variant transaction paired with its baseline.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 120
+    max_repetitions: 20
+  - step_id: compare-responses
+    kind: analyze
+    title: Normalize and compare responses
+    instruction: Remove known volatile fields, compare status, structure, semantics, timing, and durable state, then rank unexplained differences.
+    localized_instructions: {}
+    depends_on: [vary-one-dimension]
+    required_capabilities: [data.diff]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Differences are attributed to the changed dimension or preserved as explicit hypotheses.
+    failure_signals:
+      - Volatile fields dominate the comparison or the baseline drifted.
+    evidence:
+      - evidence_type: evidence/differential
+        description: Machine-readable normalized comparison.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 120
+    max_repetitions: 1
+  - step_id: document-candidates
+    kind: document
+    title: Emit candidate findings and negatives
+    instruction: Record each reproducible anomaly as a separate hypothesis and retain negative variants to suppress exact retries.
+    localized_instructions: {}
+    depends_on: [compare-responses]
+    required_capabilities: [evidence.write]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Every candidate and negative result references exact transaction evidence.
+    failure_signals:
+      - A conclusion lacks a request/response evidence identity.
+    evidence:
+      - evidence_type: finding/candidate
+        description: Candidate with target, variant, effect, and evidence references.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 120
+    max_repetitions: 1
+composition:
+  consumes: [target/context]
+  provides: [evidence/http-baseline, surface/http, finding/candidate]
+  compatible_after: []
+  compatible_before: [causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: evidence/http-transaction
+    description: Baseline and bounded variant transactions.
+    minimum_count: 2
+    independent: false
+failure_modes:
+  - Comparing responses from different target versions or authentication contexts.
+  - Treating rate limiting, cache variation, or nondeterminism as a target-specific finding.
+variations:
+  - Apply the same one-dimension differential to GraphQL, gRPC gateways, or WebSocket handshakes.
+sources:
+  - source_id: owasp-wstg
+    kind: standard
+    title: OWASP Web Security Testing Guide
+    url: https://owasp.org/www-project-web-security-testing-guide/
+    authors: [OWASP Foundation]
+    license: CC-BY-SA-4.0
+    notes: General testing methodology; this playbook is an original distilled workflow.
+validation:
+  fixture_ids: [corpus-contract-http-observation]
+  test_commands: ["pytest tests/test_corpus.py tests/test_composition.py"]
+  known_limitations:
+    - Target-specific HTTP semantics and rate limits require adapter integration validation.
+  last_validated_at: 2026-07-29T12:00:00Z
+  validated_by: [white-hat-agent-test-suite]

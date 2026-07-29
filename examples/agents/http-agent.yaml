@@ -1,0 +1,10 @@
+agent_id: example-http-agent
+display_name: Example HTTP fixture worker
+provider: local-fixture
+model: null
+capabilities: [http.request, http.capture, data.diff, evidence.write]
+max_execution_class: controlled-active
+max_concurrency: 1
+metadata:
+  adapter_mode: replay-only
+  external_network: false

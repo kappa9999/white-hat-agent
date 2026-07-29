@@ -1,0 +1,69 @@
+name: Knowledge contribution
+description: Share a reusable cyber method in any language without learning the playbook schema.
+title: "[knowledge]: "
+labels: [knowledge, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write naturally and preserve domain detail. Do not include credentials, private program data, proprietary
+        artifacts, or undisclosed vulnerability details.
+  - type: input
+    id: title
+    attributes:
+      label: Technique name
+    validations:
+      required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      description: BCP 47 code if known, or the language name.
+      placeholder: es, ja, Arabic, und
+    validations:
+      required: true
+  - type: dropdown
+    id: rights
+    attributes:
+      label: Reuse rights
+      options:
+        - I wrote this original contribution
+        - I have permission to contribute it
+        - It comes from a compatible source license
+        - It is public domain
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Sources and attribution
+      description: Links, authors, licenses, versions, content hashes, or first-hand origin.
+    validations:
+      required: true
+  - type: textarea
+    id: method
+    attributes:
+      label: Method
+      description: Prerequisites, ordered steps, expected signals, failure signals, side effects, cleanup, and proof.
+    validations:
+      required: true
+  - type: textarea
+    id: applicability
+    attributes:
+      label: Applicability and known failure modes
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation evidence
+      description: Fixture, owned/scoped environment, exact versions, commands, results, and remaining limitations.
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Submission hygiene
+      options:
+        - label: I have not included secrets, private data, proprietary artifacts, or undisclosed vulnerability details.
+          required: true
+        - label: I understand that intake creates a draft and does not certify the method.
+          required: true

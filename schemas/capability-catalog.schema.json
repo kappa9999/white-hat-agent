@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "CapabilityDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_contract": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Adapter Contract",
+          "type": "array"
+        },
+        "capability_id": {
+          "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+          "title": "Capability Id",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "execution_class": {
+          "$ref": "#/$defs/ExecutionClass"
+        },
+        "input_types": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Input Types",
+          "type": "array"
+        },
+        "output_types": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Output Types",
+          "type": "array"
+        },
+        "side_effects": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Side Effects",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/CapabilityStatus",
+          "default": "experimental"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "version": {
+          "default": "1.0",
+          "pattern": "^[1-9]\\d*\\.\\d+$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability_id",
+        "title",
+        "description",
+        "execution_class",
+        "adapter_contract",
+        "updated_at"
+      ],
+      "title": "CapabilityDefinition",
+      "type": "object"
+    },
+    "CapabilityStatus": {
+      "enum": [
+        "experimental",
+        "stable",
+        "deprecated"
+      ],
+      "title": "CapabilityStatus",
+      "type": "string"
+    },
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "items": {
+        "$ref": "#/$defs/CapabilityDefinition"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capabilities"
+  ],
+  "title": "CapabilityCatalogManifest",
+  "type": "object"
+}

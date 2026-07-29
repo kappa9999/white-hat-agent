@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "white-hat-agent": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "/absolute/path/to/white-hat-agent",
+        "wha",
+        "serve",
+        "--workspace",
+        "/absolute/path/to/white-hat-agent"
+      ]
+    }
+  }
+}
