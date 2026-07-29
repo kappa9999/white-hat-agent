@@ -1,0 +1,1007 @@
+{
+  "$defs": {
+    "AdvisoryReference": {
+      "additionalProperties": false,
+      "properties": {
+        "raw_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Type"
+        },
+        "source": {
+          "$ref": "#/$defs/IntelligenceSource"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "type": {
+          "$ref": "#/$defs/ReferenceType",
+          "default": "unknown"
+        },
+        "url": {
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "source"
+      ],
+      "title": "AdvisoryReference",
+      "type": "object"
+    },
+    "AffectedPackage": {
+      "additionalProperties": false,
+      "properties": {
+        "database_specific": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Database Specific",
+          "type": "object"
+        },
+        "ecosystem": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ecosystem"
+        },
+        "ecosystem_specific": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Ecosystem Specific",
+          "type": "object"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "purl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Purl"
+        },
+        "ranges": {
+          "items": {
+            "$ref": "#/$defs/AffectedRange"
+          },
+          "title": "Ranges",
+          "type": "array"
+        },
+        "vendor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vendor"
+        },
+        "versions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Versions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "AffectedPackage",
+      "type": "object"
+    },
+    "AffectedRange": {
+      "additionalProperties": false,
+      "properties": {
+        "database_specific": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Database Specific",
+          "type": "object"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/VersionEvent"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "raw_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Type"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository"
+        },
+        "type": {
+          "$ref": "#/$defs/RangeType"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "AffectedRange",
+      "type": "object"
+    },
+    "IdentifierLink": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "minLength": 1,
+          "title": "Left",
+          "type": "string"
+        },
+        "relation": {
+          "$ref": "#/$defs/IdentifierRelation"
+        },
+        "right": {
+          "minLength": 1,
+          "title": "Right",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/IntelligenceSource"
+        }
+      },
+      "required": [
+        "left",
+        "right",
+        "relation",
+        "source"
+      ],
+      "title": "IdentifierLink",
+      "type": "object"
+    },
+    "IdentifierRelation": {
+      "enum": [
+        "alias",
+        "related"
+      ],
+      "title": "IdentifierRelation",
+      "type": "string"
+    },
+    "IntelligenceSource": {
+      "enum": [
+        "cisa-kev",
+        "osv",
+        "epss"
+      ],
+      "title": "IntelligenceSource",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "NormalizedAdvisory": {
+      "additionalProperties": false,
+      "properties": {
+        "advisory_id": {
+          "minLength": 1,
+          "title": "Advisory Id",
+          "type": "string"
+        },
+        "affected": {
+          "items": {
+            "$ref": "#/$defs/AffectedPackage"
+          },
+          "title": "Affected",
+          "type": "array"
+        },
+        "cisa_due_date": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cisa Due Date"
+        },
+        "cwes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cwes",
+          "type": "array"
+        },
+        "details": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Details"
+        },
+        "identifier_links": {
+          "items": {
+            "$ref": "#/$defs/IdentifierLink"
+          },
+          "title": "Identifier Links",
+          "type": "array"
+        },
+        "identifiers": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Identifiers",
+          "type": "array"
+        },
+        "known_exploited": {
+          "default": false,
+          "title": "Known Exploited",
+          "type": "boolean"
+        },
+        "known_ransomware_use": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Known Ransomware Use"
+        },
+        "modified_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modified At"
+        },
+        "provenance": {
+          "items": {
+            "$ref": "#/$defs/RawSnapshotProvenance"
+          },
+          "title": "Provenance",
+          "type": "array"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published At"
+        },
+        "references": {
+          "items": {
+            "$ref": "#/$defs/AdvisoryReference"
+          },
+          "title": "References",
+          "type": "array"
+        },
+        "related_identifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Identifiers",
+          "type": "array"
+        },
+        "required_action": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required Action"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "severity": {
+          "items": {
+            "$ref": "#/$defs/SeveritySignal"
+          },
+          "title": "Severity",
+          "type": "array"
+        },
+        "source_metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Source Metadata",
+          "type": "object"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/IntelligenceSource"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "tombstoned_sources": {
+          "items": {
+            "$ref": "#/$defs/IntelligenceSource"
+          },
+          "title": "Tombstoned Sources",
+          "type": "array"
+        },
+        "withdrawn_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Withdrawn At"
+        }
+      },
+      "required": [
+        "advisory_id",
+        "identifiers",
+        "sources"
+      ],
+      "title": "NormalizedAdvisory",
+      "type": "object"
+    },
+    "PriorityFactors": {
+      "additionalProperties": false,
+      "description": "Fully disclosed inputs for deterministic KEV-first priority ranking.",
+      "properties": {
+        "algorithm_version": {
+          "const": "kev-epss-recency-severity-evidence-v1",
+          "default": "kev-epss-recency-severity-evidence-v1",
+          "title": "Algorithm Version",
+          "type": "string"
+        },
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "confirmed_kev": {
+          "title": "Confirmed Kev",
+          "type": "boolean"
+        },
+        "epss_component": {
+          "minimum": 0.0,
+          "title": "Epss Component",
+          "type": "number"
+        },
+        "epss_probability": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epss Probability"
+        },
+        "epss_weight": {
+          "default": 100.0,
+          "title": "Epss Weight",
+          "type": "number"
+        },
+        "evidence_completeness": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Evidence Completeness",
+          "type": "number"
+        },
+        "evidence_component": {
+          "minimum": 0.0,
+          "title": "Evidence Component",
+          "type": "number"
+        },
+        "evidence_weight": {
+          "default": 20.0,
+          "title": "Evidence Weight",
+          "type": "number"
+        },
+        "kev_component": {
+          "minimum": 0.0,
+          "title": "Kev Component",
+          "type": "number"
+        },
+        "kev_weight": {
+          "default": 1000.0,
+          "title": "Kev Weight",
+          "type": "number"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "recency_age_days": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recency Age Days"
+        },
+        "recency_component": {
+          "minimum": 0.0,
+          "title": "Recency Component",
+          "type": "number"
+        },
+        "recency_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Recency Score",
+          "type": "number"
+        },
+        "recency_weight": {
+          "default": 40.0,
+          "title": "Recency Weight",
+          "type": "number"
+        },
+        "recency_window_days": {
+          "default": 90.0,
+          "title": "Recency Window Days",
+          "type": "number"
+        },
+        "severity_component": {
+          "minimum": 0.0,
+          "title": "Severity Component",
+          "type": "number"
+        },
+        "severity_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Severity Score",
+          "type": "number"
+        },
+        "severity_weight": {
+          "default": 60.0,
+          "title": "Severity Weight",
+          "type": "number"
+        },
+        "total_score": {
+          "minimum": 0.0,
+          "title": "Total Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "as_of",
+        "confirmed_kev",
+        "kev_component",
+        "epss_component",
+        "recency_score",
+        "recency_component",
+        "severity_score",
+        "severity_component",
+        "evidence_completeness",
+        "evidence_component",
+        "total_score",
+        "reasons"
+      ],
+      "title": "PriorityFactors",
+      "type": "object"
+    },
+    "RangeType": {
+      "enum": [
+        "ecosystem",
+        "git",
+        "semver",
+        "unknown"
+      ],
+      "title": "RangeType",
+      "type": "string"
+    },
+    "RawSnapshotProvenance": {
+      "additionalProperties": false,
+      "description": "Immutable metadata for one content-addressed upstream payload.",
+      "properties": {
+        "attribution": {
+          "$ref": "#/$defs/SourceAttribution"
+        },
+        "byte_length": {
+          "minimum": 0,
+          "title": "Byte Length",
+          "type": "integer"
+        },
+        "content_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Etag"
+        },
+        "http_status": {
+          "default": 200,
+          "maximum": 599,
+          "minimum": 100,
+          "title": "Http Status",
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/SnapshotKind"
+        },
+        "last_modified": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Modified"
+        },
+        "media_type": {
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "retrieved_at": {
+          "format": "date-time",
+          "title": "Retrieved At",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "minLength": 1,
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/IntelligenceSource"
+        },
+        "source_metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Source Metadata",
+          "type": "object"
+        },
+        "source_record_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Record Id"
+        },
+        "source_schema_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Schema Version"
+        },
+        "source_url": {
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        },
+        "storage_path": {
+          "minLength": 1,
+          "title": "Storage Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "source",
+        "kind",
+        "source_url",
+        "retrieved_at",
+        "content_sha256",
+        "byte_length",
+        "media_type",
+        "attribution",
+        "storage_path"
+      ],
+      "title": "RawSnapshotProvenance",
+      "type": "object"
+    },
+    "ReferenceType": {
+      "enum": [
+        "advisory",
+        "article",
+        "detection",
+        "discussion",
+        "evidence",
+        "fix",
+        "introduced",
+        "package",
+        "report",
+        "web",
+        "unknown"
+      ],
+      "title": "ReferenceType",
+      "type": "string"
+    },
+    "SeverityKind": {
+      "enum": [
+        "cvss",
+        "epss",
+        "qualitative",
+        "other"
+      ],
+      "title": "SeverityKind",
+      "type": "string"
+    },
+    "SeveritySignal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SeverityKind"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "percentile": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Percentile"
+        },
+        "probability": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 10.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "source": {
+          "$ref": "#/$defs/IntelligenceSource"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "vector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vector"
+        }
+      },
+      "required": [
+        "kind",
+        "source"
+      ],
+      "title": "SeveritySignal",
+      "type": "object"
+    },
+    "SnapshotKind": {
+      "enum": [
+        "full-feed",
+        "index-prefix",
+        "selection-manifest",
+        "source-record",
+        "enrichment"
+      ],
+      "title": "SnapshotKind",
+      "type": "string"
+    },
+    "SourceAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "dataset": {
+          "minLength": 1,
+          "title": "Dataset",
+          "type": "string"
+        },
+        "license_name": {
+          "minLength": 1,
+          "title": "License Name",
+          "type": "string"
+        },
+        "license_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License Url"
+        },
+        "publisher": {
+          "minLength": 1,
+          "title": "Publisher",
+          "type": "string"
+        }
+      },
+      "required": [
+        "publisher",
+        "dataset",
+        "attribution",
+        "license_name"
+      ],
+      "title": "SourceAttribution",
+      "type": "object"
+    },
+    "VersionEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "fixed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed"
+        },
+        "introduced": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Introduced"
+        },
+        "last_affected": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Affected"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        }
+      },
+      "title": "VersionEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "advisory": {
+      "$ref": "#/$defs/NormalizedAdvisory"
+    },
+    "priority": {
+      "$ref": "#/$defs/PriorityFactors"
+    }
+  },
+  "required": [
+    "advisory",
+    "priority"
+  ],
+  "title": "RankedAdvisory",
+  "type": "object"
+}

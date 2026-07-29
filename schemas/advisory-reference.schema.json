@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "IntelligenceSource": {
+      "enum": [
+        "cisa-kev",
+        "osv",
+        "epss"
+      ],
+      "title": "IntelligenceSource",
+      "type": "string"
+    },
+    "ReferenceType": {
+      "enum": [
+        "advisory",
+        "article",
+        "detection",
+        "discussion",
+        "evidence",
+        "fix",
+        "introduced",
+        "package",
+        "report",
+        "web",
+        "unknown"
+      ],
+      "title": "ReferenceType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "raw_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Type"
+    },
+    "source": {
+      "$ref": "#/$defs/IntelligenceSource"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title"
+    },
+    "type": {
+      "$ref": "#/$defs/ReferenceType",
+      "default": "unknown"
+    },
+    "url": {
+      "minLength": 1,
+      "title": "Url",
+      "type": "string"
+    }
+  },
+  "required": [
+    "url",
+    "source"
+  ],
+  "title": "AdvisoryReference",
+  "type": "object"
+}

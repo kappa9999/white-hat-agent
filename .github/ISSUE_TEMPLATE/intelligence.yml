@@ -1,0 +1,53 @@
+name: Intelligence source or data-quality proposal
+description: Propose an official advisory source, parser improvement, correlation rule, or verified data correction.
+title: "[intelligence]: "
+labels: [intelligence, needs-triage]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Proposal type
+      options:
+        - Official source adapter
+        - Parser or schema evolution
+        - Alias or correlation rule
+        - Data-quality correction
+        - Prioritization signal
+        - Reconciliation or freshness improvement
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Canonical source URL
+      description: Link directly to the authoritative feed, schema, terms, or exact affected record.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Ingestion contract
+      description: Describe identifiers, update semantics, pagination or cursors, timestamps, deletions, bounds, rate limits, and failure behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: rights
+    attributes:
+      label: License and attribution
+      description: State the source terms and what attribution or redistribution conditions must remain attached.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Reproducible evidence
+      description: Provide a minimal sanitized fixture, expected normalized output, and exact validation command. Do not include undisclosed vulnerability details.
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: Production value
+      description: Explain what decision this improves and how duplicate work, false positives, or source drift will be measured.
+    validations:
+      required: true

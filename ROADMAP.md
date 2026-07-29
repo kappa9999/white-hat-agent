@@ -25,12 +25,19 @@
 
 ## Campaign intelligence
 
-- importers for public bounty/open-source program feeds with source snapshots;
+- production advisory ingestion for CISA KEV, OSV, and FIRST EPSS with immutable source snapshots and transparent
+  prioritization;
+- CVE List V5 and NVD enrichment with alias-graph correlation, source-specific attribution, and periodic full
+  reconciliation;
+- importers for public bounty/open-source program feeds with exact policy and scope snapshots;
 - corpus-aware campaign decomposition across target inventories;
 - distributed coordinator with authenticated workers and tenant isolation;
 - global rate/budget scheduling, cancellation, pause barriers, and recovery;
 - duplicate/novelty clustering across campaigns without leaking confidential data; and
 - disclosure bundle generation with configurable redaction and program templates.
+
+The production intelligence lifecycle, goal function, operating gates, scorecard, and collaboration policy are
+defined in [`docs/production-loop.md`](docs/production-loop.md).
 
 ## Corpus scale
 

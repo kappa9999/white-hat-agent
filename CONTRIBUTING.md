@@ -46,6 +46,17 @@ The generated YAML is a **draft**, not proof that the method works.
 - Keep the contract provider-neutral. A concrete adapter may target a tool or MCP server.
 - Do not hide sessions, credentials, scope decisions, or target identity from the calling model.
 
+### Intelligence source or data-quality change
+
+- Prefer an authoritative producer feed and document its identifiers, update semantics, deletions, rate limits,
+  availability caveats, schema evolution, license, and attribution.
+- Preserve exact raw source material by digest and keep source-native records even when aliases overlap another feed.
+- Use closed incremental windows with overlap and idempotent upserts; add periodic reconciliation when a cursor cannot
+  represent edits or tombstones.
+- Add synthetic or sanitized frozen fixtures. Unit tests must not depend on a live network response.
+- Treat prioritization data as a dated signal. Confirmed exploitation, probability, severity, and applicability are
+  different facts and must remain independently inspectable.
+
 ### Core code
 
 - Preserve strict Pydantic boundaries and deterministic IDs.

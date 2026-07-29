@@ -29,6 +29,23 @@ from .capabilities.models import CapabilityCatalogManifest, CapabilityDefinition
 from .evaluation import SimulationEvaluation
 from .evidence.models import EvidenceDescriptor, EvidenceRecord, FindingRecord
 from .expansion import ReplayExpansionTranscript
+from .intelligence import (
+    AdvisoryReference,
+    AffectedPackage,
+    AffectedRange,
+    IdentifierLink,
+    IntelligenceStatus,
+    IntelligenceSyncReport,
+    NormalizedAdvisory,
+    PriorityFactors,
+    RankedAdvisory,
+    RawSnapshotProvenance,
+    SeveritySignal,
+    SourceAttribution,
+    SourceState,
+    SourceSyncResult,
+    VersionEvent,
+)
 from .knowledge.compose import CompositePlaybook, CompositionRequest
 from .knowledge.models import CompilationDraft, CorpusManifest, KnowledgeSubmission, Playbook
 from .models import (
@@ -43,6 +60,9 @@ from .simulator import SimulationResult
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "agent-registration": AgentRegistration,
+    "advisory-reference": AdvisoryReference,
+    "affected-package": AffectedPackage,
+    "affected-range": AffectedRange,
     "capability-catalog": CapabilityCatalogManifest,
     "capability-compatibility-report": CapabilityCompatibilityReport,
     "capability-definition": CapabilityDefinition,
@@ -64,12 +84,19 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "evidence-record": EvidenceRecord,
     "finding-record": FindingRecord,
     "hypothesis-expansion": HypothesisExpansionBatch,
+    "identifier-link": IdentifierLink,
+    "intelligence-status": IntelligenceStatus,
+    "intelligence-sync-report": IntelligenceSyncReport,
     "knowledge-submission": KnowledgeSubmission,
     "learning-candidate": LearningCandidate,
     "opportunity": Opportunity,
     "opportunity-score": OpportunityScore,
+    "normalized-advisory": NormalizedAdvisory,
     "playbook": Playbook,
     "probe-intent": ProbeIntent,
+    "priority-factors": PriorityFactors,
+    "ranked-advisory": RankedAdvisory,
+    "raw-snapshot-provenance": RawSnapshotProvenance,
     "replay-expansion-transcript": ReplayExpansionTranscript,
     "replay-transcript": ReplayTranscript,
     "scope-decision": ScopeDecision,
@@ -80,6 +107,11 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "fleet-task": FleetTask,
     "simulation-result": SimulationResult,
     "simulation-evaluation": SimulationEvaluation,
+    "severity-signal": SeveritySignal,
+    "source-attribution": SourceAttribution,
+    "source-state": SourceState,
+    "source-sync-result": SourceSyncResult,
+    "version-event": VersionEvent,
 }
 
 

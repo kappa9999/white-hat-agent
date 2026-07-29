@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/kappa9999/white-hat-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/kappa9999/white-hat-agent/actions/workflows/ci.yml)
 [![Installer smoke](https://github.com/kappa9999/white-hat-agent/actions/workflows/installers.yml/badge.svg)](https://github.com/kappa9999/white-hat-agent/actions/workflows/installers.yml)
+[![Vulnerability intelligence](https://github.com/kappa9999/white-hat-agent/actions/workflows/intelligence.yml/badge.svg)](https://github.com/kappa9999/white-hat-agent/actions/workflows/intelligence.yml)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-3b82f6.svg)](LICENSE)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-f59e0b.svg)](#project-status)
@@ -69,7 +70,23 @@ Connect the installed CLI to any stdio MCP client:
 
 See [MCP integration](docs/mcp.md) for Streamable HTTP, PATH troubleshooting, and client-neutral configuration.
 
+Start the production public-intelligence loop with bounded official sources:
+
+```bash
+wha intelligence sync \
+  --source cisa-kev --source osv \
+  --since-hours 48 --limit-per-source 1000 --enrich-epss --require-success
+wha intelligence brief --source osv --limit 25
+```
+
+Every selected upstream record is backed by an immutable raw snapshot and transparent priority factors. Intelligence
+collection does not interact with affected targets; it produces evidence-backed leads for local or explicitly scoped
+investigation. See the [production loop](docs/production-loop.md).
+
 ## How it works
+
+The diagram focuses on the campaign and discovery execution path; public intelligence feeds opportunity selection
+before the scope gate.
 
 [![White Hat Agent system flow from community knowledge to verified findings](docs/assets/system-flow.webp)](docs/assets/system-flow.webp)
 
@@ -77,6 +94,7 @@ See [MCP integration](docs/mcp.md) for Streamable HTTP, PATH troubleshooting, an
 |---|---|
 | **Knowledge** | Lossless multilingual intake, provenance, strict playbooks, review state, and versioned validation |
 | **Composition** | Deterministic chaining through semantic artifacts, capabilities, compatibility, and explicit blockers |
+| **Intelligence** | Bounded official-source ingestion, immutable snapshots, alias correlation, and transparent prioritization |
 | **Campaigns** | Exact scope snapshots, target identity, budgets, typed probe intent, and playbook contracts |
 | **Fleet** | Compatible-agent matching, atomic task deduplication, expiring leases, and bounded retries |
 | **Evidence** | SHA-256 content addressing, provenance, finding revisions, and causal/differential verification |
@@ -129,8 +147,9 @@ bundled fixtures use reserved `.test` targets and perform no network operation.
 
 ## Interfaces
 
-- **CLI:** nested `wha` commands for workspace, corpus, capabilities, scope, campaign, fleet, evidence, and discovery
-- **MCP:** 37 bounded, namespaced tools plus resources and prompts over stdio or stateless Streamable HTTP
+- **CLI:** nested `wha` commands for workspace, intelligence, corpus, capabilities, scope, campaign, fleet, evidence,
+  and discovery
+- **MCP:** bounded, namespaced tools plus resources and prompts over stdio or stateless Streamable HTTP
 - **Python:** typed models and deterministic planning/composition primitives
 - **JSON Schema:** generated public contracts for every durable interchange object
 
@@ -143,10 +162,11 @@ wha serve --workspace /absolute/path/to/white-hat-workspace --transport http --h
 
 ## Project status
 
-> **Alpha:** the knowledge compiler, composition engine, scope evaluator, opportunity ranking, SQLite
-> fleet, evidence store, adaptive discovery kernel, MCP server, schemas, and deterministic fixtures are implemented.
-> The repository does not yet ship autonomous Internet discovery or scanner adapters. Live capability belongs in
-> explicit adapters with exact campaign scope, not hidden inside the planner.
+> **Alpha:** the knowledge compiler, composition engine, public vulnerability-intelligence monitor, scope evaluator,
+> opportunity ranking, SQLite fleet, evidence store, adaptive discovery kernel, MCP server, schemas, and deterministic
+> fixtures are implemented. Network access is currently limited to fixed public intelligence sources. The repository
+> does not ship a general target scanner; live capability belongs in explicit adapters with exact campaign scope, not
+> hidden inside the planner.
 
 Corpus trust is earned per version:
 
@@ -174,6 +194,8 @@ uv build
 - [Architecture](docs/architecture.md)
 - [Installation and updates](docs/installation.md)
 - [MCP integration](docs/mcp.md)
+- [Production intelligence and research loop](docs/production-loop.md)
+- [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
 - [Threat model](THREAT_MODEL.md)
 - [Governance](GOVERNANCE.md)

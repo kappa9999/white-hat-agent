@@ -18,6 +18,16 @@ Python 3.12 is the default managed runtime. Set `WHA_PYTHON` if a compatible new
 
 Re-running the matching command performs an update as well as an installation.
 
+After updating across a workspace-schema release, re-run initialization for each existing workspace before `doctor`:
+
+```bash
+wha init /absolute/path/to/existing-workspace
+wha doctor --workspace /absolute/path/to/existing-workspace
+```
+
+Initialization is idempotent. It creates new state directories/tables and missing built-in assets without overwriting
+an existing corpus, capability catalog, or configuration.
+
 ### macOS, Linux, or WSL
 
 ```bash

@@ -1,0 +1,198 @@
+{
+  "$defs": {
+    "AffectedRange": {
+      "additionalProperties": false,
+      "properties": {
+        "database_specific": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Database Specific",
+          "type": "object"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/VersionEvent"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "raw_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Type"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository"
+        },
+        "type": {
+          "$ref": "#/$defs/RangeType"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "AffectedRange",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "RangeType": {
+      "enum": [
+        "ecosystem",
+        "git",
+        "semver",
+        "unknown"
+      ],
+      "title": "RangeType",
+      "type": "string"
+    },
+    "VersionEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "fixed": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed"
+        },
+        "introduced": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Introduced"
+        },
+        "last_affected": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Affected"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        }
+      },
+      "title": "VersionEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "database_specific": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Database Specific",
+      "type": "object"
+    },
+    "ecosystem": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ecosystem"
+    },
+    "ecosystem_specific": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Ecosystem Specific",
+      "type": "object"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "purl": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Purl"
+    },
+    "ranges": {
+      "items": {
+        "$ref": "#/$defs/AffectedRange"
+      },
+      "title": "Ranges",
+      "type": "array"
+    },
+    "vendor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Vendor"
+    },
+    "versions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Versions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "AffectedPackage",
+  "type": "object"
+}

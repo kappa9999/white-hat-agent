@@ -8,6 +8,7 @@ from .campaign.scope import evaluate_scope
 from .episode import apply_observation
 from .evidence.store import EvidenceStore
 from .expansion import HypothesisGenerator, apply_expansion
+from .intelligence import IntelligenceService, IntelligenceStore
 from .knowledge.compose import compose_playbooks
 from .knowledge.corpus import Corpus
 from .mcp_server import create_server
@@ -30,6 +31,8 @@ __all__ = [
     "EvidenceStore",
     "FleetStore",
     "HypothesisGenerator",
+    "IntelligenceService",
+    "IntelligenceStore",
     "PlannerConfig",
     "ProbeIntent",
     "ScopeManifest",
@@ -45,4 +48,4 @@ __all__ = [
     "verify_causality",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

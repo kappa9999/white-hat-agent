@@ -59,6 +59,7 @@ class FleetStats(StrictModel):
     completed: int
     failed: int
     blocked: int
+    cancelled: int
 
 
 class FleetStore:
@@ -246,6 +247,21 @@ class FleetStore:
                 raise FleetError(f"unknown campaign: {campaign_id}")
             current = CampaignState(row["state"])
             if state == current:
+                now = datetime.now(UTC)
+                affected_agents: set[str] = set()
+                if state == CampaignState.PAUSED:
+                    affected_agents = self._requeue_campaign_leases(
+                        connection,
+                        campaign_id,
+                        now,
+                    )
+                elif state == CampaignState.CANCELLED:
+                    affected_agents = self._cancel_campaign_work(
+                        connection,
+                        campaign_id,
+                        now,
+                    )
+                self._release_idle_agents(connection, affected_agents, now)
                 return
             allowed = _CAMPAIGN_TRANSITIONS[current]
             if state not in allowed:
@@ -257,11 +273,19 @@ class FleetStore:
                 ).fetchone()["count"]
                 if active:
                     raise FleetError("cannot complete a campaign with queued or leased tasks")
+            now = datetime.now(UTC)
+            affected_agents: set[str] = set()
+            if state in {CampaignState.PAUSED, CampaignState.RUNNING}:
+                # An operator pause revokes, rather than consumes, the active attempt. Sweeping
+                # again before resume also repairs legacy or externally drifted paused state.
+                affected_agents = self._requeue_campaign_leases(connection, campaign_id, now)
+            elif state == CampaignState.CANCELLED:
+                affected_agents = self._cancel_campaign_work(connection, campaign_id, now)
             if state == CampaignState.RUNNING:
                 changed = connection.execute(
                     "UPDATE campaigns SET state = ?, started_at = COALESCE(started_at, ?) "
                     "WHERE campaign_id = ?",
-                    (state.value, _iso(datetime.now(UTC)), campaign_id),
+                    (state.value, _iso(now), campaign_id),
                 ).rowcount
             else:
                 changed = connection.execute(
@@ -270,6 +294,7 @@ class FleetStore:
                 ).rowcount
             if changed != 1:  # pragma: no cover - guarded above
                 raise FleetError(f"campaign state update failed: {campaign_id}")
+            self._release_idle_agents(connection, affected_agents, now)
 
     def get_campaign(self, campaign_id: str) -> CampaignManifest:
         with self._connect() as connection:
@@ -434,6 +459,13 @@ class FleetStore:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self._requeue_expired(connection, now)
+            connection.execute(
+                """
+                UPDATE tasks SET state = ?, updated_at = ?
+                WHERE state = ? AND attempts >= max_attempts
+                """,
+                (TaskState.FAILED.value, _iso(now), TaskState.QUEUED.value),
+            )
             registration = self._agent(connection, agent_id)
             active_leases = connection.execute(
                 "SELECT COUNT(*) AS count FROM tasks WHERE state = ? AND lease_owner = ?",
@@ -446,7 +478,7 @@ class FleetStore:
                 """
                 SELECT t.*, c.manifest_json, c.started_at FROM tasks t
                 JOIN campaigns c ON c.campaign_id = t.campaign_id
-                WHERE t.state = ? AND c.state = ?
+                WHERE t.state = ? AND c.state = ? AND t.attempts < t.max_attempts
                 ORDER BY t.priority DESC, t.created_at ASC, t.task_id ASC
                 """,
                 (TaskState.QUEUED.value, CampaignState.RUNNING.value),
@@ -509,9 +541,10 @@ class FleetStore:
     ) -> datetime:
         if extend_seconds < 10 or extend_seconds > 86400:
             raise ValueError("extend_seconds must be between 10 and 86400")
-        now = datetime.now(UTC)
-        expires = now + timedelta(seconds=extend_seconds)
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            now = datetime.now(UTC)
+            expires = now + timedelta(seconds=extend_seconds)
             self._assert_lease(connection, task_id, agent_id, lease_token, now)
             connection.execute(
                 "UPDATE tasks SET lease_expires_at = ?, updated_at = ? WHERE task_id = ?",
@@ -524,9 +557,9 @@ class FleetStore:
         return expires
 
     def complete_task(self, agent_id: str, result: TaskResult) -> TaskState:
-        now = datetime.now(UTC)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            now = datetime.now(UTC)
             self._assert_lease(connection, result.task_id, agent_id, result.lease_token, now)
             campaign_row = connection.execute(
                 """
@@ -566,10 +599,7 @@ class FleetStore:
                 "INSERT INTO task_results(task_id, agent_id, result_json, completed_at) VALUES (?, ?, ?, ?)",
                 (result.task_id, agent_id, json.dumps(stored, sort_keys=True), _iso(now)),
             )
-            connection.execute(
-                "UPDATE agents SET last_seen_at = ?, status = 'online' WHERE agent_id = ?",
-                (_iso(now), agent_id),
-            )
+            self._release_idle_agents(connection, {agent_id}, now)
         return terminal_state
 
     def stats(self) -> FleetStats:
@@ -588,6 +618,7 @@ class FleetStore:
             completed=counts.get(TaskState.COMPLETED.value, 0),
             failed=counts.get(TaskState.FAILED.value, 0),
             blocked=counts.get(TaskState.BLOCKED.value, 0),
+            cancelled=counts.get(TaskState.CANCELLED.value, 0),
         )
 
     def learning_candidates(
@@ -744,15 +775,84 @@ class FleetStore:
                 _iso(now),
             ),
         )
-        for owner in owners:
+        FleetStore._release_idle_agents(connection, owners, now)
+
+    @staticmethod
+    def _campaign_lease_owners(connection: sqlite3.Connection, campaign_id: str) -> set[str]:
+        return {
+            row["lease_owner"]
+            for row in connection.execute(
+                """
+                SELECT DISTINCT lease_owner FROM tasks
+                WHERE campaign_id = ? AND state = ? AND lease_owner IS NOT NULL
+                """,
+                (campaign_id, TaskState.LEASED.value),
+            ).fetchall()
+        }
+
+    @staticmethod
+    def _requeue_campaign_leases(
+        connection: sqlite3.Connection,
+        campaign_id: str,
+        now: datetime,
+    ) -> set[str]:
+        owners = FleetStore._campaign_lease_owners(connection, campaign_id)
+        connection.execute(
+            """
+            UPDATE tasks SET
+                state = ?, attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+                lease_owner = NULL, lease_token_sha256 = NULL,
+                lease_expires_at = NULL, updated_at = ?
+            WHERE campaign_id = ? AND state = ?
+            """,
+            (
+                TaskState.QUEUED.value,
+                _iso(now),
+                campaign_id,
+                TaskState.LEASED.value,
+            ),
+        )
+        return owners
+
+    @staticmethod
+    def _cancel_campaign_work(
+        connection: sqlite3.Connection,
+        campaign_id: str,
+        now: datetime,
+    ) -> set[str]:
+        owners = FleetStore._campaign_lease_owners(connection, campaign_id)
+        connection.execute(
+            """
+            UPDATE tasks SET
+                state = ?, lease_owner = NULL, lease_token_sha256 = NULL,
+                lease_expires_at = NULL, updated_at = ?
+            WHERE campaign_id = ? AND state IN (?, ?)
+            """,
+            (
+                TaskState.CANCELLED.value,
+                _iso(now),
+                campaign_id,
+                TaskState.QUEUED.value,
+                TaskState.LEASED.value,
+            ),
+        )
+        return owners
+
+    @staticmethod
+    def _release_idle_agents(
+        connection: sqlite3.Connection,
+        agent_ids: set[str],
+        now: datetime,
+    ) -> None:
+        for agent_id in agent_ids:
             remaining = connection.execute(
                 "SELECT COUNT(*) AS count FROM tasks WHERE state = ? AND lease_owner = ?",
-                (TaskState.LEASED.value, owner),
+                (TaskState.LEASED.value, agent_id),
             ).fetchone()["count"]
             if remaining == 0:
                 connection.execute(
                     "UPDATE agents SET status = 'online', last_seen_at = ? WHERE agent_id = ?",
-                    (_iso(now), owner),
+                    (_iso(now), agent_id),
                 )
 
     @staticmethod
@@ -799,17 +899,26 @@ class FleetStore:
         now: datetime,
     ) -> None:
         row = connection.execute(
-            "SELECT state, lease_owner, lease_token_sha256, lease_expires_at FROM tasks WHERE task_id = ?",
+            """
+            SELECT t.state, t.lease_owner, t.lease_token_sha256, t.lease_expires_at,
+                   c.state AS campaign_state
+            FROM tasks t JOIN campaigns c ON c.campaign_id = t.campaign_id
+            WHERE t.task_id = ?
+            """,
             (task_id,),
         ).fetchone()
         if not row:
             raise FleetError(f"unknown task: {task_id}")
+        if row["campaign_state"] != CampaignState.RUNNING.value:
+            raise FleetError("task campaign is not running")
         if row["state"] != TaskState.LEASED.value or row["lease_owner"] != agent_id:
             raise FleetError("task is not leased by this agent")
         expected = row["lease_token_sha256"]
         supplied = hashlib.sha256(lease_token.encode()).hexdigest()
-        if not secrets.compare_digest(expected, supplied):
+        if not expected or not secrets.compare_digest(expected, supplied):
             raise FleetError("invalid lease token")
+        if not row["lease_expires_at"]:
+            raise FleetError("task lease has no expiration")
         expires = datetime.fromisoformat(row["lease_expires_at"])
         if expires < now:
             raise FleetError("task lease has expired")

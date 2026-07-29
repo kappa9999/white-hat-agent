@@ -31,10 +31,10 @@ def smoke_artifact(artifact: Path, temporary_root: Path) -> None:
     if not report["healthy"]:
         raise RuntimeError(report)
     corpus = list((workspace_dir / "corpus/playbooks").rglob("playbook.yaml"))
-    if len(corpus) != 4 or not (workspace_dir / "capabilities/catalog.yaml").is_file():
+    if len(corpus) != 5 or not (workspace_dir / "capabilities/catalog.yaml").is_file():
         raise RuntimeError(f"{artifact_kind} omitted bundled corpus or capability catalog")
     version = run(str(wha), "--version", cwd=temporary_root).stdout.strip()
-    if version != "White Hat Agent Core 0.1.0":
+    if version != "White Hat Agent Core 0.2.0":
         raise RuntimeError(f"unexpected version output from {artifact_kind}: {version}")
 
 

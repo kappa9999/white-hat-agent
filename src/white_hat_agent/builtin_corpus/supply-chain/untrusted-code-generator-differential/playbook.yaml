@@ -1,0 +1,385 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: untrusted-code-generator-differential
+  version: 1.0.0
+  title: Validate untrusted code generators with inert vulnerable/fixed differentials
+  summary: Compare exact generator versions with non-executed sentinels, benign controls, source diffs, and optional loopback-only reference counters.
+  domains: [supply-chain, code-generation, verification]
+  tags: [untrusted-input, patch-diff, causal, negative-control, local-lab]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-29T15:37:41Z
+  updated_at: 2026-07-29T15:37:41Z
+applicability:
+  target_kinds: [package, repository, code-generator]
+  platforms: []
+  technologies: []
+  preconditions:
+    - Exact vulnerable and fixed package artifacts are available in a locally owned, disposable lab.
+    - A public advisory or authorized hypothesis identifies an untrusted-input boundary and an expected fixed behavior.
+    - The scope manifest binds both package identities, the local lab identity, and the permitted fixture and loopback addresses.
+  assumptions:
+    - The same runtime, generator options, fixture bytes, and output normalization can be used for both versions.
+    - An inert output sentinel can distinguish quoting or interpolation behavior without compiling, importing, or executing generated code.
+  exclusions:
+    - Live services, third-party systems, production networks, or any target outside the explicit local scope manifest.
+    - Payloads whose evidence requires generated code to be compiled, imported, evaluated, or executed.
+    - External-reference tests that bind beyond loopback or contact an address not created by the same local experiment.
+scope:
+  minimum_execution_class: controlled-active
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 4
+  recommended_concurrency: 1
+  action_tags: [local-generation, loopback-observation]
+  data_classes: [package-artifact, source-artifact, generated-output, local-http-metadata]
+taxonomies:
+  - scheme: CWE
+    identifier: CWE-94
+    url: https://cwe.mitre.org/data/definitions/94.html
+    relationship: may-validate
+  - scheme: CWE
+    identifier: CWE-918
+    url: https://cwe.mitre.org/data/definitions/918.html
+    relationship: may-validate
+inputs:
+  - name: vulnerable-generator
+    semantic_type: artifact/vulnerable-build
+    description: Exact vulnerable package version, release or commit, tarball bytes, digest, and runtime identity.
+    required: true
+    secret: false
+    examples: []
+  - name: fixed-generator
+    semantic_type: artifact/fixed-build
+    description: Exact fixed package version, release or commit, tarball bytes, digest, and runtime identity.
+    required: true
+    secret: false
+    examples: []
+  - name: inert-payload-fixture
+    semantic_type: artifact/inert-fixture
+    description: Untrusted-input fixture containing a unique, side-effect-free sentinel that will only be inspected in generated text.
+    required: true
+    secret: false
+    examples: []
+  - name: benign-control-fixture
+    semantic_type: artifact/negative-control
+    description: Benign fixture exercising the intended feature, such as a declared path parameter, without the candidate sentinel or external reference.
+    required: true
+    secret: false
+    examples: []
+  - name: local-lab-authorization
+    semantic_type: scope/authorization
+    description: Scope evidence naming the owned disposable lab, exact artifacts, allowed loopback endpoints, budgets, and cleanup owner.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: generated-output-differential
+    semantic_type: evidence/generator-differential
+    description: Hash-bound vulnerable, fixed, payload, and control output comparison with the generated files retained only as evidence permits.
+    required: true
+    secret: false
+    examples: []
+  - name: loopback-reference-differential
+    semantic_type: evidence/loopback-counter
+    description: Optional matched hit-count matrix for external-reference behavior using only experiment-owned loopback listeners.
+    required: false
+    secret: false
+    examples: []
+  - name: advisory-validation
+    semantic_type: finding/advisory-validation
+    description: Proof-tiered confirmation, refutation, or inconclusive result tied to the public advisory or authorized hypothesis without claiming novelty.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: bind-exact-lab-identities
+    kind: prepare
+    title: Bind exact package, fixture, and lab identities
+    instruction: Resolve vulnerable and fixed versions to immutable release or commit identities, hash their original package artifacts and both fixture files, and record runtime, package-manager, operating-system, generator options, timestamps, and the local scope authorization. Fail closed on any identity drift.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [artifact.hash, artifact.inspect, evidence.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Both package artifacts, both fixtures, and the runtime have unambiguous identities and SHA-256 digests.
+      - The scope decision names only a locally owned disposable target and any allowed 127.0.0.1 or ::1 endpoints.
+    failure_signals:
+      - A mutable version selector, unresolved dependency, digest mismatch, ambiguous target, or missing authorization remains.
+      - A fixture contains a command, filesystem action, credential access, or other side effect instead of an inert text sentinel.
+    evidence:
+      - evidence_type: evidence/artifact-identity
+        description: Package, fixture, runtime, and scope identities with digests and provenance.
+        minimum_count: 5
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+  - step_id: inspect-public-fix
+    kind: analyze
+    title: Inspect the advisory and source-level fix
+    instruction: Preserve the advisory's original title and provenance, then search the exact vulnerable and fixed sources and derive a bounded diff of the input-to-output or external-reference boundary. Treat prose as a hypothesis anchor; make all behavioral conclusions depend on the later experiment.
+    localized_instructions: {}
+    depends_on: [bind-exact-lab-identities]
+    required_capabilities: [code.search, data.diff, evidence.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Each expected behavioral change points to an exact source location and commit or release identity.
+      - The source diff separates candidate security changes from unrelated release drift.
+    failure_signals:
+      - The source identity cannot be related to the tested package artifacts.
+      - The conclusion merely repeats advisory wording without a code anchor.
+    evidence:
+      - evidence_type: evidence/source-diff
+        description: Hash-bound changed locations and the predicted vulnerable/fixed outcomes.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 1200
+    max_repetitions: 1
+  - step_id: design-matched-matrix
+    kind: prepare
+    title: Design a matched payload and negative-control matrix
+    instruction: >-
+      Define four local generation cells using the same runtime and options: vulnerable/payload, vulnerable/control,
+      fixed/payload, and fixed/control. Predict the exact sentinel representation and intended benign interpolation in
+      each output. Explicitly prohibit compiling, importing, evaluating, or executing every generated artifact.
+    localized_instructions: {}
+    depends_on: [inspect-public-fix]
+    required_capabilities: [experiment.design]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The plan changes only generator identity and fixture identity across the four declared cells.
+      - Predictions distinguish unsafe sentinel treatment, fixed sentinel treatment, and preserved benign behavior.
+    failure_signals:
+      - Multiple uncontrolled variables differ between cells.
+      - The plan depends on executing generated output or observing a nonlocal effect.
+    evidence:
+      - evidence_type: experiment/differential-plan
+        description: Exact commands or typed operations, predictions, budgets, timeouts, cleanup, and prohibited actions.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+  - step_id: replay-local-generation
+    kind: execute
+    title: Generate text in the four local cells
+    instruction: In isolated directories, replay the bounded generator operation once per matrix cell with lifecycle scripts disabled where the package manager permits. Capture standard output, standard error, exit status, elapsed time, dependency identity, and generated-file inventory. Do not compile, import, evaluate, invoke, or otherwise execute generated output.
+    localized_instructions: {}
+    depends_on: [design-matched-matrix]
+    required_capabilities: [experiment.replay, evidence.capture, artifact.hash]
+    inputs: []
+    outputs: []
+    success_signals:
+      - All four runs finish within their timeout and produce hash-bound output inventories.
+      - No generated artifact is passed to a compiler, runtime, loader, shell, or network client.
+    failure_signals:
+      - A run exceeds budget, resolves a different dependency graph, contacts a nonlocal endpoint, or lacks correlated evidence.
+      - Any generated output is executed, making this playbook's result invalid.
+    evidence:
+      - evidence_type: evidence/reproduction
+        description: Four correlated local generation records and their generated-output SHA-256 digests.
+        minimum_count: 4
+        independent: false
+    side_effects:
+      - Creates disposable local dependency and generated-output directories.
+    cleanup:
+      - Preserve hashes and bounded evidence, then remove the exact disposable directories after the comparison and final evidence write.
+    timeout_seconds: 1800
+    max_repetitions: 1
+  - step_id: compare-generated-text
+    kind: analyze
+    title: Diff generated text without executing it
+    instruction: Search the output text for the unique inert sentinel and the benign control construct, normalize only declared volatile header fields, and diff matched cells. Record exact line excerpts, byte lengths, hashes, normalization rules, and whether the fixed version neutralizes the candidate syntax while preserving intended behavior.
+    localized_instructions: {}
+    depends_on: [replay-local-generation]
+    required_capabilities: [code.search, data.diff, evidence.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The payload outcome changes in the predicted location between exact versions while the benign control remains equivalent.
+      - Every quoted line is bound to the digest of its full generated artifact.
+    failure_signals:
+      - The output difference is caused by undeclared normalization or unrelated generator drift.
+      - Sentinel absence is treated as proof without checking renamed, encoded, or relocated output.
+    evidence:
+      - evidence_type: evidence/generator-differential
+        description: Deterministic four-cell generated-text comparison with source artifact identities.
+        minimum_count: 1
+        independent: true
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+  - step_id: optional-loopback-reference-counter
+    kind: verify
+    title: Optionally count external-reference requests on loopback
+    instruction: >-
+      When the advisory concerns external reference resolution, create two ephemeral listeners bound only to 127.0.0.1
+      or ::1: one serves the in-memory control or payload specification and one counts a single unique reference path.
+      Replay each exact generator version against each spec, reject redirects or connections outside these listeners,
+      record a four-cell hit matrix, and mark this step not applicable for output-only hypotheses.
+    localized_instructions: {}
+    depends_on: [replay-local-generation]
+    required_capabilities: [experiment.replay, evidence.capture, data.diff]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The control and payload hit counts are correlated to exact generator versions and ephemeral loopback endpoint identities.
+      - Packet or listener evidence confirms that no nonloopback destination was contacted.
+    failure_signals:
+      - A listener binds beyond loopback, a request escapes the experiment, or hit attribution is ambiguous.
+      - The control unexpectedly produces a counter hit or the server lifecycle is not captured.
+    evidence:
+      - evidence_type: evidence/loopback-counter
+        description: Optional four-cell request count, exact unique path, listener identities, and server lifecycle evidence.
+        minimum_count: 1
+        independent: true
+    side_effects:
+      - Creates short-lived loopback listeners and local generated-output directories.
+    cleanup:
+      - Close both listeners, verify their ports no longer accept connections, and remove exact temporary outputs.
+    timeout_seconds: 1200
+    max_repetitions: 1
+  - step_id: classify-causal-result
+    kind: verify
+    title: Classify the vulnerable/fixed differential
+    instruction: Compare the observed matrix to the source-diff prediction. Confirm only the behavior directly established by inert generated text or loopback counters; preserve negative and divergent results. Label public-advisory reproduction separately from any genuinely novel adjacent hypothesis.
+    localized_instructions: {}
+    depends_on: [compare-generated-text, optional-loopback-reference-counter]
+    required_capabilities: [data.diff, evidence.capture, finding.write]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The result distinguishes public advisory provenance, observed effect, source-level mechanism, fixed behavior, control behavior, and remaining unknowns.
+      - No new vulnerability or impact claim exceeds the local non-executing evidence.
+    failure_signals:
+      - Fixed-version rejection is credited to the proposed mechanism without a matching source and control differential.
+      - A public advisory reproduction is presented as an original discovery.
+    evidence:
+      - evidence_type: finding/advisory-validation
+        description: Causal classification with exact evidence references and explicit novelty status.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+  - step_id: preserve-and-clean
+    kind: cleanup
+    title: Preserve evidence and close the disposable lab
+    instruction: Atomically write provenance, commands, identities, hashes, output excerpts, matrices, negative results, source links, limitations, and cleanup status. Retain only permitted immutable evidence; delete exact disposable outputs and verify that all loopback listeners stopped.
+    localized_instructions: {}
+    depends_on: [classify-causal-result]
+    required_capabilities: [evidence.write, finding.write, evidence.capture]
+    inputs: []
+    outputs: []
+    success_signals:
+      - Evidence can reproduce every classification without relying on mutable package selectors or unstated environment state.
+      - Temporary outputs are gone and all experiment-owned listeners are closed.
+    failure_signals:
+      - Evidence omits a digest, command, negative control, limitation, or cleanup verification.
+      - A process, listener, generated artifact, or unbounded dependency cache remains unintentionally active.
+    evidence:
+      - evidence_type: evidence/record
+        description: Final provenance manifest, finding record, negative results, and cleanup attestation.
+        minimum_count: 1
+        independent: false
+    side_effects:
+      - Writes local evidence and finding records.
+    cleanup:
+      - Verify evidence writes completed before removing only the exact temporary lab paths named in the experiment plan.
+    timeout_seconds: 600
+    max_repetitions: 1
+composition:
+  consumes: [artifact/vulnerable-build, artifact/fixed-build, artifact/inert-fixture, artifact/negative-control, scope/authorization]
+  provides: [evidence/generator-differential, evidence/loopback-counter, finding/advisory-validation]
+  compatible_after: [patch-diff-hypothesis-seeding]
+  compatible_before: [causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: evidence/artifact-identity
+    description: Immutable identities for both generator versions, both fixtures, runtime, and source provenance.
+    minimum_count: 5
+    independent: false
+  - evidence_type: evidence/generator-differential
+    description: Four-cell non-executing output matrix with a benign negative control.
+    minimum_count: 1
+    independent: true
+  - evidence_type: finding/advisory-validation
+    description: Public-advisory reproduction classification or explicit refutation with novelty boundaries.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Executing generated output turns a bounded text differential into a different and higher-risk experiment.
+  - Comparing mutable version tags, different dependency graphs, or different generator options creates false causality.
+  - A sentinel can be inert yet still alter parser behavior; the benign control and source diff remain necessary.
+  - A loopback spec source and a loopback reference counter are different origins only when their ports differ.
+  - A zero-hit fixed result does not prove every redirect, DNS, IPv4, IPv6, or same-origin policy variant.
+  - Public advisory reproduction is mistakenly published as a new vulnerability.
+variations:
+  - Apply the same matrix to schema compilers, template engines, SDK generators, IDL compilers, transpilers, or build-time asset pipelines.
+  - Replace textual interpolation sentinels with inert AST markers, generated filenames, or metadata fields while retaining the no-execution rule.
+  - Omit the loopback counter for output-only hypotheses and record the step as not applicable rather than simulating evidence.
+sources:
+  - source_id: ghsa-w284-33mx-6g9v
+    kind: advisory
+    title: Code injection via unescaped OpenAPI path strings in generated method bodies; per-method-call RCE
+    url: https://github.com/advisories/GHSA-w284-33mx-6g9v
+    authors: [Hamza Haroon (thegr1ffyn), swagger-typescript-api maintainers]
+    license: source-terms
+    accessed_at: 2026-07-29T15:29:11Z
+    notes: Public advisory provenance for CVE-2026-54666; title is preserved from the advisory and no generated code was executed in the local validation.
+  - source_id: ghsa-x36r-4347-pm5x
+    kind: advisory
+    title: Server-Side Request Forgery via spec `$ref`; generator makes attacker-directed HTTP requests during code generation when run against an attacker-controlled OpenAPI spec
+    url: https://github.com/advisories/GHSA-x36r-4347-pm5x
+    authors: [Hamza Haroon (thegr1ffyn), swagger-typescript-api maintainers]
+    license: source-terms
+    accessed_at: 2026-07-29T15:29:11Z
+    notes: Public advisory provenance for CVE-2026-54663; the local validation used only two ephemeral 127.0.0.1 listeners.
+  - source_id: swagger-typescript-api-pr-1779
+    kind: code
+    title: Security/fixing vulnerabilities
+    url: https://github.com/acacode/swagger-typescript-api/pull/1779
+    authors: [swagger-typescript-api maintainers]
+    license: repository-license
+    accessed_at: 2026-07-29T15:29:11Z
+    notes: Merged source and regression-test patch used to anchor the fixed-behavior hypotheses.
+  - source_id: swagger-typescript-api-v13.12.1
+    kind: code
+    title: swagger-typescript-api v13.12.1
+    url: https://github.com/acacode/swagger-typescript-api/releases/tag/v13.12.1
+    authors: [swagger-typescript-api maintainers]
+    license: repository-license
+    accessed_at: 2026-07-29T15:29:11Z
+    notes: Vulnerable comparison release identified by the public advisories.
+  - source_id: swagger-typescript-api-v13.12.2
+    kind: code
+    title: swagger-typescript-api v13.12.2
+    url: https://github.com/acacode/swagger-typescript-api/releases/tag/v13.12.2
+    authors: [swagger-typescript-api maintainers]
+    license: repository-license
+    accessed_at: 2026-07-29T15:29:11Z
+    notes: Fixed comparison release containing the merged security patch.
+validation:
+  fixture_ids: [swagger-typescript-api-local-differential-2026-07-29]
+  test_commands:
+    - npx vitest run tests/route-path-injection.test.ts tests/escape-js-template-literal-with-path-params.test.ts tests/resolved-swagger-schema-ssrf.test.ts --reporter=verbose
+    - pytest tests/test_corpus.py
+  known_limitations:
+    - Validation reproduced two published advisories on one Linux and Node runtime with exact npm artifacts; it is not a claim about every generator or platform.
+    - The generated-output sentinel was never executed, so the local evidence confirms syntax treatment rather than independently re-demonstrating advisory impact.
+    - The local external-reference matrix covered a direct cross-origin IPv4 loopback reference; broader redirect, DNS, IPv6, and same-origin policy cases were covered only by upstream regression tests.
+  last_validated_at: 2026-07-29T15:37:41Z
+  validated_by: [white-hat-agent-local-differential-2026-07-29]

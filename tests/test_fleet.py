@@ -13,6 +13,7 @@ from white_hat_agent.campaign.models import (
     ProbeIntent,
     TargetKind,
     TaskResult,
+    TaskState,
 )
 from white_hat_agent.knowledge.learning import submission_from_learning
 from white_hat_agent.knowledge.models import ExecutionClass, ReviewState, RightsDeclaration
@@ -258,3 +259,288 @@ def test_agent_max_concurrency_is_enforced(tmp_path) -> None:
 
     assert store.claim_task("bounded-agent", lease_seconds=60) is not None
     assert store.claim_task("bounded-agent", lease_seconds=60) is None
+
+
+def test_pause_revokes_leases_and_resume_issues_a_fresh_token(tmp_path) -> None:
+    store = FleetStore(tmp_path / "fleet.db")
+    store.initialize()
+    store.create_campaign(build_campaign())
+    leased_outcome = store.enqueue_intent("example-lab-campaign", _intent(), priority=100)
+    queued_outcome = store.enqueue_intent(
+        "example-lab-campaign",
+        _intent().model_copy(update={"intent_id": "intent-http-queued", "target": "queued.example.test"}),
+        priority=10,
+    )
+    assert leased_outcome.task is not None and queued_outcome.task is not None
+    store.register_agent(
+        AgentRegistration(
+            agent_id="http-agent",
+            display_name="HTTP fixture adapter",
+            provider="fixture",
+            capabilities=["http.request", "http.capture", "data.diff", "evidence.write"],
+            max_execution_class=ExecutionClass.CONTROLLED_ACTIVE,
+        )
+    )
+    store.set_campaign_state("example-lab-campaign", CampaignState.READY)
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+    original_lease = store.claim_task("http-agent", lease_seconds=60)
+    assert original_lease is not None
+    assert original_lease.task.task_id == leased_outcome.task.task_id
+    assert original_lease.task.attempts == 1
+
+    store.set_campaign_state("example-lab-campaign", CampaignState.PAUSED)
+    store.set_campaign_state("example-lab-campaign", CampaignState.PAUSED)
+
+    requeued = store.get_task(original_lease.task.task_id)
+    untouched = store.get_task(queued_outcome.task.task_id)
+    assert requeued.state == TaskState.QUEUED
+    assert requeued.attempts == 0
+    assert requeued.lease_owner is None and requeued.lease_expires_at is None
+    assert untouched.state == TaskState.QUEUED and untouched.attempts == 0
+    with sqlite3.connect(store.database) as connection:
+        lease_material = connection.execute(
+            "SELECT lease_owner, lease_token_sha256, lease_expires_at FROM tasks WHERE task_id = ?",
+            (original_lease.task.task_id,),
+        ).fetchone()
+        agent_status = connection.execute(
+            "SELECT status FROM agents WHERE agent_id = 'http-agent'"
+        ).fetchone()[0]
+    assert lease_material == (None, None, None)
+    assert agent_status == "online"
+
+    with pytest.raises(FleetError, match="campaign is not running"):
+        store.heartbeat(
+            original_lease.task.task_id,
+            "http-agent",
+            original_lease.lease_token,
+        )
+    with pytest.raises(FleetError, match="campaign is not running"):
+        store.complete_task(
+            "http-agent",
+            TaskResult(
+                task_id=original_lease.task.task_id,
+                lease_token=original_lease.lease_token,
+                outcome="completed",
+                summary="A revoked lease must not report while the campaign is paused.",
+            ),
+        )
+
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+    resumed_lease = store.claim_task("http-agent", lease_seconds=60)
+    assert resumed_lease is not None
+    assert resumed_lease.task.task_id == original_lease.task.task_id
+    assert resumed_lease.lease_token != original_lease.lease_token
+    assert resumed_lease.task.attempts == 1
+    assert (
+        store.complete_task(
+            "http-agent",
+            TaskResult(
+                task_id=resumed_lease.task.task_id,
+                lease_token=resumed_lease.lease_token,
+                outcome="completed",
+                summary="The resumed task completed under a fresh lease.",
+            ),
+        )
+        == TaskState.COMPLETED
+    )
+
+
+def test_cancel_terminalizes_queued_and_leased_tasks_but_preserves_terminal_tasks(tmp_path) -> None:
+    store = FleetStore(tmp_path / "fleet.db")
+    store.initialize()
+    store.create_campaign(build_campaign())
+    completed_outcome = store.enqueue_intent("example-lab-campaign", _intent(), priority=100)
+    leased_outcome = store.enqueue_intent(
+        "example-lab-campaign",
+        _intent().model_copy(update={"intent_id": "intent-http-leased", "target": "leased.example.test"}),
+        priority=90,
+    )
+    queued_outcome = store.enqueue_intent(
+        "example-lab-campaign",
+        _intent().model_copy(update={"intent_id": "intent-http-queued", "target": "queued.example.test"}),
+        priority=80,
+    )
+    assert completed_outcome.task and leased_outcome.task and queued_outcome.task
+    store.register_agent(
+        AgentRegistration(
+            agent_id="http-agent",
+            display_name="HTTP fixture adapter",
+            provider="fixture",
+            capabilities=["http.request", "http.capture", "data.diff", "evidence.write"],
+            max_execution_class=ExecutionClass.CONTROLLED_ACTIVE,
+        )
+    )
+    store.set_campaign_state("example-lab-campaign", CampaignState.READY)
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+
+    completed_lease = store.claim_task("http-agent", lease_seconds=60)
+    assert completed_lease is not None
+    store.complete_task(
+        "http-agent",
+        TaskResult(
+            task_id=completed_lease.task.task_id,
+            lease_token=completed_lease.lease_token,
+            outcome="completed",
+            summary="This terminal result must survive campaign cancellation.",
+        ),
+    )
+    active_lease = store.claim_task("http-agent", lease_seconds=60)
+    assert active_lease is not None
+    assert active_lease.task.task_id == leased_outcome.task.task_id
+
+    store.set_campaign_state("example-lab-campaign", CampaignState.CANCELLED)
+    store.set_campaign_state("example-lab-campaign", CampaignState.CANCELLED)
+
+    assert store.get_task(completed_outcome.task.task_id).state == TaskState.COMPLETED
+    assert store.get_task(leased_outcome.task.task_id).state == TaskState.CANCELLED
+    assert store.get_task(queued_outcome.task.task_id).state == TaskState.CANCELLED
+    assert store.stats().cancelled == 2
+    with sqlite3.connect(store.database) as connection:
+        cancelled_rows = connection.execute(
+            """
+            SELECT lease_owner, lease_token_sha256, lease_expires_at FROM tasks
+            WHERE task_id IN (?, ?) ORDER BY task_id
+            """,
+            (leased_outcome.task.task_id, queued_outcome.task.task_id),
+        ).fetchall()
+        agent_status = connection.execute(
+            "SELECT status FROM agents WHERE agent_id = 'http-agent'"
+        ).fetchone()[0]
+        result_count = connection.execute("SELECT COUNT(*) FROM task_results").fetchone()[0]
+    assert cancelled_rows == [(None, None, None), (None, None, None)]
+    assert agent_status == "online"
+    assert result_count == 1
+
+    with pytest.raises(FleetError, match="campaign is not running"):
+        store.heartbeat(active_lease.task.task_id, "http-agent", active_lease.lease_token)
+    with pytest.raises(FleetError, match="campaign is not running"):
+        store.complete_task(
+            "http-agent",
+            TaskResult(
+                task_id=active_lease.task.task_id,
+                lease_token=active_lease.lease_token,
+                outcome="completed",
+                summary="A cancelled lease must not report.",
+            ),
+        )
+
+
+def test_lease_operations_fail_if_campaign_state_drifts_outside_lifecycle_api(tmp_path) -> None:
+    store = FleetStore(tmp_path / "fleet.db")
+    store.initialize()
+    store.create_campaign(build_campaign())
+    outcome = store.enqueue_intent("example-lab-campaign", _intent())
+    assert outcome.task is not None
+    store.register_agent(
+        AgentRegistration(
+            agent_id="http-agent",
+            display_name="HTTP fixture adapter",
+            provider="fixture",
+            capabilities=["http.request", "http.capture", "data.diff", "evidence.write"],
+            max_execution_class=ExecutionClass.CONTROLLED_ACTIVE,
+        )
+    )
+    store.set_campaign_state("example-lab-campaign", CampaignState.READY)
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+    lease = store.claim_task("http-agent", lease_seconds=60)
+    assert lease is not None
+
+    with sqlite3.connect(store.database) as connection:
+        connection.execute(
+            "UPDATE campaigns SET state = ? WHERE campaign_id = ?",
+            (CampaignState.PAUSED.value, "example-lab-campaign"),
+        )
+
+    with pytest.raises(FleetError, match="campaign is not running"):
+        store.heartbeat(lease.task.task_id, "http-agent", lease.lease_token)
+    with pytest.raises(FleetError, match="campaign is not running"):
+        store.complete_task(
+            "http-agent",
+            TaskResult(
+                task_id=lease.task.task_id,
+                lease_token=lease.lease_token,
+                outcome="completed",
+                summary="Direct state drift must fail closed.",
+            ),
+        )
+    assert store.get_task(lease.task.task_id).state == TaskState.LEASED
+    with sqlite3.connect(store.database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM task_results").fetchone()[0] == 0
+
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+    repaired = store.get_task(lease.task.task_id)
+    assert repaired.state == TaskState.QUEUED and repaired.attempts == 0
+    replacement = store.claim_task("http-agent", lease_seconds=60)
+    assert replacement is not None
+    assert replacement.lease_token != lease.lease_token
+
+
+def test_claim_refuses_legacy_queued_task_at_attempt_limit(tmp_path) -> None:
+    store = FleetStore(tmp_path / "fleet.db")
+    store.initialize()
+    store.create_campaign(build_campaign())
+    outcome = store.enqueue_intent("example-lab-campaign", _intent())
+    assert outcome.task is not None
+    store.register_agent(
+        AgentRegistration(
+            agent_id="http-agent",
+            display_name="HTTP fixture adapter",
+            provider="fixture",
+            capabilities=["http.request", "http.capture", "data.diff", "evidence.write"],
+            max_execution_class=ExecutionClass.CONTROLLED_ACTIVE,
+        )
+    )
+    store.set_campaign_state("example-lab-campaign", CampaignState.READY)
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+    with sqlite3.connect(store.database) as connection:
+        connection.execute(
+            "UPDATE tasks SET attempts = max_attempts WHERE task_id = ?",
+            (outcome.task.task_id,),
+        )
+
+    assert store.claim_task("http-agent", lease_seconds=60) is None
+    assert store.get_task(outcome.task.task_id).state == TaskState.FAILED
+
+
+def test_cancelling_one_campaign_does_not_disturb_another_campaign_lease(tmp_path) -> None:
+    store = FleetStore(tmp_path / "fleet.db")
+    store.initialize()
+    store.create_campaign(build_campaign())
+    other_campaign = build_campaign().model_copy(
+        update={"campaign_id": "other-lab-campaign", "name": "Other synthetic campaign"}
+    )
+    store.create_campaign(other_campaign)
+    first = store.enqueue_intent("example-lab-campaign", _intent(), priority=100)
+    other = store.enqueue_intent("other-lab-campaign", _intent(), priority=90)
+    assert first.task is not None and other.task is not None
+    store.register_agent(
+        AgentRegistration(
+            agent_id="shared-agent",
+            display_name="Shared HTTP fixture adapter",
+            provider="fixture",
+            capabilities=["http.request", "http.capture", "data.diff", "evidence.write"],
+            max_execution_class=ExecutionClass.CONTROLLED_ACTIVE,
+            max_concurrency=2,
+        )
+    )
+    for campaign_id in ("example-lab-campaign", "other-lab-campaign"):
+        store.set_campaign_state(campaign_id, CampaignState.READY)
+        store.set_campaign_state(campaign_id, CampaignState.RUNNING)
+    first_lease = store.claim_task("shared-agent", lease_seconds=60)
+    other_lease = store.claim_task("shared-agent", lease_seconds=60)
+    assert first_lease is not None and other_lease is not None
+    assert first_lease.task.task_id == first.task.task_id
+    assert other_lease.task.task_id == other.task.task_id
+
+    store.set_campaign_state("example-lab-campaign", CampaignState.CANCELLED)
+
+    assert store.get_task(first.task.task_id).state == TaskState.CANCELLED
+    unaffected = store.get_task(other.task.task_id)
+    assert unaffected.state == TaskState.LEASED
+    assert unaffected.lease_owner == "shared-agent"
+    with sqlite3.connect(store.database) as connection:
+        assert (
+            connection.execute("SELECT status FROM agents WHERE agent_id = 'shared-agent'").fetchone()[0]
+            == "busy"
+        )
+    assert store.heartbeat(other_lease.task.task_id, "shared-agent", other_lease.lease_token)

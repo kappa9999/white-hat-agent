@@ -1,0 +1,183 @@
+{
+  "$defs": {
+    "IntelligenceSource": {
+      "enum": [
+        "cisa-kev",
+        "osv",
+        "epss"
+      ],
+      "title": "IntelligenceSource",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "SyncIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "record_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Record Id"
+        },
+        "retriable": {
+          "default": false,
+          "title": "Retriable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "SyncIssue",
+      "type": "object"
+    },
+    "SyncStatus": {
+      "enum": [
+        "success",
+        "partial",
+        "failed",
+        "skipped"
+      ],
+      "title": "SyncStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cursor_after": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cursor After"
+    },
+    "cursor_before": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cursor Before"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/SyncIssue"
+      },
+      "title": "Issues",
+      "type": "array"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Metadata",
+      "type": "object"
+    },
+    "records_filtered": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Records Filtered",
+      "type": "integer"
+    },
+    "records_inserted": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Records Inserted",
+      "type": "integer"
+    },
+    "records_seen": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Records Seen",
+      "type": "integer"
+    },
+    "records_selected": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Records Selected",
+      "type": "integer"
+    },
+    "records_tombstoned": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Records Tombstoned",
+      "type": "integer"
+    },
+    "records_unchanged": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Records Unchanged",
+      "type": "integer"
+    },
+    "records_updated": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Records Updated",
+      "type": "integer"
+    },
+    "snapshots_stored": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Snapshots Stored",
+      "type": "integer"
+    },
+    "source": {
+      "$ref": "#/$defs/IntelligenceSource"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/SyncStatus"
+    },
+    "truncated": {
+      "default": false,
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "source",
+    "status",
+    "started_at",
+    "finished_at"
+  ],
+  "title": "SourceSyncResult",
+  "type": "object"
+}

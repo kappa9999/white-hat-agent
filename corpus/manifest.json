@@ -1,5 +1,5 @@
 {
-  "corpus_version": "sha256:9e4c8c641db47191",
+  "corpus_version": "sha256:99ed899add3d6d9f",
   "entries": [
     {
       "capabilities": [
@@ -138,9 +138,53 @@
       ],
       "title": "Seed vulnerability hypotheses from a vulnerable and fixed artifact pair",
       "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "artifact.hash",
+        "artifact.inspect",
+        "code.search",
+        "data.diff",
+        "evidence.capture",
+        "evidence.write",
+        "experiment.design",
+        "experiment.replay",
+        "finding.write"
+      ],
+      "consumes": [
+        "artifact/vulnerable-build",
+        "artifact/fixed-build",
+        "artifact/inert-fixture",
+        "artifact/negative-control",
+        "scope/authorization"
+      ],
+      "digest": "232bc87819567293ea5f3af9588fc01dc47bf999a17634a8a51e278395a6d815",
+      "domains": [
+        "supply-chain",
+        "code-generation",
+        "verification"
+      ],
+      "playbook_id": "untrusted-code-generator-differential",
+      "provides": [
+        "evidence/generator-differential",
+        "evidence/loopback-counter",
+        "finding/advisory-validation"
+      ],
+      "relative_path": "supply-chain/untrusted-code-generator-differential/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Compare exact generator versions with non-executed sentinels, benign controls, source diffs, and optional loopback-only reference counters.",
+      "tags": [
+        "untrusted-input",
+        "patch-diff",
+        "causal",
+        "negative-control",
+        "local-lab"
+      ],
+      "title": "Validate untrusted code generators with inert vulnerable/fixed differentials",
+      "version": "1.0.0"
     }
   ],
-  "generated_at": "2026-07-29T12:00:00Z",
-  "manifest_digest": "21e9967cb0de7fbbd04741ef6604a628c927564778045123f4cf92639b10496c",
+  "generated_at": "2026-07-29T15:37:41Z",
+  "manifest_digest": "1d730f283e6b8c11c5974218568d6149fd68bfa103a84af805baa609931a54e9",
   "schema_version": "1.0"
 }
