@@ -3,6 +3,13 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.4.1] - 2026-07-29
+
+### Fixed
+
+- untyped CVE List V5 comparator expressions are now preserved as unresolved ranges instead of being mislabeled as
+  exact affected versions; no version boundaries are inferred from provider shorthand.
+
 ## [0.4.0] - 2026-07-29
 
 ### Added
@@ -90,6 +97,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.4.1]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/kappa9999/white-hat-agent/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/kappa9999/white-hat-agent/compare/v0.3.0...v0.3.1

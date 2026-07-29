@@ -455,14 +455,14 @@ def test_cve_list_v5_parser_preserves_cna_adp_state_and_unknown_fields(tmp_path)
     current_shape = _cve_record("CVE-2026-4321")
     current_shape["cveMetadata"].pop("serial")
     current_shape["containers"]["cna"]["affected"][0]["versions"] = [
-        {"status": "affected", "version": "< 6.6.0"}
+        {"status": "affected", "version": "6.5.3"},
     ]
     current = parse_cve_record(
         current_shape,
         _cve_snapshot(store, "CVE-2026-4321", json.dumps(current_shape).encode()),
     )
     assert "serial" not in current.advisory.source_metadata["cve-list-v5"]
-    assert current.advisory.affected[0].versions == ["< 6.6.0"]
+    assert current.advisory.affected[0].versions == ["6.5.3"]
     assert current.advisory.affected[0].ranges == []
 
     invalid_serial = _cve_record("CVE-2026-4322")
@@ -489,6 +489,33 @@ def test_cve_list_v5_parser_preserves_cna_adp_state_and_unknown_fields(tmp_path)
             unsupported,
             _cve_snapshot(store, "CVE-2026-9012", json.dumps(unsupported).encode()),
         )
+
+
+@pytest.mark.parametrize("expression", ["< 6.6.0", ">= 2.1.3, < 2.1.4"])
+def test_cve_list_v5_untyped_constraints_are_not_exact_versions(tmp_path, expression) -> None:
+    cve = "CVE-2026-4323"
+    document = _cve_record(cve)
+    document["containers"]["cna"]["affected"][0]["versions"] = [{"status": "affected", "version": expression}]
+    store = _store(tmp_path)
+
+    parsed = parse_cve_record(
+        document,
+        _cve_snapshot(store, cve, json.dumps(document).encode()),
+    )
+    package = parsed.advisory.affected[0]
+
+    assert package.versions == []
+    assert len(package.ranges) == 1
+    untyped_constraint = package.ranges[0]
+    assert untyped_constraint.type.value == "unknown"
+    assert untyped_constraint.raw_type == "unknown"
+    assert untyped_constraint.events == []
+    assert untyped_constraint.database_specific == {
+        "status": "affected",
+        "default_status": "unaffected",
+        "json_pointer": "/containers/cna/affected/0/versions/0",
+        "version_expression": expression,
+    }
 
 
 def test_cve_list_v5_unaffected_native_range_does_not_invent_fixed_event(tmp_path) -> None:
