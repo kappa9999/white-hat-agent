@@ -7,7 +7,7 @@ Versioning.
 
 ### Added
 
-- Foundation alpha for multilingual knowledge intake, strict playbooks, semantic composition, capabilities,
+- Initial alpha for multilingual knowledge intake, strict playbooks, semantic composition, capabilities,
   opportunities, exact scope, campaign fleet leases, immutable evidence, findings, adaptive discovery, MCP, CLI,
   JSON Schemas, public governance, examples, and CI.
 - Deterministic campaign blueprints and fleet-enforced playbook version/digest/capability/execution contracts.

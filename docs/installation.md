@@ -80,7 +80,7 @@ Python and project virtual environments.
 
 ## Pinning or mirroring
 
-The foundation-alpha installer follows `main`. For a reproducible deployment, set `WHA_SOURCE_URL` to an audited tag
+The current installer follows `main`. For a reproducible deployment, set `WHA_SOURCE_URL` to an audited tag
 or commit archive. Other bootstrap settings are also explicit environment variables:
 
 | Variable | Default | Purpose |

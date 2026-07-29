@@ -8,7 +8,7 @@
 [![Installer smoke](https://github.com/kappa9999/white-hat-agent/actions/workflows/installers.yml/badge.svg)](https://github.com/kappa9999/white-hat-agent/actions/workflows/installers.yml)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-3b82f6.svg)](LICENSE)
-[![Status: foundation alpha](https://img.shields.io/badge/status-foundation%20alpha-f59e0b.svg)](#project-status)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-f59e0b.svg)](#project-status)
 
 Turn community knowledge, exact program scope, adapter capabilities, evidence, and agent fleets into one composable
 application layer—available through MCP, JSON Schema, Python, or the `wha` CLI.
@@ -71,9 +71,34 @@ See [MCP integration](docs/mcp.md) for Streamable HTTP, PATH troubleshooting, an
 
 ## How it works
 
-[![White Hat Agent system flow](docs/assets/system-overview.svg)](docs/architecture.md)
+```mermaid
+flowchart TB
+    subgraph Inputs["Inputs"]
+        direction LR
+        K["Community knowledge"]
+        S["Scope and campaign"]
+        C["Agent capabilities"]
+    end
 
-<p align="center"><sub>Click the diagram for the detailed architecture and trust boundaries.</sub></p>
+    T["1 · Ingest and trust<br/>Preserve sources · compile playbooks · review versions"]
+    P["2 · Compose and plan<br/>Match artifacts · capabilities · scope · budgets"]
+    D["3 · Dispatch and discover<br/>Lease typed work · run explicit adapters"]
+    V["4 · Verify and remember<br/>Bind evidence · test causality · retain negatives"]
+    O["Verified findings<br/>Reproducible reports · reusable learning"]
+
+    K --> T
+    S --> P
+    C --> P
+    T --> P --> D --> V --> O
+    O -. reviewed learning .-> T
+
+    classDef input fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-width:1px;
+    classDef core fill:#eff6ff,stroke:#2563eb,color:#0f172a,stroke-width:2px;
+    classDef output fill:#ecfdf5,stroke:#059669,color:#064e3b,stroke-width:2px;
+    class K,S,C input;
+    class T,P,D,V core;
+    class O output;
+```
 
 | Layer | What it contributes |
 |---|---|
@@ -145,7 +170,7 @@ wha serve --workspace /absolute/path/to/white-hat-workspace --transport http --h
 
 ## Project status
 
-> **Foundation alpha:** the knowledge compiler, composition engine, scope evaluator, opportunity ranking, SQLite
+> **Alpha:** the knowledge compiler, composition engine, scope evaluator, opportunity ranking, SQLite
 > fleet, evidence store, adaptive discovery kernel, MCP server, schemas, and deterministic fixtures are implemented.
 > The repository does not yet ship autonomous Internet discovery or scanner adapters. Live capability belongs in
 > explicit adapters with exact campaign scope, not hidden inside the planner.
@@ -181,10 +206,6 @@ uv build
 - [Governance](GOVERNANCE.md)
 - [Security reporting](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Maintainers](MAINTAINERS.md)
 
-**Name note:** “White Hat Agent Core” is a working project name. A similarly named, unrelated agent-sandboxing project
-already exists; complete the naming and trademark check in the [publication checklist](docs/publication-checklist.md)
-before a coordinated launch.
-
-Licensed under [Apache-2.0](LICENSE). The sole-maintainer foundation model is described in
-[MAINTAINERS.md](MAINTAINERS.md).
+Licensed under [Apache-2.0](LICENSE).

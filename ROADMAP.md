@@ -1,6 +1,6 @@
 # Roadmap
 
-## Foundation alpha — implemented
+## Core platform — implemented
 
 - strict multilingual knowledge intake and Playbook v1 schema;
 - deterministic corpus index/search and semantic composition;
@@ -13,7 +13,7 @@
 - namespaced MCP stdio/stateless HTTP, CLI, Python, and JSON Schema surfaces; and
 - local fixtures, public governance, contribution templates, and CI.
 
-## Alpha adapters
+## Adapter integrations
 
 - formal adapter manifest/handshake and conformance test kit;
 - sandboxed local subprocess adapter runner with explicit filesystem/network resources;
@@ -54,7 +54,7 @@
 
 ## Stable release criteria
 
-- clean-name and package ownership resolved;
+- package namespace and trusted publishing configured;
 - protocol/schema compatibility policy documented;
 - authenticated deployment reference available;
 - at least three real adapter families pass conformance and bounded lab integration tests;

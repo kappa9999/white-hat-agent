@@ -6,9 +6,9 @@ The reusable advantage in autonomous cyber research is the harness around a mode
 knowledge, specialized tools, independent hypotheses, negative memory, evidence-driven replanning, and causal proof.
 White Hat Agent Core owns those durable invariants while models and tools remain replaceable.
 
-The initial research case showed an agent repeatedly changing representation, carrier, identity, and tool strategy as
-evidence accumulated. The useful abstraction is therefore not a fixed attack checklist. It is a graph of facts,
-artifacts, authority transitions, hypotheses, experiments, and evidence that can be resumed and recomposed.
+Effective discovery repeatedly changes representation, data source, and tool strategy as evidence accumulates. The
+useful abstraction is therefore not a fixed checklist. It is a graph of facts, artifacts, authority transitions,
+hypotheses, experiments, and evidence that can be resumed and recomposed.
 
 ## Layers
 
@@ -134,7 +134,7 @@ promotes itself into trusted knowledge.
 
 ### Adaptive discovery kernel
 
-The original discovery engine remains a reusable subsystem. It provides:
+The discovery engine provides:
 
 - exact target/build and environment identities;
 - an evidence and authority graph;
@@ -182,5 +182,3 @@ Exact scope and evidence are not a defensive-versus-offensive classifier. They p
 wasting cycles on the wrong target, stale rules, duplicate tasks, false positives, hidden alternate paths, or
 non-reproducible output. This is the same execution discipline needed for credible bug bounties, exploit validation,
 reverse engineering, incident forensics, and remediation testing.
-
-For the original report-to-kernel traceability, see [report-alpha-mapping.md](report-alpha-mapping.md).
