@@ -1,0 +1,110 @@
+name: Installer smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  posix:
+    name: Installer smoke (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-latest
+          - platform: macos
+            runner: macos-latest
+    env:
+      UV_NO_CONFIG: "1"
+      UV_NO_PROGRESS: "1"
+      WHA_UV_BIN: uv
+      WHA_PACKAGE: .
+      WHA_SKIP_PATH_UPDATE: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Validate POSIX syntax
+        run: sh -n install.sh
+      - name: Run installer
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/white-hat-agent-python
+        run: sh ./install.sh
+      - name: Verify installed CLI and workspace
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/white-hat-agent-python
+        run: |
+          "$UV_TOOL_BIN_DIR/wha" --version
+          "$UV_TOOL_BIN_DIR/wha" init "$RUNNER_TEMP/white-hat-workspace" > "$RUNNER_TEMP/init.json"
+          "$UV_TOOL_BIN_DIR/wha" doctor --workspace "$RUNNER_TEMP/white-hat-workspace" > "$RUNNER_TEMP/doctor.json"
+          grep '"healthy": true' "$RUNNER_TEMP/doctor.json"
+
+  windows:
+    name: Installer smoke (windows)
+    runs-on: windows-latest
+    env:
+      UV_NO_CONFIG: "1"
+      UV_NO_PROGRESS: "1"
+      WHA_UV_BIN: uv
+      WHA_PACKAGE: .
+      WHA_SKIP_PATH_UPDATE: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Validate PowerShell syntax
+        shell: powershell
+        run: |
+          $Tokens = $null
+          $Errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path .\install.ps1),
+            [ref]$Tokens,
+            [ref]$Errors
+          )
+          if ($Errors.Count -gt 0) {
+            $Errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+      - name: Run installer
+        shell: powershell
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}\white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}\white-hat-agent-python
+        run: .\install.ps1
+      - name: Verify installed CLI and workspace
+        shell: powershell
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}\white-hat-agent-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}\white-hat-agent-bin
+          UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}\white-hat-agent-python
+        run: |
+          $Wha = Join-Path $env:UV_TOOL_BIN_DIR "wha.exe"
+          & $Wha --version
+          $Workspace = Join-Path $env:RUNNER_TEMP "white-hat-workspace"
+          & $Wha init $Workspace | Out-Null
+          $Report = & $Wha doctor --workspace $Workspace | ConvertFrom-Json
+          if (-not $Report.healthy) {
+            throw "wha doctor reported an unhealthy workspace"
+          }

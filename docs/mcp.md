@@ -17,26 +17,35 @@ and a reviewed tool policy. The built-in server binds localhost by default and c
 
 ## Generic client configuration
 
+When White Hat Agent was installed with the one-line bootstrap, use the globally available `wha` executable:
+
 ```json
 {
   "mcpServers": {
     "white-hat-agent": {
-      "command": "uv",
+      "command": "wha",
       "args": [
-        "run",
-        "--project",
-        "/absolute/path/to/white-hat-agent",
-        "wha",
         "serve",
         "--workspace",
-        "/absolute/path/to/white-hat-agent"
+        "/absolute/path/to/white-hat-workspace",
+        "--transport",
+        "stdio"
       ]
     }
   }
 }
 ```
 
-The exact configuration envelope differs by client; the command and arguments are ordinary stdio MCP.
+The exact configuration envelope differs by client; the command and arguments are ordinary stdio MCP. If a desktop
+client does not inherit the shell `PATH`, run `uv tool dir --bin` and use the absolute `wha` or `wha.exe` path as
+`command`.
+
+For a source checkout, the equivalent command is:
+
+```bash
+uv run --project /absolute/path/to/white-hat-agent \
+  wha serve --workspace /absolute/path/to/white-hat-workspace --transport stdio
+```
 
 ## Surface design
 
