@@ -3,6 +3,13 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.3.1] - 2026-07-29
+
+### Fixed
+
+- the least-privilege release gate now accepts GitHub's documented redaction of ruleset bypass actors while still
+  validating the exact sole maintainer-role bypass whenever an admin-scoped response exposes it.
+
 ## [0.3.0] - 2026-07-29
 
 ### Added
@@ -64,6 +71,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.3.1]: https://github.com/kappa9999/white-hat-agent/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kappa9999/white-hat-agent/releases/tag/v0.1.0

@@ -158,7 +158,13 @@ def validate_remote_release(
             "the applicable tag ruleset is missing required protections: " + ", ".join(missing)
         )
 
-    bypass_actors = ruleset.get("bypass_actors")
+    # GitHub intentionally omits bypass_actors unless the API caller has write
+    # access to the ruleset. The least-privilege Actions token cannot see it;
+    # maintainer preflight validates the setting with an admin-scoped token.
+    if "bypass_actors" not in ruleset:
+        return tag_object_sha
+
+    bypass_actors = ruleset["bypass_actors"]
     if not isinstance(bypass_actors, list):
         raise ReleaseGateError("the applicable tag ruleset has an invalid bypass_actors list")
     if len(bypass_actors) != 1:

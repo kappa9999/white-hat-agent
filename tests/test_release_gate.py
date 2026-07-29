@@ -128,6 +128,13 @@ def test_remote_gate_accepts_signed_annotated_protected_tag() -> None:
     assert validate_rulesets([inactive, protected_ruleset()]) == "b" * 40
 
 
+def test_remote_gate_accepts_github_redacted_bypass_actors() -> None:
+    ruleset = protected_ruleset()
+    ruleset.pop("bypass_actors")
+
+    assert validate_rulesets([ruleset]) == "b" * 40
+
+
 @pytest.mark.parametrize(
     ("tag_type", "verified", "rulesets", "existing_release", "match"),
     [

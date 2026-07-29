@@ -39,7 +39,9 @@ environment is explicitly approved.
 2. Regenerate and commit public schemas and the corpus manifest.
 3. Merge through normal CI. Confirm `main` is clean and points to the intended commit. With an admin-scoped
    maintainer token, require `gh api repos/kappa9999/white-hat-agent/immutable-releases --jq .enabled` to print
-   `true`; the job token intentionally has no repository-administration permission.
+   `true`, and verify the active tag ruleset has only the maintainer-role bypass. GitHub intentionally redacts
+   `bypass_actors` from the least-privilege job token, so never grant the release job repository administration just
+   to repeat this control-plane check.
 4. Confirm the maintainer's SSH or GPG signing key is registered with GitHub, then create a **signed annotated** tag
    named `vX.Y.Z` at that commit. Never use a lightweight tag.
 5. Push the tag once. Do not move or reuse it.
