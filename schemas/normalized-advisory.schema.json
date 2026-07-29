@@ -177,6 +177,14 @@
       "title": "AffectedRange",
       "type": "object"
     },
+    "CveRecordState": {
+      "enum": [
+        "PUBLISHED",
+        "REJECTED"
+      ],
+      "title": "CveRecordState",
+      "type": "string"
+    },
     "IdentifierLink": {
       "additionalProperties": false,
       "properties": {
@@ -217,6 +225,7 @@
     "IntelligenceSource": {
       "enum": [
         "cisa-kev",
+        "cve-list-v5",
         "osv",
         "epss"
       ],
@@ -511,6 +520,7 @@
     "SnapshotKind": {
       "enum": [
         "full-feed",
+        "delta-log",
         "index-prefix",
         "selection-manifest",
         "source-record",
@@ -646,6 +656,17 @@
       ],
       "default": null,
       "title": "Cisa Due Date"
+    },
+    "cve_record_state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CveRecordState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "cwes": {
       "items": {

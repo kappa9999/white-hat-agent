@@ -3,6 +3,7 @@
     "IntelligenceSource": {
       "enum": [
         "cisa-kev",
+        "cve-list-v5",
         "osv",
         "epss"
       ],

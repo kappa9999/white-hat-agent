@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from ._version import __version__
 from .adapters import ReplayAdapter, ReplayTranscript
 from .campaign.contracts import validate_campaign_manifest
 from .campaign.fleet import FleetError
@@ -58,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
             "White Hat Agent Core: public intelligence, cyber knowledge, campaigns, fleets, and discovery"
         ),
     )
-    parser.add_argument("--version", action="version", version="White Hat Agent Core 0.2.0")
+    parser.add_argument("--version", action="version", version=f"White Hat Agent Core {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
     initialize = commands.add_parser("init", help="initialize an approachable local workspace")
@@ -210,7 +211,11 @@ def build_parser() -> argparse.ArgumentParser:
     intelligence_sync.add_argument(
         "--source",
         action="append",
-        choices=[IntelligenceSource.CISA_KEV.value, IntelligenceSource.OSV.value],
+        choices=[
+            IntelligenceSource.CISA_KEV.value,
+            IntelligenceSource.CVE_LIST_V5.value,
+            IntelligenceSource.OSV.value,
+        ],
     )
     intelligence_sync.add_argument("--since-hours", type=float, default=24.0)
     intelligence_sync.add_argument("--ecosystem", action="append", default=[])
@@ -218,7 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit-per-source",
         type=int,
         default=1000,
-        help="OSV/EPSS selection ceiling; CISA always diffs the complete bounded catalog",
+        help=("CVE List V5, OSV, and EPSS selection ceiling; CISA always diffs the complete bounded catalog"),
     )
     intelligence_sync.add_argument("--enrich-epss", action="store_true")
     intelligence_sync.add_argument(
@@ -396,6 +401,11 @@ def _add_intelligence_filters(parser: argparse.ArgumentParser) -> None:
         "--include-withdrawn",
         action="store_true",
         help="include withdrawn advisories instead of returning active records only",
+    )
+    parser.add_argument(
+        "--include-rejected",
+        action="store_true",
+        help="include CVE records explicitly marked REJECTED",
     )
     parser.add_argument("--limit", type=int, default=20)
 
@@ -710,6 +720,7 @@ def _run_intelligence(args: argparse.Namespace) -> None:
                 ecosystems=args.ecosystem,
                 known_exploited=args.known_exploited,
                 withdrawn=None if args.include_withdrawn else False,
+                rejected=None if args.include_rejected else False,
                 limit=args.limit,
             ),
             args.out,
@@ -723,6 +734,7 @@ def _run_intelligence(args: argparse.Namespace) -> None:
                 ecosystems=args.ecosystem,
                 known_exploited=args.known_exploited,
                 withdrawn=None if args.include_withdrawn else False,
+                rejected=None if args.include_rejected else False,
                 limit=args.limit,
             ),
             args.out,

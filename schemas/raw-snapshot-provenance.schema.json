@@ -3,6 +3,7 @@
     "IntelligenceSource": {
       "enum": [
         "cisa-kev",
+        "cve-list-v5",
         "osv",
         "epss"
       ],
@@ -13,6 +14,7 @@
     "SnapshotKind": {
       "enum": [
         "full-feed",
+        "delta-log",
         "index-prefix",
         "selection-manifest",
         "source-record",

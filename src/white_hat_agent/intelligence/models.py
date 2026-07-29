@@ -10,12 +10,14 @@ from ..models import Sha256, StrictModel, UnitScore
 
 class IntelligenceSource(StrEnum):
     CISA_KEV = "cisa-kev"
+    CVE_LIST_V5 = "cve-list-v5"
     OSV = "osv"
     EPSS = "epss"
 
 
 class SnapshotKind(StrEnum):
     FULL_FEED = "full-feed"
+    DELTA_LOG = "delta-log"
     INDEX_PREFIX = "index-prefix"
     SELECTION_MANIFEST = "selection-manifest"
     SOURCE_RECORD = "source-record"
@@ -27,6 +29,11 @@ class SyncStatus(StrEnum):
     PARTIAL = "partial"
     FAILED = "failed"
     SKIPPED = "skipped"
+
+
+class CveRecordState(StrEnum):
+    PUBLISHED = "PUBLISHED"
+    REJECTED = "REJECTED"
 
 
 class UpsertState(StrEnum):
@@ -202,6 +209,7 @@ class NormalizedAdvisory(StrictModel):
     identifier_links: list[IdentifierLink] = Field(default_factory=list)
     sources: list[IntelligenceSource] = Field(min_length=1)
     tombstoned_sources: list[IntelligenceSource] = Field(default_factory=list)
+    cve_record_state: CveRecordState | None = None
     title: str | None = None
     summary: str | None = None
     details: str | None = None
@@ -232,6 +240,8 @@ class NormalizedAdvisory(StrictModel):
                 raise ValueError(f"{label} must contain unique values")
         if not set(self.tombstoned_sources).issubset(self.sources):
             raise ValueError("tombstoned_sources must be a subset of sources")
+        if self.cve_record_state is not None and IntelligenceSource.CVE_LIST_V5 not in self.sources:
+            raise ValueError("cve_record_state requires the cve-list-v5 source")
         alias_nodes = {item.casefold() for item in self.identifiers}
         for link in self.identifier_links:
             if link.relation == IdentifierRelation.ALIAS and (
@@ -356,6 +366,7 @@ class IntelligenceStatus(StrictModel):
     initialized: bool
     advisory_count: int = Field(default=0, ge=0)
     withdrawn_count: int = Field(default=0, ge=0)
+    rejected_cve_count: int = Field(default=0, ge=0)
     snapshot_count: int = Field(default=0, ge=0)
     sync_run_count: int = Field(default=0, ge=0)
     sources: list[SourceStatus] = Field(default_factory=list)
@@ -366,6 +377,12 @@ class IntelligenceLimits(StrictModel):
     timeout_seconds: float = Field(default=20.0, gt=0.0, le=120.0)
     max_cisa_bytes: int = Field(default=32 * 1024 * 1024, ge=1024)
     max_cisa_items: int = Field(default=25_000, ge=1)
+    max_cve_delta_bytes: int = Field(default=32 * 1024 * 1024, ge=1024)
+    max_cve_delta_batches: int = Field(default=10_000, ge=1)
+    max_cve_delta_entries: int = Field(default=500_000, ge=1)
+    max_cve_candidates: int = Field(default=10_000, ge=1)
+    max_cve_record_bytes: int = Field(default=4 * 1024 * 1024, ge=1024)
+    max_cve_consecutive_server_errors: int = Field(default=3, ge=1, le=20)
     max_osv_index_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
     max_osv_index_lines: int = Field(default=1_000_000, ge=1)
     max_osv_candidates: int = Field(default=5_000, ge=1)
@@ -373,6 +390,7 @@ class IntelligenceLimits(StrictModel):
     max_osv_consecutive_server_errors: int = Field(default=3, ge=1, le=20)
     max_epss_bytes: int = Field(default=4 * 1024 * 1024, ge=1024)
     max_epss_cves_per_request: int = Field(default=100, ge=1, le=500)
-    max_limit_per_source: int = Field(default=1_000, ge=1, le=10_000)
+    max_limit_per_source: int = Field(default=10_000, ge=1, le=10_000)
+    cve_overlap_hours: float = Field(default=2.0, ge=0.0, le=24.0)
     osv_overlap_hours: float = Field(default=2.0, ge=0.0, le=24.0)
     max_snapshot_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)

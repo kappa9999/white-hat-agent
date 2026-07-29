@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 from collections import defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -13,12 +14,15 @@ from pydantic import ValidationError
 from white_hat_agent.intelligence import (
     CISA_ATTRIBUTION,
     CISA_KEV_URL,
+    CVE_LIST_V5_ATTRIBUTION,
+    CVE_LIST_V5_DELTA_URL,
     EPSS_API_URL,
     OSV_API_BASE_URL,
     OSV_ATTRIBUTION,
     OSV_MODIFIED_INDEX_URL,
     AdvisoryNotFoundError,
     AffectedPackage,
+    CveRecordState,
     IntelligenceLimitError,
     IntelligenceLimits,
     IntelligenceParseError,
@@ -33,7 +37,10 @@ from white_hat_agent.intelligence import (
     SeveritySignal,
     SnapshotKind,
     SyncStatus,
+    cve_list_v5_record_url,
     parse_cisa_kev,
+    parse_cve_delta_log,
+    parse_cve_record,
     parse_osv_modified_index,
     rank_advisory,
 )
@@ -41,6 +48,7 @@ from white_hat_agent.intelligence.transport import (
     HttpResponse,
     UrllibHttpTransport,
     _AllowlistedRedirectHandler,
+    _validate_official_url,
 )
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
@@ -101,6 +109,52 @@ class _SyntheticUrlResponse(io.BytesIO):
 
     def geturl(self) -> str:
         return self._url
+
+
+class _ReadTrackingUrlResponse(_SyntheticUrlResponse):
+    def __init__(self, body: bytes, *, url: str, headers: dict[str, str]) -> None:
+        super().__init__(body, url=url, headers=headers)
+        self.read_sizes: list[int] = []
+        self.bytes_returned = 0
+
+    def read(self, size: int = -1) -> bytes:
+        self.read_sizes.append(size)
+        chunk = super().read(size)
+        self.bytes_returned += len(chunk)
+        return chunk
+
+
+class _OversizedCveRecordTransport(FakeTransport):
+    def __init__(self, delta_response: HttpResponse, *, record_url: str, record_body: bytes) -> None:
+        super().__init__({CVE_LIST_V5_DELTA_URL: delta_response})
+        self.record_url = record_url
+        self.record_body = record_body
+        self.record_read_sizes: list[int] = []
+        self.record_bytes_consumed = 0
+
+    def get(self, url, *, headers, timeout, max_bytes) -> HttpResponse:
+        if url != self.record_url:
+            return super().get(
+                url,
+                headers=headers,
+                timeout=timeout,
+                max_bytes=max_bytes,
+            )
+        self.requests.append((url, dict(headers), max_bytes))
+        response = _ReadTrackingUrlResponse(
+            self.record_body,
+            url=url,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            return UrllibHttpTransport._read_response(
+                response,
+                requested_url=url,
+                max_bytes=max_bytes,
+            )
+        finally:
+            self.record_read_sizes = response.read_sizes
+            self.record_bytes_consumed = response.bytes_returned
 
 
 def _response(url: str, body: bytes, *, status: int = 200, headers=None) -> HttpResponse:
@@ -171,6 +225,129 @@ def _snapshot(store: IntelligenceStore, payload: bytes = b"{}"):
     )
 
 
+def _cve_snapshot(store: IntelligenceStore, cve: str, payload: bytes = b"{}"):
+    return store.save_snapshot(
+        payload,
+        source=IntelligenceSource.CVE_LIST_V5,
+        kind=SnapshotKind.SOURCE_RECORD,
+        source_url=cve_list_v5_record_url(cve),
+        source_record_id=cve,
+        retrieved_at=NOW,
+        media_type="application/json",
+        attribution=CVE_LIST_V5_ATTRIBUTION,
+        source_schema_version="5.2",
+    )
+
+
+def _cve_record(cve: str, *, state: str = "PUBLISHED") -> dict:
+    metadata = {
+        "cveId": cve,
+        "assignerOrgId": "11111111-1111-4111-8111-111111111111",
+        "assignerShortName": "fixture-cna",
+        "state": state,
+        "serial": 1,
+        "dateUpdated": "2026-07-29T11:00:00Z",
+    }
+    provider = {
+        "orgId": "11111111-1111-4111-8111-111111111111",
+        "shortName": "fixture-cna",
+        "dateUpdated": "2026-07-29T11:00:00Z",
+    }
+    if state == "REJECTED":
+        metadata["dateRejected"] = "2026-07-29T11:00:00Z"
+        cna = {
+            "providerMetadata": provider,
+            "rejectedReasons": [{"lang": "en", "value": "Duplicate of another record."}],
+        }
+    else:
+        metadata["datePublished"] = "2026-07-20T00:00:00Z"
+        cna = {
+            "providerMetadata": provider,
+            "title": "Canonical fixture title",
+            "descriptions": [{"lang": "en", "value": "Canonical fixture description."}],
+            "affected": [
+                {
+                    "vendor": "Fixture Vendor",
+                    "product": "fixture-package",
+                    "packageURL": "pkg:npm/fixture-package",
+                    "defaultStatus": "unaffected",
+                    "versions": [
+                        {
+                            "version": "0",
+                            "lessThan": "2.0.0",
+                            "versionType": "semver",
+                            "status": "affected",
+                        }
+                    ],
+                }
+            ],
+            "problemTypes": [{"descriptions": [{"lang": "en", "cweId": "CWE-79", "description": "XSS"}]}],
+            "references": [{"url": "https://example.test/cna", "tags": ["vendor-advisory"]}],
+            "metrics": [
+                {
+                    "cvssV3_1": {
+                        "version": "3.1",
+                        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                        "baseScore": 9.8,
+                        "baseSeverity": "CRITICAL",
+                    }
+                }
+            ],
+            "futureContainerField": {"preserved": True},
+        }
+    containers = {"cna": cna}
+    if state != "REJECTED":
+        containers["adp"] = [
+            {
+                "providerMetadata": {
+                    "orgId": "22222222-2222-4222-8222-222222222222",
+                    "shortName": "fixture-adp",
+                    "dateUpdated": "2026-07-29T11:30:00Z",
+                },
+                "metrics": [
+                    {
+                        "cvssV4_0": {
+                            "version": "4.0",
+                            "vectorString": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+                            "baseScore": 9.3,
+                            "baseSeverity": "CRITICAL",
+                        }
+                    }
+                ],
+            }
+        ]
+    return {
+        "dataType": "CVE_RECORD",
+        "dataVersion": "5.2",
+        "cveMetadata": metadata,
+        "containers": containers,
+        "futureTopLevelField": {"preserved": True},
+    }
+
+
+def _cve_delta_batch(fetch_time: str, *changes: tuple[str, str, str]) -> dict:
+    batch = {"new": [], "updated": [], "error": []}
+    for change_type, cve, modified in changes:
+        batch[change_type].append(
+            {
+                "cveId": cve,
+                "cveOrgLink": f"https://www.cve.org/CVERecord?id={cve}",
+                "githubLink": cve_list_v5_record_url(cve),
+                "dateUpdated": modified,
+            }
+        )
+    batch["fetchTime"] = fetch_time
+    batch["numberOfChanges"] = len(changes)
+    return batch
+
+
+def _cve_delta(*changes: tuple[str, str, str]) -> list[dict]:
+    return [
+        _cve_delta_batch("2026-07-29T11:40:00Z", *changes),
+        _cve_delta_batch("2026-07-28T09:00:00Z"),
+    ]
+
+
 def test_strict_provenance_and_cisa_count_integrity_and_bounds(tmp_path) -> None:
     store = _store(tmp_path)
     provenance = _snapshot(store)
@@ -195,6 +372,622 @@ def test_strict_provenance_and_cisa_count_integrity_and_bounds(tmp_path) -> None
         provenance.model_copy(update={"unexpected": True}).model_validate(
             {**provenance.model_dump(mode="json"), "unexpected": True}
         )
+
+
+def test_cve_list_v5_delta_deduplicates_and_proves_closed_window() -> None:
+    document = _cve_delta(
+        ("new", "CVE-2026-1234", "2026-07-29T10:00:00Z"),
+        ("updated", "CVE-2026-1234", "2026-07-29T11:00:00Z"),
+        ("new", "CVE-2026-9999", "2026-07-29T10:30:00Z"),
+    )
+
+    selection = parse_cve_delta_log(
+        document,
+        boundary=datetime(2026, 7, 28, 10, tzinfo=UTC),
+        max_batches=10,
+        max_entries=10,
+        max_candidates=10,
+    )
+
+    assert [entry.cve_id for entry in selection.entries] == [
+        "CVE-2026-1234",
+        "CVE-2026-9999",
+    ]
+    assert selection.entries[0].change_type == "updated"
+    assert selection.window_complete
+    assert not selection.candidate_limit_reached
+    assert selection.issues == ()
+
+    broken = _cve_delta(("new", "CVE-2026-1234", "2026-07-29T10:00:00Z"))
+    broken[0]["new"][0]["githubLink"] = "https://raw.githubusercontent.com/other/repo/main/a.json"
+    malformed = parse_cve_delta_log(
+        broken,
+        boundary=datetime(2026, 7, 28, 10, tzinfo=UTC),
+        max_batches=10,
+        max_entries=10,
+        max_candidates=10,
+    )
+    assert malformed.entries == ()
+    assert malformed.issues[0].code == "invalid_delta_entry"
+
+
+def test_cve_list_v5_parser_preserves_cna_adp_state_and_unknown_fields(tmp_path) -> None:
+    store = _store(tmp_path)
+    published_document = _cve_record("CVE-2026-1234")
+    published_raw = json.dumps(published_document).encode()
+    published_snapshot = _cve_snapshot(store, "CVE-2026-1234", published_raw)
+    published = parse_cve_record(
+        published_document,
+        published_snapshot,
+    )
+
+    assert published.advisory.cve_record_state == CveRecordState.PUBLISHED
+    assert published.advisory.title == "Canonical fixture title"
+    assert published.advisory.affected[0].purl == "pkg:npm/fixture-package"
+    assert published.advisory.affected[0].ecosystem == "npm"
+    assert [
+        event.model_dump(exclude_none=True) for event in published.advisory.affected[0].ranges[0].events
+    ] == [
+        {"introduced": "0"},
+        {"fixed": "2.0.0"},
+    ]
+    assert published.advisory.cwes == ["CWE-79"]
+    assert {signal.metadata["version"] for signal in published.advisory.severity} == {
+        "3.1",
+        "4.0",
+    }
+    metadata = published.advisory.source_metadata["cve-list-v5"]
+    assert metadata["container_index"] == [
+        {
+            "json_pointer": "/containers/cna",
+            "provider_metadata": published_document["containers"]["cna"]["providerMetadata"],
+        },
+        {
+            "json_pointer": "/containers/adp/0",
+            "provider_metadata": published_document["containers"]["adp"][0]["providerMetadata"],
+        },
+    ]
+    assert "containers" not in metadata
+    assert "futureContainerField" not in json.dumps(metadata)
+    assert metadata["unknown_top_level_fields"] == ["futureTopLevelField"]
+    assert store.read_snapshot(published_snapshot.snapshot_id) == published_raw
+
+    current_shape = _cve_record("CVE-2026-4321")
+    current_shape["cveMetadata"].pop("serial")
+    current_shape["containers"]["cna"]["affected"][0]["versions"] = [
+        {"status": "affected", "version": "< 6.6.0"}
+    ]
+    current = parse_cve_record(
+        current_shape,
+        _cve_snapshot(store, "CVE-2026-4321", json.dumps(current_shape).encode()),
+    )
+    assert "serial" not in current.advisory.source_metadata["cve-list-v5"]
+    assert current.advisory.affected[0].versions == ["< 6.6.0"]
+    assert current.advisory.affected[0].ranges == []
+
+    invalid_serial = _cve_record("CVE-2026-4322")
+    invalid_serial["cveMetadata"]["serial"] = True
+    with pytest.raises(IntelligenceParseError, match="invalid serial"):
+        parse_cve_record(
+            invalid_serial,
+            _cve_snapshot(store, "CVE-2026-4322", json.dumps(invalid_serial).encode()),
+        )
+
+    rejected_document = _cve_record("CVE-2026-5678", state="REJECTED")
+    rejected = parse_cve_record(
+        rejected_document,
+        _cve_snapshot(store, "CVE-2026-5678", json.dumps(rejected_document).encode()),
+    )
+    assert rejected.advisory.cve_record_state == CveRecordState.REJECTED
+    assert rejected.advisory.withdrawn_at is None
+    assert rejected.advisory.summary == "Duplicate of another record."
+
+    unsupported = _cve_record("CVE-2026-9012")
+    unsupported["cveMetadata"]["state"] = "RESERVED"
+    with pytest.raises(IntelligenceParseError, match="invalid state"):
+        parse_cve_record(
+            unsupported,
+            _cve_snapshot(store, "CVE-2026-9012", json.dumps(unsupported).encode()),
+        )
+
+
+def test_cve_list_v5_unaffected_native_range_does_not_invent_fixed_event(tmp_path) -> None:
+    cve = "CVE-2026-9013"
+    document = _cve_record(cve)
+    document["containers"]["cna"]["affected"][0]["versions"] = [
+        {
+            "version": "1.0.0",
+            "lessThan": "2.0.0",
+            "versionType": "semver",
+            "status": "unaffected",
+        }
+    ]
+    raw = json.dumps(document, sort_keys=True).encode()
+    store = _store(tmp_path)
+    snapshot = _cve_snapshot(store, cve, raw)
+
+    parsed = parse_cve_record(document, snapshot)
+    native_range = parsed.advisory.affected[0].ranges[0]
+
+    assert native_range.type.value == "semver"
+    assert native_range.events == []
+    assert native_range.database_specific == {
+        "status": "unaffected",
+        "default_status": "unaffected",
+        "json_pointer": "/containers/cna/affected/0/versions/0",
+    }
+    assert store.read_snapshot(snapshot.snapshot_id) == raw
+
+
+def test_cve_list_v5_pkg_github_maps_to_generic_github(tmp_path) -> None:
+    cve = "CVE-2026-9014"
+    document = _cve_record(cve)
+    affected = document["containers"]["cna"]["affected"][0]
+    affected.pop("product")
+    affected["packageURL"] = "pkg:github/example/project@v1.2.3"
+    store = _store(tmp_path)
+
+    parsed = parse_cve_record(
+        document,
+        _cve_snapshot(store, cve, json.dumps(document).encode()),
+    )
+    package = parsed.advisory.affected[0]
+
+    assert package.ecosystem == "GitHub"
+    assert package.ecosystem != "GitHub Actions"
+    assert package.name == "example/project"
+
+
+def test_cve_list_v5_sync_is_idempotent_merges_aliases_and_stages_raw_records(tmp_path) -> None:
+    cve = "CVE-2026-1234"
+    record_url = cve_list_v5_record_url(cve)
+    record = _cve_record(cve)
+    delta = _cve_delta(("new", cve, "2026-07-29T11:00:00Z"))
+    transport = FakeTransport(
+        {
+            CVE_LIST_V5_DELTA_URL: [
+                _json_response(CVE_LIST_V5_DELTA_URL, delta),
+                _json_response(CVE_LIST_V5_DELTA_URL, delta),
+            ],
+            record_url: [
+                _json_response(record_url, record),
+                _json_response(record_url, record),
+            ],
+        }
+    )
+    store = _store(tmp_path)
+    service = IntelligenceService(store, transport=transport, clock=lambda: NOW)
+
+    first = service.sync(
+        sources=["cve-list-v5"],
+        since_hours=24,
+        ecosystems=["Go"],
+        limit_per_source=10,
+    )
+    second = service.sync(sources=["cve-list-v5"], since_hours=24, limit_per_source=10)
+    advisory = service.get(cve)
+
+    assert first.results[0].status == SyncStatus.SUCCESS
+    assert first.results[0].records_inserted == 1
+    assert second.results[0].status == SyncStatus.SUCCESS
+    assert second.results[0].records_unchanged == 1
+    assert second.results[0].cursor_after == datetime(2026, 7, 29, 11, 40, tzinfo=UTC)
+    assert advisory.cve_record_state == CveRecordState.PUBLISHED
+    assert advisory.provenance[0].source == IntelligenceSource.CVE_LIST_V5
+    assert (
+        store.read_snapshot(advisory.provenance[0].snapshot_id) == json.dumps(record, sort_keys=True).encode()
+    )
+    state = store.get_source_state(IntelligenceSource.CVE_LIST_V5)
+    manifest = json.loads(store.read_snapshot(state.last_snapshot_id))
+    assert manifest["entries"][0]["snapshot_id"] == advisory.provenance[0].snapshot_id
+    assert store.verify_snapshot(manifest["delta_log"]["snapshot_id"])
+
+
+def test_cve_list_v5_rejected_records_are_hidden_by_default_but_queryable(tmp_path) -> None:
+    cve = "CVE-2026-5678"
+    record_url = cve_list_v5_record_url(cve)
+    record = _cve_record(cve, state="REJECTED")
+    service = IntelligenceService(
+        _store(tmp_path),
+        transport=FakeTransport(
+            {
+                CVE_LIST_V5_DELTA_URL: _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    _cve_delta(("updated", cve, "2026-07-29T11:00:00Z")),
+                ),
+                record_url: _json_response(record_url, record),
+            }
+        ),
+        clock=lambda: NOW,
+    )
+
+    report = service.sync(sources=["cve-list-v5"], limit_per_source=10)
+
+    assert report.successful
+    assert service.list(limit=10) == []
+    assert [item.advisory.advisory_id for item in service.list(rejected=True, limit=10)] == [cve]
+    assert service.get(cve).cve_record_state == CveRecordState.REJECTED
+
+
+def test_cve_list_v5_failure_evidence_and_transport_allowlist_are_bounded(tmp_path) -> None:
+    failure_body = b"upstream unavailable"
+    store = _store(tmp_path)
+    service = IntelligenceService(
+        store,
+        transport=FakeTransport(
+            {CVE_LIST_V5_DELTA_URL: _response(CVE_LIST_V5_DELTA_URL, failure_body, status=503)}
+        ),
+        clock=lambda: NOW,
+    )
+
+    result = service.sync(sources=["cve-list-v5"]).results[0]
+
+    assert result.status == SyncStatus.FAILED
+    assert store.snapshot_count() == 1
+    assert next(path for path in (tmp_path / "snapshots").rglob("*") if path.is_file()).read_bytes() == (
+        failure_body
+    )
+    _validate_official_url(cve_list_v5_record_url("CVE-2026-1234"))
+    with pytest.raises(IntelligenceTransportError, match="outside the official allowlist"):
+        _validate_official_url("https://raw.githubusercontent.com/CVEProject/cvelistV5/main/README.md")
+
+
+def test_cve_list_v5_partial_replay_preserves_upstream_cursor_and_validator(tmp_path) -> None:
+    first_cve = "CVE-2026-1234"
+    second_cve = "CVE-2026-5678"
+    initial_delta = _cve_delta(("new", first_cve, "2026-07-29T11:00:00Z"))
+    partial_delta = _cve_delta(
+        ("updated", first_cve, "2026-07-29T11:50:00Z"),
+        ("new", second_cve, "2026-07-29T11:45:00Z"),
+    )
+    partial_delta[0]["fetchTime"] = "2026-07-29T12:00:00Z"
+    first_record = _cve_record(first_cve)
+    updated_record = _cve_record(first_cve)
+    updated_record["cveMetadata"]["dateUpdated"] = "2026-07-29T11:50:00Z"
+    transport = FakeTransport(
+        {
+            CVE_LIST_V5_DELTA_URL: [
+                _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    initial_delta,
+                    headers={"Content-Type": "application/json", "ETag": '"delta-1"'},
+                ),
+                _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    partial_delta,
+                    headers={"Content-Type": "application/json", "ETag": '"delta-2"'},
+                ),
+            ],
+            cve_list_v5_record_url(first_cve): [
+                _json_response(cve_list_v5_record_url(first_cve), first_record),
+                _json_response(cve_list_v5_record_url(first_cve), updated_record),
+            ],
+        }
+    )
+    store = _store(tmp_path)
+    service = IntelligenceService(store, transport=transport, clock=lambda: NOW)
+
+    first = service.sync(sources=["cve-list-v5"], limit_per_source=10).results[0]
+    partial = service.sync(sources=["cve-list-v5"], limit_per_source=1).results[0]
+    state = store.get_source_state(IntelligenceSource.CVE_LIST_V5)
+
+    assert first.cursor_after == datetime(2026, 7, 29, 11, 40, tzinfo=UTC)
+    assert partial.status == SyncStatus.PARTIAL
+    assert partial.truncated
+    assert partial.cursor_before == first.cursor_after
+    assert partial.cursor_after == first.cursor_after
+    assert state.cursor_at == first.cursor_after
+    assert state.etag == '"delta-1"'
+    assert state.metadata["newest_fetch_at"] == "2026-07-29T12:00:00+00:00"
+
+
+def test_cve_list_v5_checkpoint_catches_up_after_a_schedule_gap(tmp_path) -> None:
+    baseline_cve = "CVE-2026-7000"
+    store = _store(tmp_path)
+    first_service = IntelligenceService(
+        store,
+        transport=FakeTransport(
+            {
+                CVE_LIST_V5_DELTA_URL: _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    _cve_delta(("new", baseline_cve, "2026-07-29T11:00:00Z")),
+                ),
+                cve_list_v5_record_url(baseline_cve): _json_response(
+                    cve_list_v5_record_url(baseline_cve), _cve_record(baseline_cve)
+                ),
+            }
+        ),
+        clock=lambda: NOW,
+    )
+    first_service.sync(sources=["cve-list-v5"], since_hours=6, limit_per_source=10)
+
+    missed_cve = "CVE-2026-7001"
+    recent_cve = "CVE-2026-7002"
+    missed_record = _cve_record(missed_cve)
+    missed_record["cveMetadata"]["dateUpdated"] = "2026-07-29T13:50:00Z"
+    recent_record = _cve_record(recent_cve)
+    recent_record["cveMetadata"]["dateUpdated"] = "2026-07-30T10:50:00Z"
+    catchup_delta = [
+        _cve_delta_batch("2026-07-30T11:00:00Z", ("new", recent_cve, "2026-07-30T10:50:00Z")),
+        _cve_delta_batch("2026-07-29T14:00:00Z", ("new", missed_cve, "2026-07-29T13:50:00Z")),
+        _cve_delta_batch("2026-07-28T09:00:00Z"),
+    ]
+    catchup_service = IntelligenceService(
+        store,
+        transport=FakeTransport(
+            {
+                CVE_LIST_V5_DELTA_URL: _json_response(CVE_LIST_V5_DELTA_URL, catchup_delta),
+                cve_list_v5_record_url(missed_cve): _json_response(
+                    cve_list_v5_record_url(missed_cve), missed_record
+                ),
+                cve_list_v5_record_url(recent_cve): _json_response(
+                    cve_list_v5_record_url(recent_cve), recent_record
+                ),
+            }
+        ),
+        clock=lambda: datetime(2026, 7, 30, 12, 0, tzinfo=UTC),
+    )
+
+    result = catchup_service.sync(sources=["cve-list-v5"], since_hours=6, limit_per_source=10).results[0]
+
+    assert result.status == SyncStatus.SUCCESS
+    assert result.records_selected == 2
+    assert catchup_service.get(missed_cve).advisory_id == missed_cve
+    assert result.cursor_after == datetime(2026, 7, 30, 11, 0, tzinfo=UTC)
+
+
+def test_cve_list_v5_future_data_version_preserves_raw_record_and_checkpoint(tmp_path) -> None:
+    cve = "CVE-2026-7001"
+    record_url = cve_list_v5_record_url(cve)
+    baseline_record = _cve_record(cve)
+    future_record = _cve_record(cve)
+    future_record["dataVersion"] = "5.3"
+    future_record["cveMetadata"]["dateUpdated"] = "2026-07-29T11:50:00Z"
+    future_raw = json.dumps(future_record, indent=2, ensure_ascii=False).encode() + b"\n"
+    future_delta = _cve_delta(("updated", cve, "2026-07-29T11:50:00Z"))
+    future_delta[0]["fetchTime"] = "2026-07-29T12:00:00Z"
+    baseline_last_modified = "Tue, 29 Jul 2026 11:40:00 GMT"
+    transport = FakeTransport(
+        {
+            CVE_LIST_V5_DELTA_URL: [
+                _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    _cve_delta(("new", cve, "2026-07-29T11:00:00Z")),
+                    headers={
+                        "Content-Type": "application/json",
+                        "ETag": '"delta-1"',
+                        "Last-Modified": baseline_last_modified,
+                    },
+                ),
+                _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    future_delta,
+                    headers={
+                        "Content-Type": "application/json",
+                        "ETag": '"delta-2"',
+                        "Last-Modified": "Tue, 29 Jul 2026 12:00:00 GMT",
+                    },
+                ),
+            ],
+            record_url: [
+                _json_response(record_url, baseline_record),
+                _response(record_url, future_raw),
+            ],
+        }
+    )
+    store = _store(tmp_path)
+    baseline_service = IntelligenceService(store, transport=transport, clock=lambda: NOW)
+
+    baseline = baseline_service.sync(sources=["cve-list-v5"], limit_per_source=10).results[0]
+    baseline_state = store.get_source_state(IntelligenceSource.CVE_LIST_V5)
+    later_service = IntelligenceService(
+        store,
+        transport=transport,
+        clock=lambda: datetime(2026, 7, 29, 13, 0, tzinfo=UTC),
+    )
+    partial = later_service.sync(sources=["cve-list-v5"], limit_per_source=10).results[0]
+    state = store.get_source_state(IntelligenceSource.CVE_LIST_V5)
+    manifest = json.loads(store.read_snapshot(partial.metadata["selection_manifest_id"]))
+    record_snapshot_id = manifest["entries"][0]["snapshot_id"]
+
+    assert baseline.status == SyncStatus.SUCCESS
+    assert baseline_state.cursor_at == datetime(2026, 7, 29, 11, 40, tzinfo=UTC)
+    assert partial.status == SyncStatus.PARTIAL
+    assert partial.cursor_before == baseline_state.cursor_at
+    assert partial.cursor_after == baseline_state.cursor_at
+    assert [(issue.code, issue.record_id) for issue in partial.issues] == [("invalid_source_data", cve)]
+    assert partial.records_selected == 0
+    assert manifest["entries"][0]["selected"] is False
+    assert store.read_snapshot(record_snapshot_id) == future_raw
+    assert state.cursor_at == baseline_state.cursor_at
+    assert state.etag == baseline_state.etag == '"delta-1"'
+    assert state.last_modified == baseline_state.last_modified == baseline_last_modified
+    assert state.last_success_at == baseline_state.last_success_at
+    assert state.last_attempt_at > baseline_state.last_attempt_at
+    assert later_service.get(cve).source_metadata["cve-list-v5"]["data_version"] == "5.2"
+
+
+def test_cve_list_v5_oversized_record_is_bounded_partial_without_checkpoint_advance(
+    tmp_path,
+) -> None:
+    baseline_cve = "CVE-2026-7001"
+    oversized_cve = "CVE-2026-7002"
+    baseline_record_url = cve_list_v5_record_url(baseline_cve)
+    oversized_record_url = cve_list_v5_record_url(oversized_cve)
+    baseline_last_modified = "Tue, 29 Jul 2026 11:40:00 GMT"
+    store = _store(tmp_path)
+    baseline_service = IntelligenceService(
+        store,
+        transport=FakeTransport(
+            {
+                CVE_LIST_V5_DELTA_URL: _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    _cve_delta(("new", baseline_cve, "2026-07-29T11:00:00Z")),
+                    headers={
+                        "Content-Type": "application/json",
+                        "ETag": '"delta-1"',
+                        "Last-Modified": baseline_last_modified,
+                    },
+                ),
+                baseline_record_url: _json_response(
+                    baseline_record_url,
+                    _cve_record(baseline_cve),
+                ),
+            }
+        ),
+        clock=lambda: NOW,
+    )
+    baseline = baseline_service.sync(sources=["cve-list-v5"], limit_per_source=10).results[0]
+    baseline_state = store.get_source_state(IntelligenceSource.CVE_LIST_V5)
+
+    oversized_record = _cve_record(oversized_cve)
+    oversized_record["cveMetadata"]["dateUpdated"] = "2026-07-29T11:50:00Z"
+    oversized_record["futureTopLevelField"]["padding"] = "x" * 8_192
+    oversized_raw = json.dumps(oversized_record).encode()
+    record_limit = 1_024
+    oversized_delta = _cve_delta(("new", oversized_cve, "2026-07-29T11:50:00Z"))
+    oversized_delta[0]["fetchTime"] = "2026-07-29T12:00:00Z"
+    transport = _OversizedCveRecordTransport(
+        _json_response(
+            CVE_LIST_V5_DELTA_URL,
+            oversized_delta,
+            headers={
+                "Content-Type": "application/json",
+                "ETag": '"delta-2"',
+                "Last-Modified": "Tue, 29 Jul 2026 12:00:00 GMT",
+            },
+        ),
+        record_url=oversized_record_url,
+        record_body=oversized_raw,
+    )
+    later_service = IntelligenceService(
+        store,
+        transport=transport,
+        clock=lambda: datetime(2026, 7, 29, 13, 0, tzinfo=UTC),
+        limits=IntelligenceLimits(max_cve_record_bytes=record_limit),
+    )
+
+    partial = later_service.sync(sources=["cve-list-v5"], limit_per_source=10).results[0]
+    state = store.get_source_state(IntelligenceSource.CVE_LIST_V5)
+    manifest = json.loads(store.read_snapshot(partial.metadata["selection_manifest_id"]))
+
+    assert baseline.status == SyncStatus.SUCCESS
+    assert len(oversized_raw) > record_limit
+    assert partial.status == SyncStatus.PARTIAL
+    assert partial.cursor_before == baseline_state.cursor_at
+    assert partial.cursor_after == baseline_state.cursor_at
+    assert [(issue.code, issue.record_id, issue.retriable) for issue in partial.issues] == [
+        ("record_response_limit", oversized_cve, True)
+    ]
+    assert partial.records_selected == 0
+    assert manifest["entries"] == [
+        {
+            "batch_fetch_at": "2026-07-29T12:00:00+00:00",
+            "change_type": "new",
+            "cve_org_url": f"https://www.cve.org/CVERecord?id={oversized_cve}",
+            "fetch_error": "record_response_limit",
+            "id": oversized_cve,
+            "modified": "2026-07-29T11:50:00+00:00",
+            "record_url": oversized_record_url,
+            "selected": False,
+        }
+    ]
+    assert state.cursor_at == baseline_state.cursor_at
+    assert state.etag == baseline_state.etag == '"delta-1"'
+    assert state.last_modified == baseline_state.last_modified == baseline_last_modified
+    assert state.last_success_at == baseline_state.last_success_at
+    assert state.last_attempt_at > baseline_state.last_attempt_at
+    assert transport.record_read_sizes == [record_limit + 1]
+    assert transport.record_bytes_consumed == record_limit + 1
+    assert transport.record_bytes_consumed < len(oversized_raw)
+    assert [request[0] for request in transport.requests] == [
+        CVE_LIST_V5_DELTA_URL,
+        oversized_record_url,
+    ]
+    with pytest.raises(AdvisoryNotFoundError):
+        later_service.get(oversized_cve)
+
+
+def test_rejected_cve_alias_does_not_hide_an_active_osv_advisory(tmp_path) -> None:
+    cve = "CVE-2026-5678"
+    store = _store(tmp_path)
+    osv_payload = b'{"id":"GHSA-active"}'
+    osv_snapshot = store.save_snapshot(
+        osv_payload,
+        source=IntelligenceSource.OSV,
+        kind=SnapshotKind.SOURCE_RECORD,
+        source_url=OSV_API_BASE_URL + "GHSA-active",
+        source_record_id="GHSA-active",
+        retrieved_at=NOW,
+        media_type="application/json",
+        attribution=OSV_ATTRIBUTION,
+    )
+    store.upsert_source_record(
+        ParsedSourceRecord(
+            source=IntelligenceSource.OSV,
+            source_record_id="GHSA-active",
+            advisory=NormalizedAdvisory(
+                advisory_id=cve,
+                identifiers=[cve, "GHSA-active"],
+                sources=[IntelligenceSource.OSV],
+                title="Active ecosystem advisory",
+                modified_at=NOW,
+                provenance=[osv_snapshot],
+            ),
+            raw_record_sha256="a" * 64,
+        ),
+        snapshot_id=osv_snapshot.snapshot_id,
+        seen_at=NOW,
+    )
+    record = _cve_record(cve, state="REJECTED")
+    service = IntelligenceService(
+        store,
+        transport=FakeTransport(
+            {
+                CVE_LIST_V5_DELTA_URL: _json_response(
+                    CVE_LIST_V5_DELTA_URL,
+                    _cve_delta(("updated", cve, "2026-07-29T11:00:00Z")),
+                ),
+                cve_list_v5_record_url(cve): _json_response(cve_list_v5_record_url(cve), record),
+            }
+        ),
+        clock=lambda: NOW,
+    )
+
+    service.sync(sources=["cve-list-v5"], limit_per_source=10)
+    merged = service.get("GHSA-active")
+
+    assert merged.cve_record_state == CveRecordState.REJECTED
+    assert merged.title == "Active ecosystem advisory"
+    assert {source.value for source in merged.sources} == {"cve-list-v5", "osv"}
+    assert [item.advisory.advisory_id for item in service.list(limit=10)] == [cve]
+    assert service.status().rejected_cve_count == 1
+
+
+def test_intelligence_store_migrates_pre_cve_rejected_index(tmp_path) -> None:
+    database = tmp_path / "legacy.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE intelligence_advisories (
+                advisory_id TEXT PRIMARY KEY,
+                known_exploited INTEGER NOT NULL,
+                withdrawn INTEGER NOT NULL,
+                published_at TEXT,
+                modified_at TEXT,
+                record_json TEXT NOT NULL,
+                record_digest TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    store = IntelligenceStore(database, tmp_path / "snapshots")
+    store.initialize()
+
+    with sqlite3.connect(database) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(intelligence_advisories)")}
+    assert "cve_rejected" in columns
 
 
 def test_snapshot_round_trip_idempotence_and_tamper_detection(tmp_path) -> None:

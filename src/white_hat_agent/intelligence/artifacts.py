@@ -44,6 +44,7 @@ def _snapshot_ids(value: Any) -> set[str]:
 def _sync_snapshot_ids(report) -> set[str]:
     trusted_metadata_keys = {
         "feed_snapshot_id",
+        "delta_log_snapshot_id",
         "index_prefix_snapshot_id",
         "selection_manifest_id",
     }

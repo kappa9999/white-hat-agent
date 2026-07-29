@@ -13,6 +13,14 @@ on:
         description: OSV and EPSS ceiling; CISA always validates its complete bounded catalog
         required: false
         default: "1000"
+      cve_since_hours:
+        description: Closed CVE List V5 lookback; the official delta log retains about 30 days
+        required: false
+        default: "6"
+      cve_limit_per_source:
+        description: CVE List V5 record-request ceiling
+        required: false
+        default: "5000"
 
 permissions:
   actions: read
@@ -28,12 +36,14 @@ env:
   WHA_WORKSPACE: ${{ github.workspace }}
   SINCE_HOURS: ${{ inputs.since_hours || '48' }}
   LIMIT_PER_SOURCE: ${{ inputs.limit_per_source || '1000' }}
+  CVE_SINCE_HOURS: ${{ inputs.cve_since_hours || '6' }}
+  CVE_LIMIT_PER_SOURCE: ${{ inputs.cve_limit_per_source || '5000' }}
 
 jobs:
   synchronize:
     name: Synchronize official sources
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,16 +114,27 @@ jobs:
             --require-success \
             --out .whitehat/intelligence/reports/sync.json
 
+      - name: Synchronize canonical CVE records
+        run: |
+          uv run wha intelligence sync \
+            --source cve-list-v5 \
+            --since-hours "$CVE_SINCE_HOURS" \
+            --limit-per-source "$CVE_LIMIT_PER_SOURCE" \
+            --require-success \
+            --out .whitehat/intelligence/reports/cve-list-v5-sync.json
+
       - name: Render ranked outputs
         run: |
           uv run wha intelligence list \
             --source osv \
+            --source cve-list-v5 \
             --limit 1000 \
             --out .whitehat/intelligence/reports/advisories.json
           uv run wha intelligence status \
             --out .whitehat/intelligence/reports/status.json
           uv run wha intelligence brief \
             --source osv \
+            --source cve-list-v5 \
             --limit 25 \
             --out .whitehat/intelligence/reports/brief.md
           cat .whitehat/intelligence/reports/brief.md >> "$GITHUB_STEP_SUMMARY"

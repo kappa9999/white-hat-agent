@@ -13,6 +13,7 @@ from pathlib import Path
 from ..models import stable_id
 from .errors import AdvisoryNotFoundError, IntelligenceLimitError, IntelligenceStoreError
 from .models import (
+    CveRecordState,
     IntelligenceSource,
     IntelligenceStatus,
     IntelligenceSyncReport,
@@ -73,6 +74,7 @@ class IntelligenceStore:
                     advisory_id TEXT PRIMARY KEY,
                     known_exploited INTEGER NOT NULL,
                     withdrawn INTEGER NOT NULL,
+                    cve_rejected INTEGER NOT NULL DEFAULT 0,
                     published_at TEXT,
                     modified_at TEXT,
                     record_json TEXT NOT NULL,
@@ -135,6 +137,17 @@ class IntelligenceStore:
                 CREATE INDEX IF NOT EXISTS idx_intelligence_sync_runs_started
                     ON intelligence_sync_runs(started_at DESC, run_id DESC);
                 """
+            )
+            columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(intelligence_advisories)")
+            }
+            if "cve_rejected" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_advisories ADD COLUMN cve_rejected INTEGER NOT NULL DEFAULT 0"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_intelligence_advisories_cve_rejected "
+                "ON intelligence_advisories(cve_rejected, advisory_id)"
             )
 
     def save_snapshot(
@@ -445,6 +458,7 @@ class IntelligenceStore:
         ecosystems: Iterable[str] | None = None,
         known_exploited: bool | None = None,
         withdrawn: bool | None = None,
+        rejected: bool | None = None,
         limit: int = 100,
     ) -> list[NormalizedAdvisory]:
         _validate_limit(limit)
@@ -472,6 +486,16 @@ class IntelligenceStore:
         if withdrawn is not None:
             query += " AND a.withdrawn = ?"
             parameters.append(int(withdrawn))
+        if rejected is True:
+            query += " AND a.cve_rejected = 1"
+        elif rejected is False:
+            query += (
+                " AND NOT (a.cve_rejected = 1 AND NOT EXISTS ("
+                "SELECT 1 FROM intelligence_advisory_sources active_source "
+                "WHERE active_source.advisory_id = a.advisory_id "
+                "AND active_source.tombstoned = 0 "
+                "AND active_source.source IN ('cisa-kev', 'osv')))"
+            )
         query += (
             " ORDER BY a.known_exploited DESC, "
             "COALESCE(a.modified_at, a.published_at) DESC, a.advisory_id LIMIT ?"
@@ -560,7 +584,8 @@ class IntelligenceStore:
                     return IntelligenceStatus(initialized=False)
                 advisory_row = connection.execute(
                     """
-                    SELECT COUNT(*) AS total, SUM(withdrawn) AS withdrawn
+                    SELECT COUNT(*) AS total, SUM(withdrawn) AS withdrawn,
+                           SUM(cve_rejected) AS cve_rejected
                     FROM intelligence_advisories
                     """
                 ).fetchone()
@@ -610,6 +635,7 @@ class IntelligenceStore:
             initialized=True,
             advisory_count=int(advisory_row["total"] or 0),
             withdrawn_count=int(advisory_row["withdrawn"] or 0),
+            rejected_cve_count=int(advisory_row["cve_rejected"] or 0),
             snapshot_count=int(snapshot_count),
             sync_run_count=int(sync_count),
             sources=source_statuses,
@@ -684,12 +710,13 @@ class IntelligenceStore:
         connection.execute(
             """
             INSERT INTO intelligence_advisories(
-                advisory_id, known_exploited, withdrawn, published_at,
-                modified_at, record_json, record_digest, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                advisory_id, known_exploited, withdrawn, cve_rejected,
+                published_at, modified_at, record_json, record_digest, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(advisory_id) DO UPDATE SET
                 known_exploited = excluded.known_exploited,
                 withdrawn = excluded.withdrawn,
+                cve_rejected = excluded.cve_rejected,
                 published_at = excluded.published_at,
                 modified_at = excluded.modified_at,
                 record_json = excluded.record_json,
@@ -700,6 +727,7 @@ class IntelligenceStore:
                 advisory_id,
                 int(aggregate.known_exploited),
                 int(aggregate.withdrawn_at is not None),
+                int(aggregate.cve_record_state == CveRecordState.REJECTED),
                 aggregate.published_at.isoformat() if aggregate.published_at else None,
                 aggregate.modified_at.isoformat() if aggregate.modified_at else None,
                 payload,
@@ -763,11 +791,20 @@ def _merge_source_records(advisory_id: str, rows: list[sqlite3.Row]) -> Normaliz
     active = [item for item in parsed if not item[3]]
     semantic = active or parsed
     preference = {
-        IntelligenceSource.OSV: 0,
-        IntelligenceSource.CISA_KEV: 1,
-        IntelligenceSource.EPSS: 2,
+        IntelligenceSource.CVE_LIST_V5: 0,
+        IntelligenceSource.OSV: 1,
+        IntelligenceSource.CISA_KEV: 2,
+        IntelligenceSource.EPSS: 3,
     }
-    semantic.sort(key=lambda item: (preference[item[0]], item[1].casefold()))
+    semantic.sort(
+        key=lambda item: (
+            4
+            if item[0] == IntelligenceSource.CVE_LIST_V5
+            and item[2].cve_record_state == CveRecordState.REJECTED
+            else preference[item[0]],
+            item[1].casefold(),
+        )
+    )
     sources = sorted({item[0] for item in parsed}, key=lambda item: item.value)
     tombstoned_sources = sorted(
         {source for source in sources if all(item[3] for item in parsed if item[0] == source)},
@@ -827,6 +864,7 @@ def _merge_source_records(advisory_id: str, rows: list[sqlite3.Row]) -> Normaliz
         identifier_links=links,
         sources=sources,
         tombstoned_sources=tombstoned_sources,
+        cve_record_state=_first_value(semantic, "cve_record_state"),
         title=_first_text(semantic, "title"),
         summary=_first_text(semantic, "summary"),
         details=_first_text(semantic, "details"),

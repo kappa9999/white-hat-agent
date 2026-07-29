@@ -37,11 +37,15 @@ from .models import (
 from .ranking import rank_advisory
 from .sources import (
     CISA_ATTRIBUTION,
+    CVE_LIST_V5_ATTRIBUTION,
     EPSS_ATTRIBUTION,
     OSV_ATTRIBUTION,
     ParsedSourceRecord,
+    decode_json_array,
     decode_json_object,
     parse_cisa_kev,
+    parse_cve_delta_log,
+    parse_cve_record,
     parse_epss,
     parse_osv_modified_index,
     parse_osv_record,
@@ -49,6 +53,7 @@ from .sources import (
 from .store import IntelligenceStore
 from .transport import (
     CISA_KEV_URL,
+    CVE_LIST_V5_DELTA_URL,
     DEFAULT_USER_AGENT,
     EPSS_API_URL,
     OSV_API_BASE_URL,
@@ -115,6 +120,12 @@ class IntelligenceService:
             try:
                 if source == IntelligenceSource.CISA_KEV:
                     outcome = self._sync_cisa(started_at, limit_per_source)
+                elif source == IntelligenceSource.CVE_LIST_V5:
+                    outcome = self._sync_cve_list_v5(
+                        started_at,
+                        since_hours=since_hours,
+                        limit_per_source=limit_per_source,
+                    )
                 elif source == IntelligenceSource.OSV:
                     outcome = self._sync_osv(
                         started_at,
@@ -188,6 +199,7 @@ class IntelligenceService:
         ecosystems: Iterable[str] | None = None,
         known_exploited: bool | None = None,
         withdrawn: bool | None = None,
+        rejected: bool | None = False,
         limit: int = 100,
         as_of: datetime | None = None,
     ) -> list[RankedAdvisory]:
@@ -200,6 +212,7 @@ class IntelligenceService:
             ecosystems=normalized_ecosystems,
             known_exploited=known_exploited,
             withdrawn=withdrawn,
+            rejected=rejected,
             limit=1000,
         )
         ranking_time = _aware_utc(as_of or self.clock())
@@ -229,6 +242,7 @@ class IntelligenceService:
         ecosystems: Iterable[str] | None = None,
         known_exploited: bool | None = None,
         withdrawn: bool | None = False,
+        rejected: bool | None = False,
         limit: int = 20,
         as_of: datetime | None = None,
     ) -> str:
@@ -238,6 +252,7 @@ class IntelligenceService:
             ecosystems=ecosystems,
             known_exploited=known_exploited,
             withdrawn=withdrawn,
+            rejected=rejected,
             limit=limit,
             as_of=ranking_time,
         )
@@ -411,6 +426,293 @@ class IntelligenceService:
             snapshots_stored=self.store.snapshot_count() - snapshot_count,
             truncated=False,
             metadata={"feed_snapshot_id": snapshot.snapshot_id, "delta_records": len(events)},
+        )
+        return _SourceOutcome(result, tuple(_unique_strings(selected_ids)))
+
+    def _sync_cve_list_v5(
+        self,
+        started_at: datetime,
+        *,
+        since_hours: float,
+        limit_per_source: int,
+    ) -> _SourceOutcome:
+        source = IntelligenceSource.CVE_LIST_V5
+        previous_state = self.store.get_source_state(source)
+        window_anchor = (
+            previous_state.cursor_at
+            if previous_state and previous_state.cursor_at
+            else started_at - timedelta(hours=since_hours)
+        )
+        boundary = window_anchor - timedelta(hours=self.limits.cve_overlap_hours)
+        snapshot_count = self.store.snapshot_count()
+        delta_response = self._get(
+            CVE_LIST_V5_DELTA_URL,
+            max_bytes=self.limits.max_cve_delta_bytes,
+            accept="application/json",
+        )
+        delta_digest = hashlib.sha256(delta_response.body).hexdigest()
+        delta_snapshot = self.store.save_snapshot(
+            delta_response.body,
+            source=source,
+            kind=SnapshotKind.DELTA_LOG,
+            source_url=delta_response.url,
+            retrieved_at=started_at,
+            media_type=delta_response.header("Content-Type") or "application/json",
+            attribution=CVE_LIST_V5_ATTRIBUTION,
+            http_status=delta_response.status,
+            etag=delta_response.header("ETag"),
+            last_modified=delta_response.header("Last-Modified"),
+            source_metadata={
+                "closed_window_boundary": boundary.isoformat(),
+                "fetch_error": delta_response.status != 200,
+            },
+        )
+        _require_success(delta_response, source)
+        delta_document = decode_json_array(delta_response.body, source=source)
+        selection = parse_cve_delta_log(
+            delta_document,
+            boundary=boundary,
+            max_batches=self.limits.max_cve_delta_batches,
+            max_entries=self.limits.max_cve_delta_entries,
+            max_candidates=self.limits.max_cve_candidates,
+        )
+        issues = list(selection.issues)
+        manifest_entries: list[dict[str, object]] = []
+        counts = _empty_counts()
+        selected_ids: list[str] = []
+        records_selected = 0
+        records_attempted = 0
+        consecutive_server_errors = 0
+        record_loop_interrupted = False
+        for entry in selection.entries:
+            if records_attempted >= limit_per_source:
+                break
+            records_attempted += 1
+            record_url = entry.record_url
+            manifest_entry: dict[str, object] = {
+                "id": entry.cve_id,
+                "modified": entry.modified_at.isoformat(),
+                "batch_fetch_at": entry.batch_fetch_at.isoformat(),
+                "change_type": entry.change_type,
+                "cve_org_url": entry.cve_org_url,
+                "record_url": entry.record_url,
+                "selected": False,
+            }
+            try:
+                response = self._get(
+                    record_url,
+                    max_bytes=self.limits.max_cve_record_bytes,
+                    accept="application/json",
+                )
+            except IntelligenceLimitError as error:
+                manifest_entry["fetch_error"] = "record_response_limit"
+                issues.append(
+                    SyncIssue(
+                        code="record_response_limit",
+                        message=str(error),
+                        retriable=True,
+                        record_id=entry.cve_id,
+                    )
+                )
+                manifest_entries.append(manifest_entry)
+                continue
+            manifest_entry["http_status"] = response.status
+            snapshot = self.store.save_snapshot(
+                response.body,
+                source=source,
+                kind=SnapshotKind.SOURCE_RECORD,
+                source_url=response.url,
+                source_record_id=entry.cve_id,
+                retrieved_at=started_at,
+                media_type=response.header("Content-Type") or "application/octet-stream",
+                attribution=CVE_LIST_V5_ATTRIBUTION,
+                http_status=response.status,
+                etag=response.header("ETag"),
+                last_modified=response.header("Last-Modified"),
+                source_metadata={
+                    "delta_modified": entry.modified_at.isoformat(),
+                    "change_type": entry.change_type,
+                    "fetch_error": response.status != 200,
+                },
+            )
+            manifest_entry["snapshot_id"] = snapshot.snapshot_id
+            if response.status != 200:
+                retriable = response.status in {404, 429} or response.status >= 500
+                issues.append(
+                    SyncIssue(
+                        code="record_http_error",
+                        message=f"CVE List V5 record returned HTTP {response.status}",
+                        retriable=retriable,
+                        record_id=entry.cve_id,
+                    )
+                )
+                manifest_entries.append(manifest_entry)
+                if response.status == 429:
+                    record_loop_interrupted = True
+                    break
+                if response.status >= 500:
+                    consecutive_server_errors += 1
+                    if consecutive_server_errors >= self.limits.max_cve_consecutive_server_errors:
+                        record_loop_interrupted = True
+                        break
+                else:
+                    consecutive_server_errors = 0
+                continue
+            consecutive_server_errors = 0
+            try:
+                document = decode_json_object(response.body, source=source)
+                record = parse_cve_record(document, snapshot)
+            except (IntelligenceError, ValidationError):
+                issues.append(
+                    SyncIssue(
+                        code="invalid_source_data",
+                        message="CVE List V5 record failed normalized validation",
+                        record_id=entry.cve_id,
+                    )
+                )
+                manifest_entries.append(manifest_entry)
+                continue
+            if record.source_record_id.casefold() != entry.cve_id.casefold():
+                issues.append(
+                    SyncIssue(
+                        code="record_identity_mismatch",
+                        message="CVE record id differs from the delta log id",
+                        record_id=entry.cve_id,
+                    )
+                )
+                manifest_entries.append(manifest_entry)
+                continue
+            if record.advisory.modified_at is not None and record.advisory.modified_at < entry.modified_at:
+                issues.append(
+                    SyncIssue(
+                        code="record_older_than_delta",
+                        message="CVE record dateUpdated predates the selected delta entry",
+                        retriable=True,
+                        record_id=entry.cve_id,
+                    )
+                )
+                manifest_entries.append(manifest_entry)
+                continue
+            state = self.store.upsert_source_record(
+                record, snapshot_id=snapshot.snapshot_id, seen_at=started_at
+            )
+            _increment_count(counts, state)
+            records_selected += 1
+            manifest_entry["selected"] = True
+            selected_ids.append(self.store.get_advisory(entry.cve_id).advisory_id)
+            manifest_entries.append(manifest_entry)
+
+        manifest = {
+            "schema_version": "1.0",
+            "kind": "cve-list-v5-delta-selection",
+            "source_url": CVE_LIST_V5_DELTA_URL,
+            "retrieved_at": started_at.isoformat(),
+            "closed_window_boundary": boundary.isoformat(),
+            "overlap_hours": self.limits.cve_overlap_hours,
+            "delta_log": {
+                "sha256": delta_digest,
+                "byte_length": len(delta_response.body),
+                "snapshot_id": delta_snapshot.snapshot_id,
+                "etag": delta_response.header("ETag"),
+                "last_modified": delta_response.header("Last-Modified"),
+                "batches_seen": selection.batches_seen,
+                "entries_seen": selection.entries_seen,
+                "newest_fetch_at": selection.newest_fetch_at.isoformat(),
+                "oldest_fetch_at": selection.oldest_fetch_at.isoformat(),
+                "window_complete": selection.window_complete,
+            },
+            "entries": manifest_entries,
+        }
+        manifest_body = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
+            "utf-8"
+        )
+        manifest_snapshot = self.store.save_snapshot(
+            manifest_body,
+            source=source,
+            kind=SnapshotKind.SELECTION_MANIFEST,
+            source_url=CVE_LIST_V5_DELTA_URL,
+            retrieved_at=started_at,
+            media_type="application/vnd.white-hat-agent.cve-list-v5-selection+json",
+            attribution=CVE_LIST_V5_ATTRIBUTION,
+            http_status=delta_response.status,
+            etag=delta_response.header("ETag"),
+            last_modified=delta_response.header("Last-Modified"),
+            source_schema_version="1.0",
+            source_metadata={
+                "upstream_content_sha256": delta_digest,
+                "delta_log_snapshot_id": delta_snapshot.snapshot_id,
+            },
+        )
+        limit_cutoff = records_attempted >= limit_per_source and records_attempted < len(selection.entries)
+        truncated = (
+            selection.candidate_limit_reached
+            or limit_cutoff
+            or record_loop_interrupted
+            or not selection.window_complete
+        )
+        status = SyncStatus.PARTIAL if issues or truncated else SyncStatus.SUCCESS
+        finished_at = _not_before(_aware_utc(self.clock()), started_at)
+        cursor_after = previous_state.cursor_at if previous_state else None
+        if status == SyncStatus.SUCCESS:
+            cursor_after = (
+                max(cursor_after, selection.newest_fetch_at) if cursor_after else selection.newest_fetch_at
+            )
+        state = SourceState(
+            source=source,
+            last_attempt_at=finished_at,
+            last_success_at=(
+                finished_at
+                if status == SyncStatus.SUCCESS
+                else (previous_state.last_success_at if previous_state else None)
+            ),
+            cursor_at=cursor_after,
+            etag=(
+                delta_response.header("ETag")
+                if status == SyncStatus.SUCCESS
+                else (previous_state.etag if previous_state else None)
+            ),
+            last_modified=(
+                delta_response.header("Last-Modified")
+                if status == SyncStatus.SUCCESS
+                else (previous_state.last_modified if previous_state else None)
+            ),
+            last_snapshot_id=manifest_snapshot.snapshot_id,
+            last_status=status,
+            metadata={
+                "closed_window_boundary": boundary.isoformat(),
+                "overlap_hours": self.limits.cve_overlap_hours,
+                "selection_manifest_id": manifest_snapshot.snapshot_id,
+                "delta_log_snapshot_id": delta_snapshot.snapshot_id,
+                "delta_log_sha256": delta_digest,
+                "newest_fetch_at": selection.newest_fetch_at.isoformat(),
+                "oldest_fetch_at": selection.oldest_fetch_at.isoformat(),
+            },
+        )
+        self.store.set_source_state(state)
+        result = SourceSyncResult(
+            source=source,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            records_seen=len(selection.entries),
+            records_selected=records_selected,
+            records_inserted=counts[UpsertState.INSERTED],
+            records_updated=counts[UpsertState.UPDATED],
+            records_unchanged=counts[UpsertState.UNCHANGED],
+            records_tombstoned=counts[UpsertState.TOMBSTONED],
+            snapshots_stored=self.store.snapshot_count() - snapshot_count,
+            truncated=truncated,
+            cursor_before=previous_state.cursor_at if previous_state else None,
+            cursor_after=cursor_after,
+            issues=issues,
+            metadata={
+                "selection_manifest_id": manifest_snapshot.snapshot_id,
+                "delta_log_snapshot_id": delta_snapshot.snapshot_id,
+                "delta_batches_seen": selection.batches_seen,
+                "delta_entries_seen": selection.entries_seen,
+                "records_attempted": records_attempted,
+                "record_loop_interrupted": record_loop_interrupted,
+            },
         )
         return _SourceOutcome(result, tuple(_unique_strings(selected_ids)))
 

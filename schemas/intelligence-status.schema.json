@@ -3,6 +3,7 @@
     "IntelligenceSource": {
       "enum": [
         "cisa-kev",
+        "cve-list-v5",
         "osv",
         "epss"
       ],
@@ -425,6 +426,12 @@
         }
       ],
       "default": null
+    },
+    "rejected_cve_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Rejected Cve Count",
+      "type": "integer"
     },
     "snapshot_count": {
       "default": 0,
