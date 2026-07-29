@@ -1,0 +1,440 @@
+{
+  "$defs": {
+    "AdapterKind": {
+      "enum": [
+        "tool",
+        "knowledge"
+      ],
+      "title": "AdapterKind",
+      "type": "string"
+    },
+    "AdapterLicense": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "url": {
+          "pattern": "^https://",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "attribution"
+      ],
+      "title": "AdapterLicense",
+      "type": "object"
+    },
+    "AdapterManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "adapter_version": {
+          "default": "1.0.0",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AdapterKind"
+        },
+        "license": {
+          "$ref": "#/$defs/AdapterLicense"
+        },
+        "max_execution_class": {
+          "$ref": "#/$defs/ExecutionClass",
+          "default": "analysis"
+        },
+        "modes": {
+          "items": {
+            "$ref": "#/$defs/ExecutionMode"
+          },
+          "title": "Modes",
+          "type": "array"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Platforms",
+          "type": "array"
+        },
+        "priority": {
+          "default": 50,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "probe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProbeDefinition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "provider": {
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "provider_url": {
+          "pattern": "^https://",
+          "title": "Provider Url",
+          "type": "string"
+        },
+        "provisioner": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "git-checkout": "#/$defs/GitCheckoutProvisioner",
+                  "github-release": "#/$defs/GitHubReleaseProvisioner"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/GitHubReleaseProvisioner"
+                },
+                {
+                  "$ref": "#/$defs/GitCheckoutProvisioner"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provisioner"
+        },
+        "requirements": {
+          "items": {
+            "$ref": "#/$defs/ProbeDefinition"
+          },
+          "title": "Requirements",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "search_globs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Search Globs",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "title",
+        "description",
+        "kind",
+        "provider",
+        "provider_url",
+        "license",
+        "capabilities",
+        "platforms",
+        "updated_at"
+      ],
+      "title": "AdapterManifest",
+      "type": "object"
+    },
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "ExecutionMode": {
+      "enum": [
+        "offline",
+        "sandbox",
+        "live-readonly",
+        "live-active"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "GitCheckoutProvisioner": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "git-checkout",
+          "default": "git-checkout",
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_checkout_bytes": {
+          "maximum": 2147483648,
+          "minimum": 1,
+          "title": "Max Checkout Bytes",
+          "type": "integer"
+        },
+        "ref": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Ref",
+          "type": "string"
+        },
+        "repository": {
+          "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?$",
+          "title": "Repository",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repository",
+        "ref",
+        "max_checkout_bytes"
+      ],
+      "title": "GitCheckoutProvisioner",
+      "type": "object"
+    },
+    "GitHubReleaseProvisioner": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_patterns": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Asset Patterns",
+          "type": "object"
+        },
+        "entrypoints": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Entrypoints",
+          "type": "object"
+        },
+        "kind": {
+          "const": "github-release",
+          "default": "github-release",
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_download_bytes": {
+          "maximum": 2147483648,
+          "minimum": 1,
+          "title": "Max Download Bytes",
+          "type": "integer"
+        },
+        "max_install_bytes": {
+          "maximum": 8589934592,
+          "minimum": 1,
+          "title": "Max Install Bytes",
+          "type": "integer"
+        },
+        "repository": {
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "title": "Repository",
+          "type": "string"
+        },
+        "strip_single_directory": {
+          "default": true,
+          "title": "Strip Single Directory",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "repository",
+        "asset_patterns",
+        "max_download_bytes",
+        "max_install_bytes"
+      ],
+      "title": "GitHubReleaseProvisioner",
+      "type": "object"
+    },
+    "ProbeDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "executable_names": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Executable Names",
+          "type": "object"
+        },
+        "minimum_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Version"
+        },
+        "timeout_seconds": {
+          "default": 10.0,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Timeout Seconds",
+          "type": "number"
+        },
+        "version_args": {
+          "anyOf": [
+            {
+              "maxItems": 1,
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "const": "--version",
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 1,
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "const": "-version",
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 0,
+              "minItems": 0,
+              "type": "array"
+            }
+          ],
+          "default": [
+            "--version"
+          ],
+          "title": "Version Args"
+        },
+        "version_file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version File"
+        },
+        "version_pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version Pattern"
+        },
+        "version_property": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version Property"
+        }
+      },
+      "required": [
+        "executable_names"
+      ],
+      "title": "ProbeDefinition",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapters": {
+      "items": {
+        "$ref": "#/$defs/AdapterManifest"
+      },
+      "title": "Adapters",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "adapters"
+  ],
+  "title": "AdapterCatalogManifest",
+  "type": "object"
+}

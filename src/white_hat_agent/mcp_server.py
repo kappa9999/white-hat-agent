@@ -10,6 +10,20 @@ from fastmcp.server.middleware.timing import TimingMiddleware
 from pydantic import Field, ValidationError
 
 from ._version import __version__
+from .adapter_provisioning import (
+    AdapterProvisioner,
+    AdapterProvisionPlan,
+    AdapterProvisionResult,
+)
+from .adapter_registry import (
+    AdapterKind,
+    AdapterManifest,
+    AdapterSearchHit,
+    AdapterSelection,
+    AdapterStatus,
+    KnowledgeExcerpt,
+    KnowledgeSearchHit,
+)
 from .campaign.contracts import validate_campaign_manifest
 from .campaign.models import (
     AgentRegistration,
@@ -52,6 +66,7 @@ from .knowledge.compose import CompositePlaybook, CompositionRequest, compose_pl
 from .knowledge.corpus import CorpusSearchHit
 from .knowledge.learning import submission_from_learning
 from .knowledge.models import (
+    ExecutionClass,
     KnowledgeSubmission,
     Playbook,
     RightsDeclaration,
@@ -111,6 +126,7 @@ def create_server(workspace_root: str | Path | None = None) -> FastMCP:
     )
     root.mount(_knowledge_server(workspace), namespace="knowledge")
     root.mount(_capability_server(workspace), namespace="capability")
+    root.mount(_adapter_server(workspace), namespace="adapter")
     root.mount(_campaign_server(workspace), namespace="campaign")
     root.mount(_intelligence_server(workspace), namespace="intelligence")
     root.mount(_opportunity_server(workspace), namespace="opportunity")
@@ -395,6 +411,138 @@ def _capability_server(workspace: Workspace) -> FastMCP:
     )
     def catalog_resource() -> str:
         payload = [item.model_dump(mode="json") for item in workspace.capability_catalog.all()]
+        return json.dumps(payload, indent=2, sort_keys=True)
+
+    return server
+
+
+def _adapter_server(workspace: Workspace) -> FastMCP:
+    server = FastMCP(
+        "White Hat Agent Adapters",
+        strict_input_validation=True,
+        mask_error_details=True,
+    )
+
+    @server.tool(
+        name="search",
+        version="1.0",
+        description="Search concrete tool and knowledge manifests mapped to provider-neutral capabilities.",
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"adapter", "read"},
+    )
+    def search(
+        query: str = "",
+        kind: AdapterKind | None = None,
+        limit: int = 20,
+    ) -> list[AdapterSearchHit]:
+        return workspace.adapter_registry.search(query, kind=kind, limit=limit)
+
+    @server.tool(
+        name="get",
+        version="1.0",
+        description="Return one exact adapter manifest including upstream, license, probes, and provisioner.",
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"adapter", "read"},
+    )
+    def get(adapter_id: str) -> AdapterManifest:
+        return workspace.adapter_registry.get(adapter_id)
+
+    @server.tool(
+        name="status",
+        version="1.0",
+        description=(
+            "Observe one adapter's resolved paths, version, requirements, and available capabilities."
+        ),
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"adapter", "status", "read"},
+    )
+    def status(adapter_id: str) -> AdapterStatus:
+        return workspace.adapters.status(adapter_id)
+
+    @server.tool(
+        name="resolve",
+        version="1.0",
+        description=("Select a deterministic adapter set minimizing new provisions, then provider count."),
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"adapter", "planning", "read"},
+    )
+    def resolve(
+        required_capabilities: list[str],
+        kind: AdapterKind | None = None,
+        max_execution_class: ExecutionClass | None = None,
+    ) -> AdapterSelection:
+        return workspace.adapters.resolve(
+            required_capabilities,
+            kind=kind,
+            max_execution_class=max_execution_class,
+        )
+
+    @server.tool(
+        name="plan_provision",
+        version="1.0",
+        description=(
+            "Resolve an exact official release or Git commit, including byte bounds and SHA-256 identities, "
+            "without changing local state."
+        ),
+        annotations={"readOnlyHint": True, "idempotentHint": False, "openWorldHint": True},
+        tags={"adapter", "network", "planning"},
+    )
+    def plan_provision(adapter_id: str) -> AdapterProvisionPlan:
+        return AdapterProvisioner(workspace.adapters).plan(adapter_id)
+
+    @server.tool(
+        name="provision",
+        version="1.0",
+        description=(
+            "Apply one exact provision plan into the workspace-managed adapter directory; "
+            "the plan must match the current manifest and host."
+        ),
+        annotations={"readOnlyHint": False, "idempotentHint": True, "openWorldHint": True},
+        tags={"adapter", "network", "write"},
+    )
+    def provision(plan: AdapterProvisionPlan) -> AdapterProvisionResult:
+        return AdapterProvisioner(workspace.adapters).provision(plan)
+
+    @server.tool(
+        name="search_knowledge",
+        version="1.0",
+        description=(
+            "Search an exact provisioned knowledge snapshot with file, line, and revision provenance."
+        ),
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"adapter", "knowledge", "read"},
+    )
+    def search_knowledge(adapter_id: str, query: str, limit: int = 20) -> list[KnowledgeSearchHit]:
+        return workspace.adapters.search_knowledge(adapter_id, query, limit=limit)
+
+    @server.tool(
+        name="read_knowledge",
+        version="1.0",
+        description="Read a bounded file excerpt from an exact provisioned knowledge revision.",
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"adapter", "knowledge", "read"},
+    )
+    def read_knowledge(
+        adapter_id: str,
+        relative_path: str,
+        start_line: int = 1,
+        line_count: int = 80,
+    ) -> KnowledgeExcerpt:
+        return workspace.adapters.read_knowledge(
+            adapter_id,
+            relative_path,
+            start_line=start_line,
+            line_count=line_count,
+        )
+
+    @server.resource(
+        "whitehat://adapters/catalog",
+        name="adapter_catalog",
+        description="Concrete official tool and knowledge manifests",
+        mime_type="application/json",
+    )
+    def catalog_resource() -> str:
+        payload = [item.model_dump(mode="json") for item in workspace.adapter_registry.all()]
         return json.dumps(payload, indent=2, sort_keys=True)
 
     return server

@@ -45,6 +45,12 @@ The generated YAML is a **draft**, not proof that the method works.
 - Describe observable inputs, outputs, errors, bounds, side effects, and cleanup.
 - Keep the contract provider-neutral. A concrete adapter may target a tool or MCP server.
 - Do not hide sessions, credentials, scope decisions, or target identity from the calling model.
+- Put concrete providers in `adapters/catalog.yaml`, not in playbooks or the capability vocabulary.
+- Use one authoritative upstream, exact license/attribution, bounded platform probes, and a distinct capability that the
+  provider actually adds. Do not add interchangeable tool lists.
+- Automated provisioning accepts only reviewed official GitHub release assets with published SHA-256 identities or an
+  exact Git commit. Never add shell installers, mutable download URLs, community plugins, or unofficial MCP bridges.
+- Keep the bundled catalog identical and add deterministic fixtures; routine CI must not contact the network.
 
 ### Intelligence source or data-quality change
 

@@ -7,6 +7,15 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .adapter_provisioning import AdapterProvisionPlan, AdapterProvisionResult
+from .adapter_registry import (
+    AdapterCatalogManifest,
+    AdapterManifest,
+    AdapterSelection,
+    AdapterStatus,
+    InstalledAdapterRecord,
+    KnowledgeExcerpt,
+)
 from .adapters import ReplayTranscript
 from .campaign.models import (
     AgentRegistration,
@@ -61,6 +70,12 @@ from .models import (
 from .simulator import SimulationResult
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
+    "adapter-catalog": AdapterCatalogManifest,
+    "adapter-manifest": AdapterManifest,
+    "adapter-provision-plan": AdapterProvisionPlan,
+    "adapter-provision-result": AdapterProvisionResult,
+    "adapter-selection": AdapterSelection,
+    "adapter-status": AdapterStatus,
     "agent-registration": AgentRegistration,
     "advisory-applicability-decision": AdvisoryApplicabilityDecision,
     "advisory-applicability-request": AdvisoryApplicabilityRequest,
@@ -89,9 +104,11 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "finding-record": FindingRecord,
     "hypothesis-expansion": HypothesisExpansionBatch,
     "identifier-link": IdentifierLink,
+    "installed-adapter-record": InstalledAdapterRecord,
     "intelligence-status": IntelligenceStatus,
     "intelligence-sync-report": IntelligenceSyncReport,
     "knowledge-submission": KnowledgeSubmission,
+    "knowledge-excerpt": KnowledgeExcerpt,
     "learning-candidate": LearningCandidate,
     "opportunity": Opportunity,
     "opportunity-score": OpportunityScore,

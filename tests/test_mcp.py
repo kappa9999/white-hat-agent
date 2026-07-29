@@ -31,6 +31,13 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
             "knowledge_compose",
             "capability_search",
             "capability_gaps",
+            "adapter_search",
+            "adapter_status",
+            "adapter_resolve",
+            "adapter_plan_provision",
+            "adapter_provision",
+            "adapter_search_knowledge",
+            "adapter_read_knowledge",
             "campaign_plan",
             "campaign_scope_check",
             "campaign_enqueue",
@@ -46,8 +53,13 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
         assert "whitehat://status" in resources
         assert "whitehat://knowledge/corpus/manifest" in resources
         assert "whitehat://capability/capabilities/catalog" in resources
+        assert "whitehat://adapter/adapters/catalog" in resources
         assert "whitehat://knowledge/playbook/{playbook_id}" in templates
         assert "knowledge_compile_submission" in prompts
+
+        adapter_search = await client.call_tool("adapter_search", {"query": "reverse"})
+        assert not adapter_search.is_error
+        assert adapter_search.structured_content["result"][0]["adapter"]["adapter_id"] == "ghidra"
 
         intelligence_status = await client.call_tool("intelligence_status", {})
         assert not intelligence_status.is_error

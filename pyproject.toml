@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "white-hat-agent"
-version = "0.4.1"
+version = "0.5.0"
 description = "Model-neutral cyber knowledge, orchestration, discovery, and MCP application layer"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -61,7 +61,12 @@ white-hat-agent = "white_hat_agent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-white_hat_agent = ["py.typed", "builtin_capabilities/*.yaml", "builtin_corpus/**/*.yaml"]
+white_hat_agent = [
+  "py.typed",
+  "builtin_adapters/*.yaml",
+  "builtin_capabilities/*.yaml",
+  "builtin_corpus/**/*.yaml",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"

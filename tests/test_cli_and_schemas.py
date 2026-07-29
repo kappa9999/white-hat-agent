@@ -94,6 +94,8 @@ def test_exported_episode_schema_validates_fixture(tmp_path) -> None:
     assert "scope-manifest.schema.json" in names
     assert "campaign-manifest.schema.json" in names
     assert "normalized-advisory.schema.json" in names
+    assert "adapter-manifest.schema.json" in names
+    assert "adapter-provision-plan.schema.json" in names
     assert "intelligence-sync-report.schema.json" in names
 
 

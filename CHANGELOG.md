@@ -3,6 +3,26 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.5.0] - 2026-07-29
+
+### Added
+
+- a concrete adapter registry, observed host status, exact capability-cover resolver, and CLI/MCP/JSON Schema surfaces
+  beneath the existing provider-neutral planner;
+- reviewed manifests for Ghidra, Frida, LLVM, YARA-X, TShark, capa, JADX, MITRE ATT&CK STIX, and capa rules; and
+- explicit plan/apply provisioning for digest-bearing official GitHub releases and exact Git knowledge snapshots,
+  plus bounded revision-preserving knowledge search and excerpts.
+
+### Security
+
+- search, status, resolution, campaign planning, fleet claims, and workspace health checks never provision implicitly;
+- version probes cannot carry free-form command arguments, and adapter execution ceilings cannot underclassify their
+  advertised capability contracts;
+- apply revalidates host state, manifest, release or commit identity, upstream URLs, asset names, SHA-256, and byte
+  ceilings before bounded workspace-local activation; and
+- safe extraction rejects traversal, links, special files, duplicate paths, excess entries, and decompression bombs,
+  while managed knowledge fails closed when its deterministic content-tree digest changes.
+
 ## [0.4.1] - 2026-07-29
 
 ### Fixed
@@ -97,6 +117,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.5.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/kappa9999/white-hat-agent/compare/v0.3.1...v0.3.2

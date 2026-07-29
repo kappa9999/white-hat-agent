@@ -49,21 +49,26 @@ uv run --project /absolute/path/to/white-hat-agent \
 
 ## Surface design
 
-Mounted names become `knowledge_search`, `intelligence_sync`, `campaign_enqueue`, and so on. Tools use strict
-structured input/output.
-Resources expose workspace health, the corpus manifest, playbooks, and the capability catalog. Prompts help a host
-model compile submissions, normalize opportunities, and plan campaigns without requiring one provider's API.
+Mounted names become `knowledge_search`, `adapter_resolve`, `intelligence_sync`, `campaign_enqueue`, and so on.
+Tools use strict structured input/output. Resources expose workspace health, the corpus manifest, playbooks, and the
+capability and concrete-adapter catalogs. Prompts help a host model compile submissions, normalize opportunities,
+and plan campaigns without requiring one provider's API.
 
 `campaign_plan` is the bridge from knowledge to fleet work: given exact scope, targets, initial and desired semantic
 artifacts, an execution ceiling, and available adapter capabilities, it composes corpus playbooks and emits ordered
 stages. Each stage carries its own `ProbeIntent` and freshly evaluated `ScopeDecision`. Planning is read-only; the
 operator or host agent still persists the manifest, explicitly transitions its lifecycle, and enqueues chosen stages.
 
-`intelligence_sync` is the only built-in open-world network tool. It performs bounded GET requests to fixed official
-CISA, OSV, and optional FIRST EPSS endpoints, then mutates only the local workspace state and snapshot store. It does
-not contact advisory targets. The remaining intelligence tools resolve aliases, rank local records, report freshness,
-and render briefs without network access. Clients should require approval for synchronization when outbound network
-access is not already part of the operator's policy.
+Three built-in tools are open-world. `intelligence_sync` performs bounded GET requests to fixed official CVE List V5,
+CISA, OSV, and optional FIRST EPSS endpoints, then mutates only the local workspace state and snapshot store.
+`adapter_plan_provision` performs read-only resolution against the reviewed provider's official GitHub release or
+commit API. `adapter_provision` applies an exact plan by downloading only its resolved official artifacts or commit
+into `.whitehat/adapters/`; it is both networked and mutating. None contacts advisory targets. Clients should require
+approval for synchronization and provisioning when those side effects are not already part of operator policy.
+
+The other adapter tools search manifests, observe local versions, resolve capability coverage, or query already
+provisioned snapshots. They never install as a side effect. In particular, campaign planning and fleet claiming do
+not invoke provisioning.
 
 Mutating tools are visibly annotated and use explicit identifiers. Response limiting applies at the root, mounted
 servers mask error details consistently, tool lists are bounded, and HTTP sessions are stateless. Tool results still

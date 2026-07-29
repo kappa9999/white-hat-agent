@@ -15,7 +15,9 @@
 
 ## Adapter integrations
 
-- formal adapter manifest/handshake and conformance test kit;
+- concrete manifest, observed status, deterministic resolver, official release/Git provisioning, and bounded local
+  knowledge search (initial built-in implementation complete);
+- execution handshake and conformance test kit beyond tool/version availability;
 - sandboxed local subprocess adapter runner with explicit filesystem/network resources;
 - bounded HTTP observation adapter for owned labs and exact program scopes;
 - repository/patch-diff adapter using local source artifacts;

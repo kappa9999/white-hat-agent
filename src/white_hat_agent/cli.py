@@ -10,6 +10,8 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ._version import __version__
+from .adapter_provisioning import AdapterProvisioner, AdapterProvisionPlan
+from .adapter_registry import AdapterKind, AdapterRegistryError
 from .adapters import ReplayAdapter, ReplayTranscript
 from .campaign.contracts import validate_campaign_manifest
 from .campaign.fleet import FleetError
@@ -44,7 +46,7 @@ from .knowledge.compiler import compile_heuristic
 from .knowledge.compose import CompositionRequest, compose_playbooks
 from .knowledge.corpus import Corpus, dump_playbook
 from .knowledge.learning import submission_from_learning
-from .knowledge.models import KnowledgeSubmission, RightsDeclaration
+from .knowledge.models import ExecutionClass, KnowledgeSubmission, RightsDeclaration
 from .mcp_server import run_server
 from .models import CausalVerificationInput, DiscoveryEpisode, DiscoveryObservation, stable_id
 from .planner import AdaptivePlanner, PlannerConfig
@@ -116,6 +118,62 @@ def build_parser() -> argparse.ArgumentParser:
     _workspace_option(capability_gaps)
     capability_gaps.add_argument("--playbook", action="append", required=True)
     capability_gaps.add_argument("--available", action="append", default=[])
+
+    adapter = commands.add_parser(
+        "adapter", help="discover, resolve, verify, and explicitly provision concrete tools and knowledge"
+    )
+    adapter_commands = adapter.add_subparsers(dest="adapter_command", required=True)
+    adapter_list = adapter_commands.add_parser("list", help="search concrete adapter manifests")
+    _workspace_option(adapter_list)
+    adapter_list.add_argument("query", nargs="?", default="")
+    adapter_list.add_argument("--kind", choices=[item.value for item in AdapterKind])
+    adapter_list.add_argument("--limit", type=int, default=20)
+    adapter_show = adapter_commands.add_parser("show", help="show one exact adapter manifest")
+    _workspace_option(adapter_show)
+    adapter_show.add_argument("adapter_id")
+    adapter_status = adapter_commands.add_parser("status", help="verify observed adapter identities")
+    _workspace_option(adapter_status)
+    adapter_status.add_argument("adapter_id", nargs="?")
+    adapter_status.add_argument("--kind", choices=[item.value for item in AdapterKind])
+    adapter_resolve = adapter_commands.add_parser(
+        "resolve", help="minimize new provisions, then select the smallest adapter set"
+    )
+    _workspace_option(adapter_resolve)
+    adapter_resolve.add_argument("--capability", action="append", required=True)
+    adapter_resolve.add_argument("--kind", choices=[item.value for item in AdapterKind])
+    adapter_resolve.add_argument("--max-execution-class", choices=[item.value for item in ExecutionClass])
+    adapter_plan = adapter_commands.add_parser(
+        "plan", help="resolve exact upstream identities without changing the host"
+    )
+    _workspace_option(adapter_plan)
+    adapter_plan.add_argument("adapter_id")
+    adapter_plan.add_argument("--out", type=Path)
+    adapter_provision = adapter_commands.add_parser(
+        "provision", help="apply an exact previously reviewed provision plan"
+    )
+    _workspace_option(adapter_provision)
+    adapter_provision.add_argument("--plan", type=Path, required=True)
+    adapter_install = adapter_commands.add_parser(
+        "install", help="explicitly resolve and install or update one adapter"
+    )
+    _workspace_option(adapter_install)
+    adapter_install.add_argument("adapter_id")
+    adapter_install.add_argument("--yes", action="store_true")
+    adapter_search = adapter_commands.add_parser(
+        "search", help="search a provisioned knowledge snapshot without an extra index"
+    )
+    _workspace_option(adapter_search)
+    adapter_search.add_argument("adapter_id")
+    adapter_search.add_argument("query")
+    adapter_search.add_argument("--limit", type=int, default=20)
+    adapter_read = adapter_commands.add_parser(
+        "read", help="read a bounded excerpt from a revision-bound knowledge snapshot"
+    )
+    _workspace_option(adapter_read)
+    adapter_read.add_argument("adapter_id")
+    adapter_read.add_argument("relative_path")
+    adapter_read.add_argument("--start-line", type=int, default=1)
+    adapter_read.add_argument("--line-count", type=int, default=80)
 
     knowledge = commands.add_parser("knowledge", help="turn plain-language knowledge into a playbook draft")
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
@@ -512,6 +570,8 @@ def main(argv: list[str] | None = None) -> int:
             _run_corpus(args)
         elif args.command == "capability":
             _run_capability(args)
+        elif args.command == "adapter":
+            _run_adapter(args)
         elif args.command == "knowledge":
             _run_knowledge(args)
         elif args.command == "playbook":
@@ -543,6 +603,7 @@ def main(argv: list[str] | None = None) -> int:
             raise AssertionError(f"unknown command: {args.command}")
     except (
         FileNotFoundError,
+        AdapterRegistryError,
         EvidenceError,
         FleetError,
         IntelligenceError,
@@ -604,6 +665,51 @@ def _run_capability(args: argparse.Namespace) -> None:
     elif args.capability_command == "gaps":
         playbooks = [workspace.corpus.get(playbook_id) for playbook_id in args.playbook]
         _emit(catalog.gaps(playbooks, args.available))
+
+
+def _run_adapter(args: argparse.Namespace) -> None:
+    workspace = _workspace(args)
+    registry = workspace.adapter_registry
+    manager = workspace.adapters
+    kind = AdapterKind(args.kind) if getattr(args, "kind", None) else None
+    if args.adapter_command == "list":
+        _emit(registry.search(args.query, kind=kind, limit=args.limit))
+    elif args.adapter_command == "show":
+        _emit(registry.get(args.adapter_id))
+    elif args.adapter_command == "status":
+        _emit(manager.status(args.adapter_id) if args.adapter_id else manager.all_statuses(kind=kind))
+    elif args.adapter_command == "resolve":
+        ceiling = ExecutionClass(args.max_execution_class) if args.max_execution_class else None
+        _emit(
+            manager.resolve(
+                args.capability,
+                kind=kind,
+                max_execution_class=ceiling,
+            )
+        )
+    elif args.adapter_command == "plan":
+        _emit(AdapterProvisioner(manager).plan(args.adapter_id), args.out)
+    elif args.adapter_command == "provision":
+        plan = _read_model(args.plan, AdapterProvisionPlan)
+        _emit(AdapterProvisioner(manager).provision(plan))
+    elif args.adapter_command == "install":
+        if not args.yes:
+            raise ValueError("adapter install requires --yes because it changes local tool state")
+        provisioner = AdapterProvisioner(manager)
+        plan = provisioner.plan(args.adapter_id)
+        result = provisioner.provision(plan)
+        _emit({"plan": plan, "result": result})
+    elif args.adapter_command == "search":
+        _emit(manager.search_knowledge(args.adapter_id, args.query, limit=args.limit))
+    elif args.adapter_command == "read":
+        _emit(
+            manager.read_knowledge(
+                args.adapter_id,
+                args.relative_path,
+                start_line=args.start_line,
+                line_count=args.line_count,
+            )
+        )
 
 
 def _run_knowledge(args: argparse.Namespace) -> None:

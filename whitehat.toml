@@ -2,6 +2,8 @@
 schema_version = "1.0"
 corpus_dir = "corpus/playbooks"
 capability_catalog = "capabilities/catalog.yaml"
+adapter_catalog = "adapters/catalog.yaml"
+adapters_dir = ".whitehat/adapters"
 submissions_dir = ".whitehat/submissions"
 campaigns_dir = ".whitehat/campaigns"
 artifacts_dir = ".whitehat/artifacts"
