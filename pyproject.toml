@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "white-hat-agent"
-version = "0.3.2"
+version = "0.4.0"
 description = "Model-neutral cyber knowledge, orchestration, discovery, and MCP application layer"
 readme = "README.md"
 requires-python = ">=3.12"

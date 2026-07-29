@@ -33,10 +33,12 @@ from .evidence.models import EvidenceDescriptor, FindingRecord
 from .evidence.store import EvidenceError
 from .expansion import ReplayExpansionTranscript, ReplayHypothesisGenerator
 from .intelligence import (
+    AdvisoryApplicabilityRequest,
     IntelligenceError,
     IntelligenceService,
     IntelligenceSource,
     SyncStatus,
+    assess_advisory_applicability,
 )
 from .knowledge.compiler import compile_heuristic
 from .knowledge.compose import CompositionRequest, compose_playbooks
@@ -261,6 +263,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_intelligence_filters(intelligence_brief)
     intelligence_brief.add_argument("--out", type=Path)
+
+    intelligence_applicability = intelligence_commands.add_parser(
+        "applicability",
+        help="match one normalized advisory to one exact artifact",
+    )
+    intelligence_applicability.add_argument("--request", type=Path, required=True)
+    intelligence_applicability.add_argument("--out", type=Path)
 
     opportunity = commands.add_parser(
         "opportunity", help="intake and rank bug-bounty, open-source, lab, or private targets"
@@ -686,6 +695,10 @@ def _run_campaign(args: argparse.Namespace) -> None:
 
 
 def _run_intelligence(args: argparse.Namespace) -> None:
+    if args.intelligence_command == "applicability":
+        request = _read_model(args.request, AdvisoryApplicabilityRequest)
+        _emit(assess_advisory_applicability(request), args.out)
+        return
     workspace = _workspace(args)
     store = workspace.intelligence
     store.initialize()

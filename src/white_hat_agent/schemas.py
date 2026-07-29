@@ -30,6 +30,8 @@ from .evaluation import SimulationEvaluation
 from .evidence.models import EvidenceDescriptor, EvidenceRecord, FindingRecord
 from .expansion import ReplayExpansionTranscript
 from .intelligence import (
+    AdvisoryApplicabilityDecision,
+    AdvisoryApplicabilityRequest,
     AdvisoryReference,
     AffectedPackage,
     AffectedRange,
@@ -60,6 +62,8 @@ from .simulator import SimulationResult
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "agent-registration": AgentRegistration,
+    "advisory-applicability-decision": AdvisoryApplicabilityDecision,
+    "advisory-applicability-request": AdvisoryApplicabilityRequest,
     "advisory-reference": AdvisoryReference,
     "affected-package": AffectedPackage,
     "affected-range": AffectedRange,
