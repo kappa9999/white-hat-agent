@@ -1,191 +1,166 @@
+<div align="center">
+
 # White Hat Agent Core
 
 **A model-neutral cyber capability brain for AI agents and human researchers.**
 
-White Hat Agent Core turns community knowledge, exact program scope, adapter capabilities, evidence, and agent fleets
-into one composable application layer. It is designed so a researcher can describe a technique in any language while
-an AI-native team can use the same corpus through MCP, JSON Schema, Python, or the `wha` CLI.
+[![CI](https://github.com/kappa9999/white-hat-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/kappa9999/white-hat-agent/actions/workflows/ci.yml)
+[![Installer smoke](https://github.com/kappa9999/white-hat-agent/actions/workflows/installers.yml/badge.svg)](https://github.com/kappa9999/white-hat-agent/actions/workflows/installers.yml)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-3b82f6.svg)](LICENSE)
+[![Status: foundation alpha](https://img.shields.io/badge/status-foundation%20alpha-f59e0b.svg)](#project-status)
 
-The long-term goal is an open cyber corpus whose small, verified methods become more valuable as models improve: a
-model can search, compose, execute through declared adapters, preserve negative results, verify causality, and return
-new learning for review.
+Turn community knowledge, exact program scope, adapter capabilities, evidence, and agent fleets into one composable
+application layer—available through MCP, JSON Schema, Python, or the `wha` CLI.
 
-> **Status: foundation alpha.** The schemas, knowledge compiler, composition engine, scope evaluator, opportunity
-> ranking, SQLite fleet leases, evidence store, adaptive discovery kernel, MCP server, and fixtures are implemented.
-> This repository does not yet ship autonomous Internet discovery or scanner adapters. Live capability belongs in
-> explicit adapters and exact program scope, not hidden inside the planner.
+</div>
 
-## The system
+## Install or update in one command
 
-```mermaid
-flowchart LR
-    S[Plain text in any language] --> I[Lossless intake]
-    R[Reports, standards, field notes] --> I
-    I --> D[Reviewable playbook draft]
-    D --> C[Versioned cyber corpus]
-    C --> P[Semantic composer]
-    O[Programs and open targets] --> Q[Scope and opportunity plane]
-    Q --> P
-    K[Capability catalog] --> P
-    P --> F[Leased agent fleet]
-    F --> A[Explicit adapters]
-    A --> E[Immutable evidence and findings]
-    E --> V[Causal and differential verification]
-    V --> L[Reusable learning queue]
-    L --> I
+### macOS, Linux, and WSL
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/kappa9999/white-hat-agent/main/install.sh | sh
 ```
 
-### What is first-class
+### Windows PowerShell
 
-- **Knowledge:** strict, versioned YAML playbooks with original language, provenance, rights, prerequisites, typed
-  artifacts, capabilities, evidence requirements, failure modes, cleanup, and validation records.
-- **Composition:** deterministic chaining by semantic `consumes`/`provides` contracts, objective fit, target kind,
-  platform, execution ceiling, capability inventory, conflicts, and explicit compatibility.
-- **Capabilities:** provider-neutral adapter contracts. The built-in catalog currently defines 18 capabilities used by
-  the initial cross-domain, web, mobile, and binary playbooks.
-- **Opportunities:** normalized public programs, open-source work, labs, and private engagements ranked by scope
-  confidence, freshness, corpus coverage, capability fit, and operator priority.
-- **Campaigns and fleet:** deterministic multi-target planning, exact scope and playbook-contract snapshots, budgets,
-  atomic task deduplication, compatible-agent matching, expiring hashed leases, bounded retries, and explicit
-  lifecycle state.
-- **Evidence:** bounded local import, SHA-256 content addressing, provenance, sensitivity/redaction state, campaign/task
-  binding, and findings that cannot claim verified status without registered evidence.
-- **Discovery:** a resumable evidence graph, diverse hypothesis portfolio, progress-sensitive replanning, exact
-  negative-result memory, adjacent-finding preservation, and causal proof tiers.
-- **Interfaces:** namespaced FastMCP 3 tools/resources/prompts, JSON Schema, Python, and a nested CLI.
+```powershell
+irm https://raw.githubusercontent.com/kappa9999/white-hat-agent/main/install.ps1 | iex
+```
 
-## Five-minute local start
+Run the same command again whenever you want to update. The installer is idempotent: it finds or installs
+[`uv`](https://docs.astral.sh/uv/), provisions an isolated Python 3.12 runtime, refreshes White Hat Agent from GitHub,
+and places `wha` on the user tool path. It does not require administrator privileges or modify an existing project.
 
-Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+Prefer to inspect remote scripts before running them? Read [install.sh](install.sh) or [install.ps1](install.ps1), then
+follow the audited and source-install options in the [installation guide](docs/installation.md).
+
+## Start in 60 seconds
+
+```bash
+wha init white-hat-workspace
+cd white-hat-workspace
+wha doctor
+wha corpus search "http differential"
+```
+
+`wha init` creates an ordinary, portable workspace containing the starter corpus, capability catalog, configuration,
+and local state database. Re-running it is safe and never overwrites existing corpus or capability files.
+
+Connect the installed CLI to any stdio MCP client:
+
+```json
+{
+  "mcpServers": {
+    "white-hat-agent": {
+      "command": "wha",
+      "args": [
+        "serve",
+        "--workspace",
+        "/absolute/path/to/white-hat-workspace",
+        "--transport",
+        "stdio"
+      ]
+    }
+  }
+}
+```
+
+See [MCP integration](docs/mcp.md) for Streamable HTTP, PATH troubleshooting, and client-neutral configuration.
+
+## How it works
+
+[![White Hat Agent system flow](docs/assets/system-overview.svg)](docs/architecture.md)
+
+<p align="center"><sub>Click the diagram for the detailed architecture and trust boundaries.</sub></p>
+
+| Layer | What it contributes |
+|---|---|
+| **Knowledge** | Lossless multilingual intake, provenance, strict playbooks, review state, and versioned validation |
+| **Composition** | Deterministic chaining through semantic artifacts, capabilities, compatibility, and explicit blockers |
+| **Campaigns** | Exact scope snapshots, target identity, budgets, typed probe intent, and playbook contracts |
+| **Fleet** | Compatible-agent matching, atomic task deduplication, expiring leases, and bounded retries |
+| **Evidence** | SHA-256 content addressing, provenance, finding revisions, and causal/differential verification |
+| **Discovery** | Diverse hypotheses, progress-sensitive replanning, negative-result memory, and reusable learning |
+
+Models, tools, and adapter providers remain replaceable. Exact target identity, scope, evidence provenance, and
+replayable state remain durable.
+
+## Contribute knowledge without learning a schema
+
+Write the method in your own language and let the intake boundary preserve it:
+
+```bash
+wha knowledge ingest \
+  --file my-technique.md \
+  --language es \
+  --rights original-contribution \
+  --playbook-yaml draft-playbook.yaml
+```
+
+The compiler keeps the exact source, segments likely steps, and lists unresolved questions. A generated file is a
+**draft**, not a claim that the method has been validated. Contributors can submit plain-language knowledge through
+the [Knowledge contribution issue form](https://github.com/kappa9999/white-hat-agent/issues/new?template=knowledge.yml)
+without knowing Python, MCP, AI prompting, or the playbook schema.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [knowledge intake](docs/knowledge-intake.md), and
+[playbook authoring](docs/playbook-authoring.md).
+
+## Compose and plan
+
+The repository includes reproducible examples for composition, scope evaluation, campaign planning, fleet leasing,
+evidence binding, and discovery replay:
 
 ```bash
 git clone https://github.com/kappa9999/white-hat-agent.git
 cd white-hat-agent
 uv sync --locked --extra dev
-uv run wha init .
-uv run wha doctor --workspace .
-uv run wha corpus search "http differential" --workspace .
-uv run wha capability gaps \
-  --workspace . \
-  --playbook http-response-surface-map \
-  --available http.request \
-  --available http.capture
-```
 
-A new installation copies the bundled starter corpus and capability catalog into an ordinary workspace; both remain
-editable and reviewable.
-
-## Contribute knowledge without learning the schema
-
-Write the method as you know it:
-
-```bash
-uv run wha knowledge ingest \
-  --workspace . \
-  --file examples/submissions/spanish-mobile-technique.md \
-  --language es \
-  --rights original-contribution \
-  --playbook-yaml /tmp/mobile-draft.yaml
-```
-
-The compiler preserves the exact source, segments likely steps, adds original-language fields, and lists unresolved
-questions. It does **not** pretend a translation or draft is validated. A host model can use the MCP
-`knowledge_compile_submission` prompt to refine the same source against the public Playbook schema.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [playbook authoring](docs/playbook-authoring.md).
-
-## Compose a workflow
-
-```bash
 uv run wha playbook compose \
   --workspace . \
   --request examples/composition/web-to-verified.yaml
-```
 
-The example chains HTTP differential mapping into causal verification only when all semantic inputs and adapter
-capabilities exist. If it cannot reach the desired artifact, the result names the missing frontier instead of
-inventing a step.
-
-Turn exact scope, targets, desired artifacts, and installed adapter capabilities into a staged campaign blueprint:
-
-```bash
 uv run wha campaign plan \
   --workspace . \
   --request examples/campaigns/planning-request.yaml
 ```
 
-Every generated stage includes the concrete playbook version, semantic inputs/outputs, dependencies, typed probe
-intent, and a decision bound to the exact scope and intent digests. An incomplete or out-of-scope plan returns
-blockers as data; it is never silently made executable.
+An incomplete or out-of-scope plan returns machine-readable blockers. It is never silently made executable. The
+bundled fixtures use reserved `.test` targets and perform no network operation.
 
-## Run a scoped fleet fixture
+## Interfaces
 
-```bash
-uv run wha scope check \
-  --scope examples/campaigns/lab-scope.yaml \
-  --intent examples/campaigns/http-intent.yaml
+- **CLI:** nested `wha` commands for workspace, corpus, capabilities, scope, campaign, fleet, evidence, and discovery
+- **MCP:** 37 bounded, namespaced tools plus resources and prompts over stdio or stateless Streamable HTTP
+- **Python:** typed models and deterministic planning/composition primitives
+- **JSON Schema:** generated public contracts for every durable interchange object
 
-uv run wha campaign create \
-  --workspace . \
-  --manifest examples/campaigns/lab-campaign.yaml
-uv run wha campaign enqueue \
-  --workspace . \
-  example-lab-campaign \
-  --intent examples/campaigns/http-intent.yaml
-uv run wha fleet register \
-  --workspace . \
-  --registration examples/agents/http-agent.yaml
-uv run wha campaign state --workspace . example-lab-campaign ready
-uv run wha campaign state --workspace . example-lab-campaign running
-uv run wha fleet claim --workspace . example-http-agent
-```
-
-The example uses reserved `.test` targets and performs no network operation. A claimed task is an instruction for an
-external adapter/agent, not an implicit scanner call.
-
-## Use it from any MCP client
-
-Start stdio:
+Start a local Streamable HTTP server when a client needs it:
 
 ```bash
-uv run wha serve --workspace . --transport stdio
-```
-
-Or stateless Streamable HTTP:
-
-```bash
-uv run wha serve --workspace . --transport http --host 127.0.0.1 --port 8000
+wha serve --workspace /absolute/path/to/white-hat-workspace --transport http --host 127.0.0.1 --port 8000
 # endpoint: http://127.0.0.1:8000/mcp
 ```
 
-The server mounts bounded namespaces:
+## Project status
 
-| Namespace | Examples |
-|---|---|
-| `knowledge_*` | search, validate, intake, compose, learning candidates |
-| `capability_*` | search contracts, inspect definitions, calculate gaps |
-| `opportunity_*` | add, rank, triage, track |
-| `campaign_*` | plan, scope-check, create, transition, enqueue |
-| `fleet_*` | register, claim, heartbeat, report, stats |
-| `evidence_*` | import, register, list, bind findings |
-| `discovery_*` | plan, observe, causally verify |
+> **Foundation alpha:** the knowledge compiler, composition engine, scope evaluator, opportunity ranking, SQLite
+> fleet, evidence store, adaptive discovery kernel, MCP server, schemas, and deterministic fixtures are implemented.
+> The repository does not yet ship autonomous Internet discovery or scanner adapters. Live capability belongs in
+> explicit adapters with exact campaign scope, not hidden inside the planner.
 
-See [MCP integration](docs/mcp.md) and [the architecture](docs/architecture.md).
-
-## Corpus trust model
-
-The corpus may represent any cyber technique. Trust is earned per version:
+Corpus trust is earned per version:
 
 `draft → proposed → reviewed → validated → deprecated`
 
 Original text, technical validity, authorship, rights, target authorization, execution side effects, and disclosure
-status are separate facts. Untrusted submissions are data, never hidden shell instructions. Promotion requires strict
-schema validation and evidence appropriate to the claim. Draft/proposed material remains searchable and reviewable,
-but default composition and every persisted campaign require reviewed or validated playbook versions.
+status are separate facts. Untrusted submissions are data, never executable instructions.
 
 ## Development
 
 ```bash
+uv sync --locked --extra dev
 uv run ruff format --check .
 uv run ruff check .
 uv run pytest
@@ -196,8 +171,11 @@ uv run python scripts/export_schemas.py
 uv build
 ```
 
-## Project and security
+## Project links
 
+- [Architecture](docs/architecture.md)
+- [Installation and updates](docs/installation.md)
+- [MCP integration](docs/mcp.md)
 - [Roadmap](ROADMAP.md)
 - [Threat model](THREAT_MODEL.md)
 - [Governance](GOVERNANCE.md)
@@ -206,7 +184,7 @@ uv build
 
 **Name note:** “White Hat Agent Core” is a working project name. A similarly named, unrelated agent-sandboxing project
 already exists; complete the naming and trademark check in the [publication checklist](docs/publication-checklist.md)
-before announcement.
+before a coordinated launch.
 
 Licensed under [Apache-2.0](LICENSE). The sole-maintainer foundation model is described in
 [MAINTAINERS.md](MAINTAINERS.md).
