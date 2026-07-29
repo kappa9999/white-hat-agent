@@ -118,9 +118,13 @@ def test_release_workflow_uses_two_isolated_builds_and_exact_candidate_smoke() -
 
     publish_steps = workflow["jobs"]["publish"]["steps"]
     publish_script = "\n".join(step.get("run", "") for step in publish_steps)
+    publish_lines = {line.strip() for line in publish_script.splitlines()}
     assert '"repos/${GITHUB_REPOSITORY}/releases"' in publish_script
     assert "-F draft=true" in publish_script
-    assert "https://uploads.github.com" in publish_script
+    assert (
+        'expected_upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/'
+        '${release_id}/assets{?name,label}"' in publish_lines
+    )
     assert "gh release create" not in publish_script
     assert "gh release upload" not in publish_script
     assert "verify-release-assets" in publish_script
