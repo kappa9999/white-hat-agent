@@ -118,9 +118,15 @@ def test_release_workflow_uses_two_isolated_builds_and_exact_candidate_smoke() -
 
     publish_steps = workflow["jobs"]["publish"]["steps"]
     publish_script = "\n".join(step.get("run", "") for step in publish_steps)
-    assert "gh release create" in publish_script
-    assert "--draft" in publish_script
-    assert "gh release upload" in publish_script
+    publish_lines = {line.strip() for line in publish_script.splitlines()}
+    assert '"repos/${GITHUB_REPOSITORY}/releases"' in publish_script
+    assert "-F draft=true" in publish_script
+    assert (
+        'expected_upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/'
+        '${release_id}/assets{?name,label}"' in publish_lines
+    )
+    assert "gh release create" not in publish_script
+    assert "gh release upload" not in publish_script
     assert "verify-release-assets" in publish_script
     assert "gh release edit" not in publish_script
     assert "--method PATCH" in publish_script
@@ -137,8 +143,15 @@ def test_release_workflow_pins_and_reverifies_the_exact_draft_by_database_id() -
     publish = job_step(workflow, "publish", "Revalidate tag and publish the verified draft")["run"]
     final = job_step(workflow, "publish", "Verify published immutability and asset identity")["run"]
 
+    assert '"repos/${GITHUB_REPOSITORY}/releases"' in create
+    assert "releases/tags/${TAG}" not in create
     assert "select(.tag_name == $tag and .draft == true)" in create
-    assert '> "$RUNNER_TEMP/release-id.txt"' in create
+    assert 'printf \'%s\\n\' "$release_id" > "$RUNNER_TEMP/release-id.txt"' in create
+    assert "releases/${release_id}/assets{?name,label}" in create
+    assert '--input ".release/candidate/${asset}"' in create
+    assert '"${upload_base}?name=${encoded_asset}"' in create
+    assert "--hostname uploads.github.com" not in create
+    assert "gh release upload" not in create
     assert "releases/${release_id}" in draft_verify
     assert "releases/tags/${TAG}" not in draft_verify
     assert ".id == $release_id" in draft_verify

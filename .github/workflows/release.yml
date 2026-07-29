@@ -383,28 +383,41 @@ jobs:
               --candidate .release/candidate | jq -r '.files | keys[]'
           )
           test "${#release_assets[@]}" -gt 0
-          upload_paths=()
-          for asset in "${release_assets[@]}"; do
-            upload_paths+=(".release/candidate/${asset}")
-          done
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft \
-            --verify-tag \
-            --title "White Hat Agent Core ${TAG}" \
-            --generate-notes
           gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            "repos/${GITHUB_REPOSITORY}/releases" \
+            -f tag_name="$TAG" \
+            -f target_commitish="$GITHUB_SHA" \
+            -f name="White Hat Agent Core ${TAG}" \
+            -F draft=true \
+            -F prerelease=false \
+            -F generate_release_notes=true \
             > "$RUNNER_TEMP/created-draft-release.json"
-          jq -er --arg tag "$TAG" '
+          release_id="$(jq -er --arg tag "$TAG" '
             select(.tag_name == $tag and .draft == true) |
             .id |
             select(type == "number")
-          ' "$RUNNER_TEMP/created-draft-release.json" \
-            > "$RUNNER_TEMP/release-id.txt"
-          gh release upload "$TAG" "${upload_paths[@]}" \
-            --repo "$GITHUB_REPOSITORY"
+          ' "$RUNNER_TEMP/created-draft-release.json")"
+          printf '%s\n' "$release_id" > "$RUNNER_TEMP/release-id.txt"
+          expected_upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets{?name,label}"
+          upload_base="$(jq -er --arg expected "$expected_upload_url" '
+            .upload_url |
+            select(. == $expected) |
+            sub("\\{\\?name,label\\}$"; "")
+          ' "$RUNNER_TEMP/created-draft-release.json")"
+          for asset in "${release_assets[@]}"; do
+            encoded_asset="$(jq -rn --arg asset "$asset" '$asset | @uri')"
+            gh api \
+              --method POST \
+              --silent \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              -H "Content-Type: application/octet-stream" \
+              --input ".release/candidate/${asset}" \
+              "${upload_base}?name=${encoded_asset}"
+          done
           printf '%s\n' "${release_assets[@]}" \
             > "$RUNNER_TEMP/release-assets.txt"
 
