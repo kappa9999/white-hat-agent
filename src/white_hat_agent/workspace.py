@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pydantic import Field
 
+from .adapter_registry import AdapterManager, AdapterRegistry
 from .campaign.fleet import FleetStore
 from .capabilities.catalog import CapabilityCatalog
 from .evidence.store import EvidenceStore
@@ -22,6 +23,8 @@ class WorkspaceConfig(StrictModel):
     schema_version: str = "1.0"
     corpus_dir: str = "corpus/playbooks"
     capability_catalog: str = "capabilities/catalog.yaml"
+    adapter_catalog: str = "adapters/catalog.yaml"
+    adapters_dir: str = ".whitehat/adapters"
     submissions_dir: str = ".whitehat/submissions"
     campaigns_dir: str = ".whitehat/campaigns"
     artifacts_dir: str = ".whitehat/artifacts"
@@ -66,9 +69,11 @@ class Workspace:
             workspace.campaigns_dir,
             workspace.artifacts_dir,
             workspace.intelligence_dir,
+            workspace.adapters_dir,
             workspace.state_database.parent,
             workspace.corpus_dir,
             workspace.capability_catalog_path.parent,
+            workspace.adapter_catalog_path.parent,
         ):
             path.mkdir(parents=True, exist_ok=True)
         workspace.fleet.initialize()
@@ -77,6 +82,7 @@ class Workspace:
         if copy_builtin_corpus:
             workspace._copy_builtin_corpus()
         workspace._copy_builtin_capabilities()
+        workspace._copy_builtin_adapters()
         return workspace
 
     @classmethod
@@ -121,6 +127,32 @@ class Workspace:
         if not report.valid:
             raise ValueError(f"invalid capability catalog: {report.issues}")
         return catalog
+
+    @property
+    def adapter_catalog_path(self) -> Path:
+        return self._resolve(self.config.adapter_catalog)
+
+    @property
+    def adapters_dir(self) -> Path:
+        return self._resolve(self.config.adapters_dir)
+
+    @property
+    def adapter_registry(self) -> AdapterRegistry:
+        capability_classes = {
+            item.capability_id: item.execution_class for item in self.capability_catalog.all()
+        }
+        registry = AdapterRegistry(
+            self.adapter_catalog_path,
+            capability_execution_classes=capability_classes,
+        )
+        report = registry.load()
+        if not report.valid:
+            raise ValueError(f"invalid adapter registry: {report.issues}")
+        return registry
+
+    @property
+    def adapters(self) -> AdapterManager:
+        return AdapterManager(self.adapter_registry, self.adapters_dir)
 
     @property
     def campaigns_dir(self) -> Path:
@@ -182,6 +214,7 @@ class Workspace:
         for name, path in (
             ("corpus", self.corpus_dir),
             ("capabilities", self.capability_catalog_path.parent),
+            ("adapters", self.adapter_catalog_path.parent),
             ("submissions", self.submissions_dir),
             ("campaigns", self.campaigns_dir),
             ("artifacts", self.artifacts_dir),
@@ -206,6 +239,23 @@ class Workspace:
                 detail=(
                     f"{catalog_report.capability_count} capabilities; {len(catalog_report.issues)} issues"
                 ),
+            )
+        )
+        capability_classes = (
+            {item.capability_id: item.execution_class for item in catalog.all()}
+            if catalog_report.valid
+            else None
+        )
+        adapters = AdapterRegistry(
+            self.adapter_catalog_path,
+            capability_execution_classes=capability_classes,
+        )
+        adapter_report = adapters.load()
+        checks.append(
+            DoctorCheck(
+                name="adapter-registry",
+                ok=adapter_report.valid,
+                detail=(f"{adapter_report.adapter_count} adapters; {len(adapter_report.issues)} issues"),
             )
         )
         if corpus_report.valid and catalog_report.valid:
@@ -277,6 +327,8 @@ class Workspace:
         for value in (
             self.config.corpus_dir,
             self.config.capability_catalog,
+            self.config.adapter_catalog,
+            self.config.adapters_dir,
             self.config.submissions_dir,
             self.config.campaigns_dir,
             self.config.artifacts_dir,
@@ -302,12 +354,20 @@ class Workspace:
             if not self.capability_catalog_path.exists():
                 shutil.copy2(source, self.capability_catalog_path)
 
+    def _copy_builtin_adapters(self) -> None:
+        resource = importlib.resources.files("white_hat_agent").joinpath("builtin_adapters/catalog.yaml")
+        with importlib.resources.as_file(resource) as source:
+            if not self.adapter_catalog_path.exists():
+                shutil.copy2(source, self.adapter_catalog_path)
+
 
 def _default_config() -> str:
     return """[whitehat]
 schema_version = "1.0"
 corpus_dir = "corpus/playbooks"
 capability_catalog = "capabilities/catalog.yaml"
+adapter_catalog = "adapters/catalog.yaml"
+adapters_dir = ".whitehat/adapters"
 submissions_dir = ".whitehat/submissions"
 campaigns_dir = ".whitehat/campaigns"
 artifacts_dir = ".whitehat/artifacts"

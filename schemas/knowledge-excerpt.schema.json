@@ -1,0 +1,47 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "adapter_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "end_line": {
+      "minimum": 1,
+      "title": "End Line",
+      "type": "integer"
+    },
+    "relative_path": {
+      "title": "Relative Path",
+      "type": "string"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "string"
+    },
+    "start_line": {
+      "minimum": 1,
+      "title": "Start Line",
+      "type": "integer"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "adapter_id",
+    "revision",
+    "relative_path",
+    "start_line",
+    "end_line",
+    "text",
+    "truncated"
+  ],
+  "title": "KnowledgeExcerpt",
+  "type": "object"
+}

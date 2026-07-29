@@ -19,6 +19,7 @@
 | Opportunity → campaign | stale or fake scope, inferred automation permission, wrong target | opportunity distinct from scope; scope digest; validity window; exact rules; exclusion precedence |
 | Campaign → fleet | fabricated allow decision, under-declared playbook, duplicates, budget exhaustion, lease theft | fleet-side re-evaluation; scope/intent/playbook digests; contract snapshots; dedup keys; coordinator clock; budgets; random tokens stored only as hashes |
 | Fleet → adapter | overstated capability, wrong execution class, hidden side effects | catalog contracts; agent capability inventory; execution ceiling; typed intent; adapter integration tests required |
+| Adapter manifest → local host | dependency confusion, mutable latest tag, checksum omission, archive traversal, install-time code execution | reviewed official upstream; plan/apply split; exact tag/commit, artifact and content SHA-256; no shell recipes; bounded safe extraction; workspace-local activation |
 | Adapter → evidence | fabricated/truncated output, target drift, TOCTOU, malicious file | provenance fields; exact target/task; max import size; symlink rejection; streaming hash; atomic copy; post-copy hash |
 | Evidence → finding | cross-campaign mix-up, unsupported mechanism, sensitive disclosure | campaign/task binding; evidence requirement; sensitivity/redaction fields; causal verification; disclosure policy |
 | Result → corpus learning | self-certification, poisoned memory, rights ambiguity | candidate queue; explicit rights; lossless source; manual PR/promotion; no automatic trusted write |
@@ -49,3 +50,4 @@ applicability of that evidence.
 7. Supported/verified findings name registered evidence from the same campaign.
 8. Fleet learning cannot auto-promote into the trusted corpus.
 9. Generated/bundled assets must match their public source copies in CI.
+10. Adapter discovery, status, resolution, planning, and task claim never provision software or knowledge implicitly.

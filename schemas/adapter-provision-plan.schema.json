@@ -1,0 +1,168 @@
+{
+  "$defs": {
+    "ProvisionAction": {
+      "enum": [
+        "none",
+        "install",
+        "update"
+      ],
+      "title": "ProvisionAction",
+      "type": "string"
+    },
+    "ResolvedArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 1,
+          "title": "Size",
+          "type": "integer"
+        },
+        "url": {
+          "pattern": "^https://",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "size",
+        "sha256"
+      ],
+      "title": "ResolvedArtifact",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "$ref": "#/$defs/ProvisionAction"
+    },
+    "adapter_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/ResolvedArtifact"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "blockers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blockers",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "current_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Version"
+    },
+    "entrypoints": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Entrypoints",
+      "type": "array"
+    },
+    "manifest_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Manifest Digest",
+      "type": "string"
+    },
+    "max_download_bytes": {
+      "default": 1,
+      "maximum": 2147483648,
+      "minimum": 1,
+      "title": "Max Download Bytes",
+      "type": "integer"
+    },
+    "max_install_bytes": {
+      "default": 1,
+      "maximum": 8589934592,
+      "minimum": 1,
+      "title": "Max Install Bytes",
+      "type": "integer"
+    },
+    "method": {
+      "enum": [
+        "github-release",
+        "git-checkout"
+      ],
+      "title": "Method",
+      "type": "string"
+    },
+    "platform": {
+      "title": "Platform",
+      "type": "string"
+    },
+    "revision": {
+      "minLength": 1,
+      "title": "Revision",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_urls": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Urls",
+      "type": "array"
+    },
+    "strip_single_directory": {
+      "default": false,
+      "title": "Strip Single Directory",
+      "type": "boolean"
+    },
+    "target_version": {
+      "minLength": 1,
+      "title": "Target Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "adapter_id",
+    "manifest_digest",
+    "platform",
+    "method",
+    "action",
+    "target_version",
+    "revision",
+    "source_urls",
+    "created_at"
+  ],
+  "title": "AdapterProvisionPlan",
+  "type": "object"
+}

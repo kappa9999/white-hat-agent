@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "AdapterCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "ok",
+        "detail"
+      ],
+      "title": "AdapterCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapter_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "available_capabilities": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Available Capabilities",
+      "type": "array"
+    },
+    "blockers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blockers",
+      "type": "array"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/AdapterCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "entrypoints": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Entrypoints",
+      "type": "array"
+    },
+    "healthy": {
+      "title": "Healthy",
+      "type": "boolean"
+    },
+    "installed": {
+      "title": "Installed",
+      "type": "boolean"
+    },
+    "manifest_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Manifest Digest",
+      "type": "string"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "platform": {
+      "title": "Platform",
+      "type": "string"
+    },
+    "revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Revision"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "enum": [
+            "system",
+            "managed"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source"
+    },
+    "supported": {
+      "title": "Supported",
+      "type": "boolean"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Version"
+    }
+  },
+  "required": [
+    "adapter_id",
+    "manifest_digest",
+    "observed_at",
+    "platform",
+    "supported",
+    "installed",
+    "healthy"
+  ],
+  "title": "AdapterStatus",
+  "type": "object"
+}

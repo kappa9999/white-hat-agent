@@ -12,6 +12,7 @@ def test_workspace_init_is_idempotent_and_doctor_is_healthy(tmp_path) -> None:
     assert first.doctor().healthy
     assert second.doctor().healthy
     assert first.corpus.load().playbook_count == 5
+    assert len(first.adapter_registry.all()) == 9
     assert first.state_database.is_file()
 
 
@@ -37,8 +38,9 @@ def test_doctor_does_not_create_missing_state(tmp_path) -> None:
     assert not workspace.state_database.exists()
 
 
-def test_no_builtin_corpus_still_installs_capability_contracts(tmp_path) -> None:
+def test_no_builtin_corpus_still_installs_capability_and_adapter_contracts(tmp_path) -> None:
     workspace = Workspace.initialize(tmp_path, copy_builtin_corpus=False)
 
     assert workspace.capability_catalog_path.is_file()
+    assert workspace.adapter_catalog_path.is_file()
     assert list(workspace.corpus_dir.rglob("*.yaml")) == []

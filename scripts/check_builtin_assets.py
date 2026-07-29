@@ -18,6 +18,7 @@ def compare_trees(public: Path, bundled: Path) -> list[str]:
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
     issues = [
+        *compare_trees(root / "adapters", root / "src/white_hat_agent/builtin_adapters"),
         *compare_trees(root / "corpus" / "playbooks", root / "src/white_hat_agent/builtin_corpus"),
         *compare_trees(root / "capabilities", root / "src/white_hat_agent/builtin_capabilities"),
     ]

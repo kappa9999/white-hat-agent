@@ -32,6 +32,7 @@ flowchart TB
       EV[Evidence and findings]
     end
     subgraph Execution
+      AR[Adapter registry and provisioning]
       AD[External adapters]
       AG[Agent or model providers]
       TG[Scoped targets and local labs]
@@ -44,6 +45,8 @@ flowchart TB
     CO --> FL
     SC --> FL
     FL --> AD
+    CA --> AR
+    AR --> AD
     AG --> Interfaces
     AD --> TG
     AD --> EV
@@ -60,6 +63,8 @@ contains an editable corpus and capability catalog plus ignored state:
 ```text
 corpus/playbooks/             reviewed public knowledge
 capabilities/catalog.yaml    provider-neutral adapter contracts
+adapters/catalog.yaml        concrete official tool and knowledge manifests
+.whitehat/adapters/           ignored managed tools and exact knowledge snapshots
 .whitehat/submissions/       untrusted intake drafts
 .whitehat/artifacts/         content-addressed evidence blobs
 .whitehat/intelligence/      source snapshots and production reports
@@ -111,13 +116,27 @@ types—the machine-readable frontier for the next contribution.
 
 ### Capabilities and adapters
 
-The catalog explains each capability's execution class, semantic inputs/outputs, side effects, and observable adapter
-contract. It is not a list of installed tools. Agents register what their actual adapters can do; tasks are leased only
-when requirements are a subset of that inventory and the agent's execution ceiling is sufficient.
+The capability catalog explains each capability's execution class, semantic inputs/outputs, side effects, and
+observable adapter contract. It remains separate from the concrete adapter registry. Agents register what their actual
+adapters can do; tasks are leased only when requirements are a subset of that inventory and the agent's execution
+ceiling is sufficient.
 
 The core intentionally does not translate `http.request` or `binary.diff` into a hidden shell command. Concrete
 adapters own authentication, process isolation, protocol details, tool versions, timeouts, target checks, raw output,
 and cleanup. This keeps the brain model-neutral and makes adapter claims auditable.
+
+`adapters/catalog.yaml` maps reviewed concrete providers to that vocabulary. Status resolves actual executable paths,
+versions, runtime requirements, or exact managed dataset revisions. Resolution deterministically minimizes new
+provisions, then provider count, priority, and ID, and returns explicit gaps. Search, status, composition, task claim,
+and planning never install anything.
+
+Provisioning has a separate plan/apply boundary. A GitHub release plan resolves one official repository, exact release
+tag, asset size, and GitHub-published SHA-256; a Git plan resolves one reviewed repository/ref to an exact commit.
+Application revalidates manifest, host, release/commit identity, sources, digests, and bounds; rejects archive
+traversal, links, special files, and unbounded downloads/checkouts; and activates only a complete workspace-local
+installation. Managed knowledge is content-tree hashed and reverified before access. Native tool APIs and CLIs remain
+the automation surface; unofficial MCP wrappers are not silently installed. Tool health proves observed availability,
+not full execution-adapter conformance or target authorization.
 
 ### Opportunities, scope, and campaigns
 

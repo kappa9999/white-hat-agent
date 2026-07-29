@@ -44,10 +44,12 @@ wha init white-hat-workspace
 cd white-hat-workspace
 wha doctor
 wha corpus search "http differential"
+wha adapter list reverse
+wha adapter status ghidra
 ```
 
-`wha init` creates an ordinary, portable workspace containing the starter corpus, capability catalog, configuration,
-and local state database. Re-running it is safe and never overwrites existing corpus or capability files.
+`wha init` creates an ordinary, portable workspace containing the starter corpus, capability and adapter catalogs,
+configuration, and local state. Re-running it is safe and never overwrites existing public catalog files.
 
 Connect the installed CLI to any stdio MCP client:
 
@@ -69,6 +71,31 @@ Connect the installed CLI to any stdio MCP client:
 ```
 
 See [MCP integration](docs/mcp.md) for Streamable HTTP, PATH troubleshooting, and client-neutral configuration.
+
+## Give an agent the tools it needs
+
+White Hat Agent maps concrete tools and knowledge sources to the existing provider-neutral capability vocabulary. It
+prefers healthy tools already on the host and never installs as a side effect of search, planning, or fleet work.
+
+```bash
+# Prefer already healthy providers, then minimize the provider set.
+wha adapter resolve --kind tool \
+  --capability artifact.inspect --capability code.search --capability graph.reason
+
+# Inspect the exact official release and SHA-256 without changing the host.
+wha adapter plan ghidra --out ghidra-plan.json
+
+# Explicit one-command install/update into this workspace when needed.
+wha adapter install ghidra --yes
+
+# Add and query exact, revision-bound machine-readable knowledge on demand.
+wha adapter install mitre-attack --yes
+wha adapter search mitre-attack T1059.001
+```
+
+The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Knowledge adapters cover
+MITRE ATT&CK STIX and capa rules; existing CVE List V5, CISA KEV, OSV, and EPSS ingestion remains in the intelligence
+layer. See [tools and knowledge adapters](docs/adapters.md).
 
 Start the production public-intelligence loop with bounded official sources:
 
@@ -97,6 +124,7 @@ before the scope gate.
 |---|---|
 | **Knowledge** | Lossless multilingual intake, provenance, strict playbooks, review state, and versioned validation |
 | **Composition** | Deterministic chaining through semantic artifacts, capabilities, compatibility, and explicit blockers |
+| **Adapters** | Observed tool identity, deterministic selection, digest-bound provisioning, and revision-bound knowledge |
 | **Intelligence** | Bounded official-source ingestion, immutable snapshots, transparent priority, and exact-artifact applicability |
 | **Campaigns** | Exact scope snapshots, target identity, budgets, typed probe intent, and playbook contracts |
 | **Fleet** | Compatible-agent matching, atomic task deduplication, expiring leases, and bounded retries |
@@ -150,8 +178,8 @@ bundled fixtures use reserved `.test` targets and perform no network operation.
 
 ## Interfaces
 
-- **CLI:** nested `wha` commands for workspace, intelligence, corpus, capabilities, scope, campaign, fleet, evidence,
-  and discovery
+- **CLI:** nested `wha` commands for workspace, intelligence, corpus, capabilities, adapters, scope, campaign, fleet,
+  evidence, and discovery
 - **MCP:** bounded, namespaced tools plus resources and prompts over stdio or stateless Streamable HTTP
 - **Python:** typed models and deterministic planning/composition primitives
 - **JSON Schema:** generated public contracts for every durable interchange object
@@ -166,10 +194,10 @@ wha serve --workspace /absolute/path/to/white-hat-workspace --transport http --h
 ## Project status
 
 > **Alpha:** the knowledge compiler, composition engine, public vulnerability-intelligence monitor, scope evaluator,
-> opportunity ranking, SQLite fleet, evidence store, adaptive discovery kernel, MCP server, schemas, and deterministic
-> fixtures are implemented. Network access is currently limited to fixed public intelligence sources. The repository
-> does not ship a general target scanner; live capability belongs in explicit adapters with exact campaign scope, not
-> hidden inside the planner.
+> opportunity ranking, concrete adapter registry/provisioning, SQLite fleet, evidence store, adaptive discovery kernel,
+> MCP server, schemas, and deterministic fixtures are implemented. Network access is limited to fixed public
+> intelligence sources and explicit official adapter upstreams. The repository does not ship a general target scanner;
+> live target capability belongs in explicit adapters with exact campaign scope, not hidden inside the planner.
 
 Corpus trust is earned per version:
 
@@ -197,6 +225,7 @@ uv build
 - [Architecture](docs/architecture.md)
 - [Installation and updates](docs/installation.md)
 - [MCP integration](docs/mcp.md)
+- [Tools and knowledge adapters](docs/adapters.md)
 - [Production intelligence and research loop](docs/production-loop.md)
 - [Release provenance and recovery](docs/releases.md)
 - [Changelog](CHANGELOG.md)

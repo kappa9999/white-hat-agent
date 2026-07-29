@@ -1,0 +1,72 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "complete": {
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "provisioning_required": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Provisioning Required",
+      "type": "array"
+    },
+    "ready": {
+      "title": "Ready",
+      "type": "boolean"
+    },
+    "ready_adapters": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Ready Adapters",
+      "type": "array"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "required_capabilities": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Required Capabilities",
+      "type": "array"
+    },
+    "selected_adapters": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Selected Adapters",
+      "type": "array"
+    },
+    "uncovered_capabilities": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Uncovered Capabilities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "required_capabilities",
+    "selected_adapters",
+    "ready_adapters",
+    "provisioning_required",
+    "uncovered_capabilities",
+    "complete",
+    "ready",
+    "reasons"
+  ],
+  "title": "AdapterSelection",
+  "type": "object"
+}

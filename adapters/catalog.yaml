@@ -1,0 +1,294 @@
+schema_version: "1.0"
+adapters:
+  - schema_version: "1.0"
+    adapter_id: ghidra
+    adapter_version: "1.0.0"
+    title: Ghidra headless reverse engineering
+    description: Multi-architecture disassembly, decompilation, program analysis, scripting, and binary comparison.
+    kind: tool
+    provider: National Security Agency
+    provider_url: https://github.com/NationalSecurityAgency/ghidra
+    license:
+      name: Apache-2.0
+      url: https://github.com/NationalSecurityAgency/ghidra/blob/master/LICENSE
+      attribution: Ghidra by the National Security Agency
+    capabilities: [artifact.inspect, binary.diff, code.search, graph.reason]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64]
+    priority: 5
+    probe:
+      executable_names:
+        any: [ghidraRun, ghidraRun.bat]
+      version_args: []
+      version_file: Ghidra/application.properties
+      version_property: application.version
+    requirements:
+      - executable_names:
+          any: [java]
+        version_args: [-version]
+        version_pattern: 'version "(?P<version>[0-9]+(?:\.[0-9]+)*)'
+        minimum_version: "21"
+    provisioner:
+      kind: github-release
+      repository: NationalSecurityAgency/ghidra
+      asset_patterns:
+        any: ['(?i)^ghidra_[0-9.]+_PUBLIC_[0-9]+\.zip$']
+      entrypoints:
+        linux: [ghidraRun, support/analyzeHeadless]
+        macos: [ghidraRun, support/analyzeHeadless]
+        windows: [ghidraRun.bat, support/analyzeHeadless.bat]
+      strip_single_directory: true
+      max_download_bytes: 1073741824
+      max_install_bytes: 2147483648
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: frida
+    adapter_version: "1.0.0"
+    title: Frida dynamic instrumentation
+    description: Scriptable runtime observation across iOS, Android, Windows, macOS, Linux, FreeBSD, and QNX.
+    kind: tool
+    provider: Frida project
+    provider_url: https://github.com/frida/frida
+    license:
+      name: wxWindows Library Licence 3.1
+      url: https://github.com/frida/frida/blob/main/COPYING
+      attribution: Frida dynamic instrumentation toolkit
+    capabilities: [mobile.runtime-observe, trace.capture]
+    modes: [sandbox, live-readonly]
+    max_execution_class: read-only
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64, windows-arm64]
+    priority: 10
+    probe:
+      executable_names:
+        any: [frida]
+      version_args: [--version]
+      version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: llvm
+    adapter_version: "1.0.0"
+    title: LLVM analysis and debugger suite
+    description: Object and symbol inspection, LLDB debugging, sanitizers, coverage, and libFuzzer instrumentation.
+    kind: tool
+    provider: LLVM Project
+    provider_url: https://github.com/llvm/llvm-project
+    license:
+      name: Apache-2.0 WITH LLVM-exception
+      url: https://github.com/llvm/llvm-project/blob/main/LICENSE.TXT
+      attribution: LLVM Project
+    capabilities: [artifact.inspect, code.search, trace.capture]
+    modes: [offline, sandbox, live-readonly]
+    max_execution_class: read-only
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64, windows-arm64]
+    priority: 15
+    probe:
+      executable_names:
+        any: [llvm-config, llvm-config.exe]
+      version_args: [--version]
+      version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: yara-x
+    adapter_version: "1.0.0"
+    title: YARA-X artifact signature engine
+    description: Fast cross-platform rule compilation and deterministic file, process, and stream signature matching.
+    kind: tool
+    provider: VirusTotal
+    provider_url: https://github.com/VirusTotal/yara-x
+    license:
+      name: BSD-3-Clause
+      url: https://github.com/VirusTotal/yara-x/blob/main/LICENSE
+      attribution: YARA-X by VirusTotal
+    capabilities: [artifact.inspect, code.search]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64]
+    priority: 10
+    probe:
+      executable_names:
+        any: [yr, yr.exe]
+      version_args: [--version]
+      version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
+    provisioner:
+      kind: github-release
+      repository: VirusTotal/yara-x
+      asset_patterns:
+        linux-x86_64: ['^yara-x-v[0-9.]+-x86_64-unknown-linux-gnu\.tar\.gz$']
+        linux-arm64: ['^yara-x-v[0-9.]+-aarch64-unknown-linux-gnu\.tar\.gz$']
+        macos-x86_64: ['^yara-x-v[0-9.]+-x86_64-apple-darwin\.tar\.gz$']
+        macos-arm64: ['^yara-x-v[0-9.]+-aarch64-apple-darwin\.tar\.gz$']
+        windows-x86_64: ['^yara-x-v[0-9.]+-x86_64-pc-windows-msvc\.zip$']
+      entrypoints:
+        linux: [yr]
+        macos: [yr]
+        windows: [yr.exe]
+      strip_single_directory: true
+      max_download_bytes: 67108864
+      max_install_bytes: 134217728
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: tshark
+    adapter_version: "1.0.0"
+    title: TShark protocol analysis
+    description: Headless multi-protocol packet decoding with bounded field, JSON, and expert-information output.
+    kind: tool
+    provider: Wireshark Foundation
+    provider_url: https://www.wireshark.org/docs/man-pages/tshark.html
+    license:
+      name: GPL-2.0-or-later
+      url: https://www.wireshark.org/faq.html#_license
+      attribution: TShark from the Wireshark project
+    capabilities: [artifact.inspect, trace.capture]
+    modes: [offline, live-readonly]
+    max_execution_class: read-only
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64, windows-arm64]
+    priority: 20
+    probe:
+      executable_names:
+        any: [tshark, tshark.exe]
+      version_args: [--version]
+      version_pattern: 'TShark \(Wireshark\) (?P<version>[0-9]+(?:\.[0-9]+)+)'
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: capa
+    adapter_version: "1.0.0"
+    title: capa binary capability triage
+    description: Machine-readable capability identification for PE, ELF, .NET, shellcode, and sandbox reports.
+    kind: tool
+    provider: Google Mandiant FLARE
+    provider_url: https://github.com/mandiant/capa
+    license:
+      name: Apache-2.0
+      url: https://github.com/mandiant/capa/blob/master/LICENSE.txt
+      attribution: capa by Google Mandiant FLARE
+    capabilities: [artifact.inspect, graph.reason]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64]
+    priority: 15
+    probe:
+      executable_names:
+        any: [capa, capa.exe]
+      version_args: [--version]
+      version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
+    provisioner:
+      kind: github-release
+      repository: mandiant/capa
+      asset_patterns:
+        linux-x86_64: ['^capa-v[0-9.]+-linux\.zip$']
+        linux-arm64: ['^capa-v[0-9.]+-linux-arm64\.zip$']
+        macos-x86_64: ['^capa-v[0-9.]+-macos\.zip$']
+        macos-arm64: ['^capa-v[0-9.]+-macos-arm64\.zip$']
+        windows-x86_64: ['^capa-v[0-9.]+-windows\.zip$']
+      entrypoints:
+        linux: [capa]
+        macos: [capa]
+        windows: [capa.exe]
+      strip_single_directory: true
+      max_download_bytes: 134217728
+      max_install_bytes: 268435456
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: jadx
+    adapter_version: "1.0.0"
+    title: JADX Android decompiler
+    description: Scriptable DEX, APK, AAB, APKS, manifest, resource, and Java decompilation for Android analysis.
+    kind: tool
+    provider: JADX project
+    provider_url: https://github.com/skylot/jadx
+    license:
+      name: Apache-2.0
+      url: https://github.com/skylot/jadx/blob/master/LICENSE
+      attribution: JADX Android decompiler
+    capabilities: [artifact.inspect, code.search, mobile.static-inspect]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64, windows-arm64]
+    priority: 10
+    probe:
+      executable_names:
+        any: [jadx, jadx.bat]
+      version_args: [--version]
+      version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
+    requirements:
+      - executable_names:
+          any: [java]
+        version_args: [-version]
+        version_pattern: 'version "(?P<version>[0-9]+(?:\.[0-9]+)*)'
+        minimum_version: "11"
+    provisioner:
+      kind: github-release
+      repository: skylot/jadx
+      asset_patterns:
+        any: ['^jadx-[0-9.]+\.zip$']
+      entrypoints:
+        linux: [bin/jadx, bin/jadx-gui]
+        macos: [bin/jadx, bin/jadx-gui]
+        windows: [bin/jadx.bat, bin/jadx-gui.bat]
+      strip_single_directory: true
+      max_download_bytes: 268435456
+      max_install_bytes: 536870912
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: mitre-attack
+    adapter_version: "1.0.0"
+    title: MITRE ATT&CK STIX knowledge
+    description: Versioned enterprise, mobile, and ICS adversary behavior, relationships, software, groups, and mitigations.
+    kind: knowledge
+    provider: MITRE ATT&CK
+    provider_url: https://github.com/mitre-attack/attack-stix-data
+    license:
+      name: MITRE ATT&CK Terms of Use
+      url: https://github.com/mitre-attack/attack-stix-data/blob/master/LICENSE.txt
+      attribution: © 2026 The MITRE Corporation; reproduced with permission
+    capabilities: [code.search, graph.reason, hypothesis.generate]
+    modes: [offline]
+    max_execution_class: analysis
+    platforms: [any]
+    priority: 10
+    provisioner:
+      kind: github-release
+      repository: mitre-attack/attack-stix-data
+      asset_patterns:
+        any:
+          - '^enterprise-attack\.json$'
+          - '^mobile-attack\.json$'
+          - '^ics-attack\.json$'
+      strip_single_directory: false
+      max_download_bytes: 134217728
+      max_install_bytes: 268435456
+    search_globs: ['*.json']
+    updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: capa-rules
+    adapter_version: "1.0.0"
+    title: capa executable-capability rules
+    description: Versioned machine-readable binary behavior rules with ATT&CK and Malware Behavior Catalog mappings.
+    kind: knowledge
+    provider: Google Mandiant FLARE
+    provider_url: https://github.com/mandiant/capa-rules
+    license:
+      name: Apache-2.0
+      url: https://github.com/mandiant/capa-rules/blob/master/LICENSE.txt
+      attribution: capa rules by Google Mandiant FLARE and contributors
+    capabilities: [code.search, graph.reason]
+    modes: [offline]
+    max_execution_class: analysis
+    platforms: [any]
+    priority: 15
+    provisioner:
+      kind: git-checkout
+      repository: https://github.com/mandiant/capa-rules.git
+      ref: master
+      max_checkout_bytes: 268435456
+    search_globs: ['**/*.yml', '**/*.yaml', 'doc/**/*.md']
+    updated_at: 2026-07-29T21:00:00Z
