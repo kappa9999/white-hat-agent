@@ -3,6 +3,33 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.3.0] - 2026-07-29
+
+### Added
+
+- canonical CVE List V5 incremental ingestion with immutable delta and record snapshots, upstream-time checkpoints,
+  bounded replay, and content-addressed selection manifests;
+- distinct `PUBLISHED` and `REJECTED` CVE states, immutable raw CNA/ADP containers with compact provider indices,
+  conservative affected-version translation, generic PURL, CWE, CVSS, and reference views, and explicit
+  rejected-record query controls;
+- a least-privilege release workflow with signed-tag and tag-ruleset gates, two isolated byte-identical builds,
+  CycloneDX SBOMs, checksums, GitHub artifact attestations, and exact-candidate smoke tests.
+
+### Changed
+
+- the scheduled production intelligence loop now includes canonical CVE records and retains its cursor and HTTP
+  validator after any partial run;
+- ecosystem filters no longer create gaps in canonical CVE source state; and
+- distribution smoke tests derive their expected version from project metadata instead of a duplicated release
+  constant.
+
+### Security
+
+- CVE transport accepts only the official rolling delta and exact record paths and never follows record references;
+- CVE rejection, provider withdrawal, and local source tombstoning remain separate states; and
+- release publication is isolated behind protected environments and does not contain PyPI credentials or package
+  upload permissions.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added
@@ -37,5 +64,6 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.3.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kappa9999/white-hat-agent/releases/tag/v0.1.0

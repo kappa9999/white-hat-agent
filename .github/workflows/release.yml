@@ -1,0 +1,535 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  gate:
+    name: Verify immutable release intent
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      source-date-epoch: ${{ steps.release.outputs.source-date-epoch }}
+      tag: ${{ steps.release.outputs.tag }}
+      tag-object-sha: ${{ steps.release.outputs.tag-object-sha }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Check out exact tag commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.28"
+          python-version: "3.12.13"
+          enable-cache: true
+
+      - name: Install locked release checks
+        run: uv sync --locked --extra dev
+
+      - name: Regenerate committed assets
+        run: |
+          uv run python scripts/export_schemas.py
+          uv run wha corpus index --workspace . --out corpus/manifest.json
+
+      - name: Read remote tag, protection, and release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-gate/rulesets"
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" \
+            > "$RUNNER_TEMP/release-gate/tag-ref.json"
+          tag_object="$(jq -r '.object.sha' "$RUNNER_TEMP/release-gate/tag-ref.json")"
+          gh api "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" \
+            > "$RUNNER_TEMP/release-gate/annotated-tag.json"
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+            > "$RUNNER_TEMP/release-gate/default-branch-ref.json"
+          gh api "repos/${GITHUB_REPOSITORY}/rulesets?includes_parents=true&targets=tag" \
+            > "$RUNNER_TEMP/release-gate/ruleset-index.json"
+          jq -r '.[].id' "$RUNNER_TEMP/release-gate/ruleset-index.json" | while read -r ruleset_id; do
+            gh api "repos/${GITHUB_REPOSITORY}/rulesets/${ruleset_id}" \
+              > "$RUNNER_TEMP/release-gate/rulesets/${ruleset_id}.json"
+          done
+          if compgen -G "$RUNNER_TEMP/release-gate/rulesets/*.json" > /dev/null; then
+            jq -s '.' "$RUNNER_TEMP"/release-gate/rulesets/*.json \
+              > "$RUNNER_TEMP/release-gate/rulesets.json"
+          else
+            echo '[]' > "$RUNNER_TEMP/release-gate/rulesets.json"
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            > "$RUNNER_TEMP/release-gate/existing-release.json" \
+            2> "$RUNNER_TEMP/release-gate/existing-release.error"; then
+            :
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/release-gate/existing-release.error"; then
+            echo '{}' > "$RUNNER_TEMP/release-gate/existing-release.json"
+          else
+            cat "$RUNNER_TEMP/release-gate/existing-release.error" >&2
+            exit 1
+          fi
+
+      - name: Enforce release gates
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_TYPE: ${{ github.ref_type }}
+          SHA: ${{ github.sha }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          result="$(uv run python scripts/release_gate.py \
+            --tag "$TAG" \
+            --ref "$REF" \
+            --ref-type "$REF_TYPE" \
+            --event-name "$EVENT_NAME" \
+            --commit "$SHA" \
+            --tag-ref-json "$RUNNER_TEMP/release-gate/tag-ref.json" \
+            --annotated-tag-json "$RUNNER_TEMP/release-gate/annotated-tag.json" \
+            --default-branch-ref-json "$RUNNER_TEMP/release-gate/default-branch-ref.json" \
+            --rulesets-json "$RUNNER_TEMP/release-gate/rulesets.json" \
+            --existing-release-json "$RUNNER_TEMP/release-gate/existing-release.json" \
+            --generated-path schemas \
+            --generated-path corpus/manifest.json)"
+          echo "tag=$(jq -r '.tag' <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "tag-object-sha=$(jq -r '.tag_object_sha' <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r '.version' <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "source-date-epoch=$(git show -s --format=%ct "$SHA")" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Isolated build ${{ matrix.copy }}
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        copy: [1, 2]
+    env:
+      SOURCE_DATE_EPOCH: ${{ needs.gate.outputs.source-date-epoch }}
+    steps:
+      - name: Check out exact candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.28"
+          python-version: "3.12.13"
+
+      - name: Build wheel and sdist
+        run: |
+          build_cutoff="$(date -u --date="@${SOURCE_DATE_EPOCH}" '+%Y-%m-%dT%H:%M:%SZ')"
+          uv build --no-cache --exclude-newer "$build_cutoff" --out-dir dist
+          python scripts/verify_release_artifacts.py normalize-sdist \
+            --dist dist \
+            --epoch "$SOURCE_DATE_EPOCH"
+
+      - name: Upload isolated build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-build-${{ matrix.copy }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+
+  assemble:
+    name: Compare and assemble candidate
+    needs: [gate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.28"
+          python-version: "3.12.13"
+
+      - name: Download isolated build 1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-build-1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/build-1
+
+      - name: Download isolated build 2
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-build-2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/build-2
+
+      - name: Require byte-for-byte reproducible builds
+        run: |
+          python scripts/verify_release_artifacts.py compare \
+            --first .release/build-1 \
+            --second .release/build-2 \
+            --report .release/reproducibility.json
+
+      - name: Generate checksums and SBOMs
+        env:
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          python scripts/verify_release_artifacts.py generate \
+            --dist .release/build-1 \
+            --output .release/candidate \
+            --reproducibility-report .release/reproducibility.json \
+            --tag "$TAG"
+
+      - name: Upload exact dry-run candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-${{ needs.gate.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/candidate/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  smoke:
+    name: Smoke exact candidate artifacts
+    needs: [gate, assemble]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.28"
+          python-version: "3.12.13"
+
+      - name: Download exact assembled candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-${{ needs.gate.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/candidate
+
+      - name: Verify manifests and smoke wheel, sdist, and installer
+        run: python scripts/release_smoke.py --candidate .release/candidate
+
+  attest:
+    name: Sign and verify provenance
+    needs: [gate, assemble, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release-provenance
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out exact candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download exact assembled candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-${{ needs.gate.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/candidate
+
+      - name: Revalidate signed tag binding
+        env:
+          COMMIT: ${{ github.sha }}
+          EXPECTED_TAG_OBJECT_SHA: ${{ needs.gate.outputs.tag-object-sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-ref"
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" \
+            > "$RUNNER_TEMP/release-ref/tag-ref.json"
+          gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT_SHA}" \
+            > "$RUNNER_TEMP/release-ref/annotated-tag.json"
+          python scripts/verify_release_ref.py \
+            --tag "$TAG" \
+            --commit "$COMMIT" \
+            --expected-tag-object-sha "$EXPECTED_TAG_OBJECT_SHA" \
+            --tag-ref-json "$RUNNER_TEMP/release-ref/tag-ref.json" \
+            --annotated-tag-json "$RUNNER_TEMP/release-ref/annotated-tag.json"
+
+      - name: Reverify candidate subjects
+        run: python scripts/verify_release_artifacts.py verify --candidate .release/candidate
+
+      - name: Attest every checksummed candidate file
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-checksums: .release/candidate/SHA256SUMS
+
+      - name: Attest the checksum manifest
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: .release/candidate/SHA256SUMS
+
+      - name: Attest wheel SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: .release/candidate/white_hat_agent-${{ needs.gate.outputs.version }}-py3-none-any.whl
+          sbom-path: .release/candidate/white-hat-agent-${{ needs.gate.outputs.version }}-wheel.cdx.json
+
+      - name: Attest sdist SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: .release/candidate/white_hat_agent-${{ needs.gate.outputs.version }}.tar.gz
+          sbom-path: .release/candidate/white-hat-agent-${{ needs.gate.outputs.version }}-sdist.cdx.json
+
+      - name: Verify published attestations
+        env:
+          COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          attestation_policy=(
+            --repo "$GITHUB_REPOSITORY"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+            --source-ref "refs/tags/${TAG}"
+            --source-digest "$COMMIT"
+            --deny-self-hosted-runners
+          )
+          while read -r _ artifact; do
+            gh attestation verify ".release/candidate/${artifact}" \
+              "${attestation_policy[@]}"
+          done < .release/candidate/SHA256SUMS
+          gh attestation verify .release/candidate/SHA256SUMS \
+            "${attestation_policy[@]}"
+
+  publish:
+    name: Publish immutable GitHub release
+    needs: [gate, attest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: github-release
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact candidate commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download attested candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate-${{ needs.gate.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .release/candidate
+
+      - name: Revalidate signed tag binding
+        env:
+          COMMIT: ${{ github.sha }}
+          EXPECTED_TAG_OBJECT_SHA: ${{ needs.gate.outputs.tag-object-sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-ref"
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" \
+            > "$RUNNER_TEMP/release-ref/tag-ref.json"
+          gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT_SHA}" \
+            > "$RUNNER_TEMP/release-ref/annotated-tag.json"
+          python scripts/verify_release_ref.py \
+            --tag "$TAG" \
+            --commit "$COMMIT" \
+            --expected-tag-object-sha "$EXPECTED_TAG_OBJECT_SHA" \
+            --tag-ref-json "$RUNNER_TEMP/release-ref/tag-ref.json" \
+            --annotated-tag-json "$RUNNER_TEMP/release-ref/annotated-tag.json"
+
+      - name: Reverify candidate before publication
+        run: python scripts/verify_release_artifacts.py verify --candidate .release/candidate
+
+      - name: Create draft and upload the exact candidate allowlist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          mapfile -t release_assets < <(
+            python scripts/verify_release_artifacts.py verify \
+              --candidate .release/candidate | jq -r '.files | keys[]'
+          )
+          test "${#release_assets[@]}" -gt 0
+          upload_paths=()
+          for asset in "${release_assets[@]}"; do
+            upload_paths+=(".release/candidate/${asset}")
+          done
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --verify-tag \
+            --title "White Hat Agent Core ${TAG}" \
+            --generate-notes
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            > "$RUNNER_TEMP/created-draft-release.json"
+          jq -er --arg tag "$TAG" '
+            select(.tag_name == $tag and .draft == true) |
+            .id |
+            select(type == "number")
+          ' "$RUNNER_TEMP/created-draft-release.json" \
+            > "$RUNNER_TEMP/release-id.txt"
+          gh release upload "$TAG" "${upload_paths[@]}" \
+            --repo "$GITHUB_REPOSITORY"
+          printf '%s\n' "${release_assets[@]}" \
+            > "$RUNNER_TEMP/release-assets.txt"
+
+      - name: Verify GitHub-computed draft asset digests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          release_id="$(< "$RUNNER_TEMP/release-id.txt")"
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          expected_count="$(wc -l < "$RUNNER_TEMP/release-assets.txt")"
+          remote_ready=0
+          for _ in {1..12}; do
+            gh api \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+              > "$RUNNER_TEMP/draft-release.json"
+            if jq -e \
+              --arg tag "$TAG" \
+              --argjson expected "$expected_count" \
+              --argjson release_id "$release_id" '
+              .id == $release_id and
+              .tag_name == $tag and
+              .draft == true and
+              (.assets | length) == $expected and
+              ([.assets[] | select(
+                .state == "uploaded" and
+                (.digest | type) == "string" and
+                (.digest | startswith("sha256:"))
+              )] | length) == $expected
+            ' "$RUNNER_TEMP/draft-release.json" > /dev/null; then
+              remote_ready=1
+              break
+            fi
+            sleep 5
+          done
+          test "$remote_ready" -eq 1
+          python scripts/verify_release_artifacts.py verify-release-assets \
+            --candidate .release/candidate \
+            --release-json "$RUNNER_TEMP/draft-release.json"
+
+      - name: Revalidate tag and publish the verified draft
+        env:
+          COMMIT: ${{ github.sha }}
+          EXPECTED_TAG_OBJECT_SHA: ${{ needs.gate.outputs.tag-object-sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          release_id="$(< "$RUNNER_TEMP/release-id.txt")"
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" \
+            > "$RUNNER_TEMP/release-ref/tag-ref.json"
+          gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT_SHA}" \
+            > "$RUNNER_TEMP/release-ref/annotated-tag.json"
+          python scripts/verify_release_ref.py \
+            --tag "$TAG" \
+            --commit "$COMMIT" \
+            --expected-tag-object-sha "$EXPECTED_TAG_OBJECT_SHA" \
+            --tag-ref-json "$RUNNER_TEMP/release-ref/tag-ref.json" \
+            --annotated-tag-json "$RUNNER_TEMP/release-ref/annotated-tag.json"
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            > "$RUNNER_TEMP/prepublish-draft-release.json"
+          jq -e \
+            --arg tag "$TAG" \
+            --argjson release_id "$release_id" '
+            .id == $release_id and
+            .tag_name == $tag and
+            .draft == true
+          ' "$RUNNER_TEMP/prepublish-draft-release.json" > /dev/null
+          python scripts/verify_release_artifacts.py verify-release-assets \
+            --candidate .release/candidate \
+            --release-json "$RUNNER_TEMP/prepublish-draft-release.json"
+          gh api \
+            --method PATCH \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+            -F draft=false \
+            > "$RUNNER_TEMP/publish-release.json"
+          jq -e \
+            --argjson release_id "$release_id" '
+            .id == $release_id and .draft == false
+          ' "$RUNNER_TEMP/publish-release.json" > /dev/null
+
+      - name: Verify published immutability and asset identity
+        env:
+          COMMIT: ${{ github.sha }}
+          EXPECTED_TAG_OBJECT_SHA: ${{ needs.gate.outputs.tag-object-sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          release_id="$(< "$RUNNER_TEMP/release-id.txt")"
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          immutable=0
+          for _ in {1..12}; do
+            gh api \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+              > "$RUNNER_TEMP/published-release.json"
+            if jq -e \
+              --arg tag "$TAG" \
+              --argjson release_id "$release_id" '
+              .id == $release_id and
+              .tag_name == $tag and
+              .draft == false and
+              .immutable == true and
+              (.published_at | type) == "string"
+            ' "$RUNNER_TEMP/published-release.json" > /dev/null; then
+              immutable=1
+              break
+            fi
+            sleep 5
+          done
+          test "$immutable" -eq 1
+          python scripts/verify_release_artifacts.py verify-release-assets \
+            --candidate .release/candidate \
+            --release-json "$RUNNER_TEMP/published-release.json"
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" \
+            > "$RUNNER_TEMP/release-ref/tag-ref.json"
+          gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXPECTED_TAG_OBJECT_SHA}" \
+            > "$RUNNER_TEMP/release-ref/annotated-tag.json"
+          python scripts/verify_release_ref.py \
+            --tag "$TAG" \
+            --commit "$COMMIT" \
+            --expected-tag-object-sha "$EXPECTED_TAG_OBJECT_SHA" \
+            --tag-ref-json "$RUNNER_TEMP/release-ref/tag-ref.json" \
+            --annotated-tag-json "$RUNNER_TEMP/release-ref/annotated-tag.json"

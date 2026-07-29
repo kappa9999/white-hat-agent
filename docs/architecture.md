@@ -74,8 +74,11 @@ Bundled starter assets seed a new workspace but never overwrite an existing file
 The production intelligence boundary uses fixed official endpoints, explicit response/time/item limits, overlapping
 incremental windows, and content-addressed raw snapshots. Normalized advisories retain source-native identity,
 aliases, timestamps, status, affected ranges, references, source URI, and attribution. CVE is an optional alias, not
-the database key. Records from CISA KEV and OSV remain independently attributable even when they describe the same
-vulnerability; FIRST EPSS is a dated prioritization signal, not proof of exploitation.
+the database key. Canonical raw CVE List V5 CNA/ADP containers, CISA KEV, and OSV remain independently attributable
+even when they describe the same vulnerability; FIRST EPSS is a dated prioritization signal, not proof of
+exploitation.
+Explicit CVE rejection, provider withdrawal, and local source tombstoning are separate states. A rejected CVE alias
+does not invalidate an otherwise active ecosystem advisory.
 
 Ranking is deterministic and inspectable. Confirmed KEV exploitation dominates probabilistic EPSS, while recency,
 severity, applicability, and evidence completeness refine the queue. Collection never converts an advisory into an

@@ -1,5 +1,6 @@
 """White Hat Agent Core: a model-neutral cyber knowledge and orchestration brain."""
 
+from ._version import __version__
 from .campaign.contracts import contract_from_playbook, validate_campaign_manifest
 from .campaign.fleet import FleetStore
 from .campaign.models import CampaignManifest, CampaignPlaybookContract, ProbeIntent, ScopeManifest
@@ -37,6 +38,7 @@ __all__ = [
     "ProbeIntent",
     "ScopeManifest",
     "Workspace",
+    "__version__",
     "apply_expansion",
     "apply_observation",
     "compose_playbooks",
@@ -47,5 +49,3 @@ __all__ = [
     "validate_campaign_manifest",
     "verify_causality",
 ]
-
-__version__ = "0.2.0"

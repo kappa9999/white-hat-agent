@@ -76,7 +76,10 @@ Start the production public-intelligence loop with bounded official sources:
 wha intelligence sync \
   --source cisa-kev --source osv \
   --since-hours 48 --limit-per-source 1000 --enrich-epss --require-success
-wha intelligence brief --source osv --limit 25
+wha intelligence sync \
+  --source cve-list-v5 \
+  --since-hours 6 --limit-per-source 5000 --require-success
+wha intelligence brief --source osv --source cve-list-v5 --limit 25
 ```
 
 Every selected upstream record is backed by an immutable raw snapshot and transparent priority factors. Intelligence
@@ -195,6 +198,7 @@ uv build
 - [Installation and updates](docs/installation.md)
 - [MCP integration](docs/mcp.md)
 - [Production intelligence and research loop](docs/production-loop.md)
+- [Release provenance and recovery](docs/releases.md)
 - [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
 - [Threat model](THREAT_MODEL.md)

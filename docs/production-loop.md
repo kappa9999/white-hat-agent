@@ -61,15 +61,42 @@ flowchart LR
 | Source | Role | Initial cadence | State rule |
 |---|---|---:|---|
 | CISA Known Exploited Vulnerabilities | Confirmed exploitation | 6 hours | Snapshot and diff the complete catalog; `dateAdded` is not a cursor |
+| CVE List V5 | Canonical CNA/ADP records and CVE state | 6 hours | Checkpoint the captured upstream batch time with overlap; never equate rejection, withdrawal, and source deletion |
 | OSV | Package, version, and Git-range applicability | 6 hours | Read the reverse-chronological modified index with an overlap window, then snapshot selected records |
 | FIRST EPSS | Dated probability enrichment | With each selected CVE set | Preserve score date; never treat probability as proof of exploitation |
-| CVE List V5 | Canonical CNA and ADP containers | Next adapter | Preserve CNA/ADP containers and rejected state |
 | NVD 2.0 | CVSS, CWE, CPE, and reference enrichment | Next adapter; no more than every 2 hours | Closed overlapping last-modified windows and documented rate limits |
 
 OSV aggregates records with different upstream licenses. Every snapshot and normalized record therefore retains its
 own source URI and attribution metadata; the corpus license is never assumed to replace an upstream source license.
 EPSS is enrichment-only: missing scores remain visible as a partial enrichment result but do not invalidate a
 successful CISA/OSV primary-source checkpoint.
+
+### CVE Program record contract
+
+The `cve-list-v5` adapter reads the CVE Program's official rolling delta log and only the exact record URLs derived
+from validated CVE IDs. It snapshots the delta and every selected record before interpreting JSON. It never follows
+references embedded in a record.
+
+- The rolling log normally covers 30 days. Selection is based on the enclosing batch `fetchTime`; `dateUpdated` is
+  retained as a record consistency check. A successful cursor advances only to the greatest captured upstream
+  `fetchTime`, never the workstation clock.
+- Replays subtract a two-hour overlap and deduplicate by CVE ID. Limits, malformed data, upstream batch errors,
+  throttling, missing records, or a history gap retain successful idempotent upserts but do not advance the cursor or
+  HTTP validator.
+- Record versions `5.0`, `5.1`, and `5.2` map to the published CVE schema releases `5.0.0`, `5.1.1`, and `5.2.0`.
+  Unknown future versions are preserved as raw snapshots and fail the checkpoint closed until their contract is
+  reviewed.
+- A CVE Record state is `PUBLISHED` or `REJECTED`. `dateReserved` is preserved as metadata; `RESERVED` is not a CVE
+  List V5 record state. Rejection remains explicitly queryable and is not rewritten as withdrawal or disappearance.
+- The immutable raw record snapshot is canonical for the complete CNA container and every ADP container. Normalized
+  source metadata keeps only compact JSON-pointer/`providerMetadata` indices into that snapshot.
+- Normalized affected packages, PURLs, CWEs, references, and CVSS signals are additive views. Native CVE version
+  ranges become normalized events only when their default/status transitions can be represented exactly; otherwise
+  the native range remains available through its JSON pointer without an invented `fixed` event.
+
+The data is attributed to the CVE Program under the [CVE Program Terms of
+Use](https://www.cve.org/Legal/TermsOfUse). Provider/assigner identity remains attached to the record, and no CVE
+entry implies CVE Program, CNA, or ADP endorsement of White Hat Agent.
 
 ## Automation levels
 
@@ -134,16 +161,24 @@ wha intelligence sync \
   --source cisa-kev --source osv \
   --since-hours 48 --limit-per-source 1000 --enrich-epss --require-success \
   --out white-hat-workspace/.whitehat/intelligence/reports/sync.json
+wha intelligence sync \
+  --workspace white-hat-workspace \
+  --source cve-list-v5 \
+  --since-hours 6 --limit-per-source 5000 --require-success \
+  --out white-hat-workspace/.whitehat/intelligence/reports/cve-list-v5-sync.json
 wha intelligence brief \
   --workspace white-hat-workspace \
+  --source osv --source cve-list-v5 \
   --limit 25 \
   --out white-hat-workspace/.whitehat/intelligence/reports/brief.md
 ```
 
-`limit-per-source` is an OSV/EPSS fail-closed ceiling, not a request target; CISA always validates and diffs its
-complete bounded catalog. The OSV reader stops at the closed-window boundary. If the ceiling is reached first, the
-source reports `partial`, and `--require-success` prevents cursor advancement from being mistaken for a complete
-production run.
+`limit-per-source` is a CVE List V5, OSV, or EPSS fail-closed ceiling, not a request target; CISA always validates and
+diffs its complete bounded catalog. Incremental readers stop at their closed-window boundaries. If a ceiling is
+reached first, the source reports `partial`, and `--require-success` prevents cursor advancement from being mistaken
+for a complete production run. Use `--include-rejected` on `list` or `brief` only when rejected CVE records are part
+of the analysis. Ecosystem filters narrow OSV acquisition and query views; canonical CVE records are always persisted
+unfiltered so a later query cannot inherit gaps from an earlier filtered checkpoint.
 
 If a run is interrupted, retain its snapshots but do not advance the source's successful-sync state. Re-run with an
 overlapping window; content addressing and idempotent upserts make replay safe.

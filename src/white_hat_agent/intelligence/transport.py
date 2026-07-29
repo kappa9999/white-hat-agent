@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
@@ -10,10 +11,16 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from .errors import IntelligenceLimitError, IntelligenceTransportError
 
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+CVE_LIST_V5_DELTA_URL = "https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/deltaLog.json"
+CVE_LIST_V5_RECORD_BASE_URL = "https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/"
 OSV_MODIFIED_INDEX_URL = "https://osv-vulnerabilities.storage.googleapis.com/modified_id.csv"
 OSV_API_BASE_URL = "https://api.osv.dev/v1/vulns/"
 EPSS_API_URL = "https://api.first.org/data/v1/epss"
 DEFAULT_USER_AGENT = "white-hat-agent-public-intelligence/1 (+https://github.com/kappa9999/white-hat-agent)"
+
+_CVE_LIST_V5_RECORD_PATH = re.compile(
+    r"^/CVEProject/cvelistV5/main/cves/\d{4}/\d+xxx/CVE-\d{4}-\d{4,}\.json$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +174,15 @@ def _validate_official_url(url: str) -> None:
         (
             host == "www.cisa.gov"
             and path == "/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+            and not parsed.query
+        )
+        or (
+            host == "raw.githubusercontent.com"
+            and (
+                path == "/CVEProject/cvelistV5/main/cves/deltaLog.json"
+                or _CVE_LIST_V5_RECORD_PATH.fullmatch(path) is not None
+            )
+            and "%" not in path
             and not parsed.query
         )
         or (

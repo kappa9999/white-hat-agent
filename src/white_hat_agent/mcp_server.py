@@ -9,6 +9,7 @@ from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddlewa
 from fastmcp.server.middleware.timing import TimingMiddleware
 from pydantic import Field, ValidationError
 
+from ._version import __version__
 from .campaign.contracts import validate_campaign_manifest
 from .campaign.models import (
     AgentRegistration,
@@ -91,7 +92,7 @@ def create_server(workspace_root: str | Path | None = None) -> FastMCP:
 
     root = FastMCP(
         name="White Hat Agent Core",
-        version="0.2.0",
+        version=__version__,
         instructions=(
             "Model-neutral cyber knowledge and campaign brain. Search and compose the corpus "
             "before inventing a new method. Every campaign operation uses exact scope, target, "
@@ -141,13 +142,14 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
         version="1.0",
         description=(
             "Synchronize fixed official public advisory sources into immutable local snapshots. "
-            "This contacts CISA, OSV, and optionally FIRST EPSS; it never contacts affected targets."
+            "This contacts the CVE Program, CISA, OSV, and optionally FIRST EPSS; "
+            "it never contacts affected targets or advisory reference URLs."
         ),
         annotations={"readOnlyHint": False, "idempotentHint": False, "openWorldHint": True},
         tags={"intelligence", "network", "write"},
     )
     def sync(
-        sources: list[Literal["cisa-kev", "osv"]] | None = None,
+        sources: list[Literal["cisa-kev", "cve-list-v5", "osv"]] | None = None,
         since_hours: float = 24.0,
         ecosystems: list[str] | None = None,
         limit_per_source: int = 1000,
@@ -186,6 +188,7 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
         ecosystems: list[str] | None = None,
         known_exploited: bool | None = None,
         include_withdrawn: bool = False,
+        include_rejected: bool = False,
         limit: int = 20,
     ) -> list[RankedAdvisory]:
         return service.list(
@@ -193,6 +196,7 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
             ecosystems=ecosystems,
             known_exploited=known_exploited,
             withdrawn=None if include_withdrawn else False,
+            rejected=None if include_rejected else False,
             limit=limit,
         )
 
@@ -218,6 +222,7 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
         ecosystems: list[str] | None = None,
         known_exploited: bool | None = None,
         include_withdrawn: bool = False,
+        include_rejected: bool = False,
         limit: int = 20,
     ) -> str:
         return service.brief(
@@ -225,6 +230,7 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
             ecosystems=ecosystems,
             known_exploited=known_exploited,
             withdrawn=None if include_withdrawn else False,
+            rejected=None if include_rejected else False,
             limit=limit,
         )
 
