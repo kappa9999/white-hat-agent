@@ -1,0 +1,148 @@
+{
+  "$defs": {
+    "ApplicabilityBasis": {
+      "enum": [
+        "exact-version",
+        "semver-range",
+        "git-range",
+        "unresolved"
+      ],
+      "title": "ApplicabilityBasis",
+      "type": "string"
+    },
+    "ApplicabilityStatus": {
+      "enum": [
+        "applicable",
+        "not-applicable",
+        "indeterminate"
+      ],
+      "title": "ApplicabilityStatus",
+      "type": "string"
+    },
+    "ApplicabilityTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/ApplicabilityBasis"
+        },
+        "package_index": {
+          "minimum": 0,
+          "title": "Package Index",
+          "type": "integer"
+        },
+        "range_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Range Index"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ApplicabilityStatus"
+        }
+      },
+      "required": [
+        "package_index",
+        "basis",
+        "status",
+        "reason"
+      ],
+      "title": "ApplicabilityTrace",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "advisory_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Advisory Digest",
+      "type": "string"
+    },
+    "advisory_id": {
+      "title": "Advisory Id",
+      "type": "string"
+    },
+    "blockers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Blockers",
+      "type": "array"
+    },
+    "decision_id": {
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "evaluated_at": {
+      "format": "date-time",
+      "title": "Evaluated At",
+      "type": "string"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_snapshot_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Snapshot Ids",
+      "type": "array"
+    },
+    "status": {
+      "$ref": "#/$defs/ApplicabilityStatus"
+    },
+    "subject_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Subject Digest",
+      "type": "string"
+    },
+    "subject_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Subject Id",
+      "type": "string"
+    },
+    "traces": {
+      "items": {
+        "$ref": "#/$defs/ApplicabilityTrace"
+      },
+      "title": "Traces",
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision_id",
+    "status",
+    "advisory_id",
+    "advisory_digest",
+    "source_snapshot_ids",
+    "subject_id",
+    "subject_digest",
+    "traces",
+    "reasons",
+    "evaluated_at"
+  ],
+  "title": "AdvisoryApplicabilityDecision",
+  "type": "object"
+}

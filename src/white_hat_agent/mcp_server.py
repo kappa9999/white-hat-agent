@@ -37,12 +37,15 @@ from .capabilities.models import CapabilityDefinition
 from .episode import apply_observation
 from .evidence.models import EvidenceDescriptor, EvidenceRecord, FindingRecord
 from .intelligence import (
+    AdvisoryApplicabilityDecision,
+    AdvisoryApplicabilityRequest,
     IntelligenceService,
     IntelligenceSource,
     IntelligenceStatus,
     IntelligenceSyncReport,
     NormalizedAdvisory,
     RankedAdvisory,
+    assess_advisory_applicability,
 )
 from .knowledge.compiler import compile_heuristic, compiler_prompt
 from .knowledge.compose import CompositePlaybook, CompositionRequest, compose_playbooks
@@ -199,6 +202,19 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
             rejected=None if include_rejected else False,
             limit=limit,
         )
+
+    @server.tool(
+        name="applicability",
+        version="1.0",
+        description=(
+            "Match one normalized advisory to one exact artifact identity. "
+            "Returns a tri-state technical result and never grants execution authority."
+        ),
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"intelligence", "planning", "read"},
+    )
+    def applicability(request: AdvisoryApplicabilityRequest) -> AdvisoryApplicabilityDecision:
+        return assess_advisory_applicability(request)
 
     @server.tool(
         name="status",

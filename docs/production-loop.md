@@ -29,7 +29,8 @@ scan volume. A strong negative result can be valuable when it closes a hypothesi
 flowchart LR
     S[Sense official sources] --> N[Normalize and correlate]
     N --> R[Rank transparent signals]
-    R --> C[Capture exact scope]
+    R --> M[Match exact artifact]
+    M --> C[Capture exact scope]
     C --> I[Investigate in a local or authorized lab]
     I --> V[Verify differential and causal evidence]
     V --> P[Publish or disclose]
@@ -42,18 +43,20 @@ flowchart LR
    time, content type, ETag/Last-Modified when supplied, digest, attribution, and the exact raw bytes used.
 2. **Normalize:** retain source-native records. Correlate CVE, GHSA, OSV, PYSEC, and ecosystem identities as aliases;
    never erase one provider's provenance by collapsing it into another provider's record.
-3. **Rank:** combine confirmed exploitation, dated probability signals, recency, severity, applicability, and evidence
-   completeness. Store the factors and reasons alongside the score. CISA KEV confirmation outranks a low EPSS
-   forecast.
-4. **Scope:** convert a lead into executable work only after exact target/build and authorization are captured in a
+3. **Rank:** combine confirmed exploitation, dated probability signals, recency, severity, and evidence completeness.
+   Store the factors and reasons alongside the score. CISA KEV confirmation outranks a low EPSS forecast.
+4. **Match:** compare the advisory with one exact package/build/commit. Preserve `indeterminate`
+   when normalized facts or range semantics are incomplete; never treat rejection, withdrawal, or a name miss as
+   proof that an artifact is unaffected.
+5. **Scope:** convert a lead into executable work only after exact target/build and authorization are captured in a
    `ScopeManifest`. Automation permission is never inferred from the existence of a CVE or a public repository.
-5. **Investigate:** prefer source review, patch-differential analysis, deterministic fixtures, and locally built
+6. **Investigate:** prefer source review, patch-differential analysis, deterministic fixtures, and locally built
    vulnerable/fixed versions. Any live adapter must enforce scope, rate, budget, cancellation, and evidence limits.
-6. **Verify:** require exact identities, raw artifacts, controls, repeated observations, and causal/differential proof
+7. **Verify:** require exact identities, raw artifacts, controls, repeated observations, and causal/differential proof
    before escalating a claim. Preserve alternate findings and failed hypotheses.
-7. **Publish:** public intelligence briefs may be generated automatically. Vulnerability claims and external patches
+8. **Publish:** public intelligence briefs may be generated automatically. Vulnerability claims and external patches
    must be deduplicated, reproducible, minimally disclosed, and sent through the affected project's policy.
-8. **Learn:** promote reusable procedure only through the existing rights, review, and validation lifecycle. Compare
+9. **Learn:** promote reusable procedure only through the existing rights, review, and validation lifecycle. Compare
    later campaign outcomes so weak heuristics can be revised or retired.
 
 ## Initial source contract
@@ -171,7 +174,13 @@ wha intelligence brief \
   --source osv --source cve-list-v5 \
   --limit 25 \
   --out white-hat-workspace/.whitehat/intelligence/reports/brief.md
+wha intelligence applicability \
+  --request applicability-request.json \
+  --out applicability-decision.json
 ```
+
+`applicability` is a pure local check. Its generated request/decision schemas bind the normalized advisory and exact
+artifact digests; the result never substitutes for the existing scope evaluator.
 
 `limit-per-source` is a CVE List V5, OSV, or EPSS fail-closed ceiling, not a request target; CISA always validates and
 diffs its complete bounded catalog. Incremental readers stop at their closed-window boundaries. If a ceiling is

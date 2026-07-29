@@ -1,3 +1,12 @@
+from .applicability import (
+    AdvisoryApplicabilityDecision,
+    AdvisoryApplicabilityRequest,
+    ApplicabilityBasis,
+    ApplicabilityStatus,
+    ApplicabilitySubject,
+    ApplicabilityTrace,
+    assess_advisory_applicability,
+)
 from .artifacts import stage_run_artifact
 from .errors import (
     AdvisoryNotFoundError,
@@ -85,10 +94,16 @@ __all__ = [
     "OSV_API_BASE_URL",
     "OSV_ATTRIBUTION",
     "OSV_MODIFIED_INDEX_URL",
+    "AdvisoryApplicabilityDecision",
+    "AdvisoryApplicabilityRequest",
     "AdvisoryNotFoundError",
     "AdvisoryReference",
     "AffectedPackage",
     "AffectedRange",
+    "ApplicabilityBasis",
+    "ApplicabilityStatus",
+    "ApplicabilitySubject",
+    "ApplicabilityTrace",
     "CveDeltaEntry",
     "CveDeltaSelection",
     "CveRecordState",
@@ -130,6 +145,7 @@ __all__ = [
     "UpsertState",
     "UrllibHttpTransport",
     "VersionEvent",
+    "assess_advisory_applicability",
     "cve_list_v5_record_url",
     "decode_json_array",
     "decode_json_object",

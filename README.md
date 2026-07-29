@@ -97,7 +97,7 @@ before the scope gate.
 |---|---|
 | **Knowledge** | Lossless multilingual intake, provenance, strict playbooks, review state, and versioned validation |
 | **Composition** | Deterministic chaining through semantic artifacts, capabilities, compatibility, and explicit blockers |
-| **Intelligence** | Bounded official-source ingestion, immutable snapshots, alias correlation, and transparent prioritization |
+| **Intelligence** | Bounded official-source ingestion, immutable snapshots, transparent priority, and exact-artifact applicability |
 | **Campaigns** | Exact scope snapshots, target identity, budgets, typed probe intent, and playbook contracts |
 | **Fleet** | Compatible-agent matching, atomic task deduplication, expiring leases, and bounded retries |
 | **Evidence** | SHA-256 content addressing, provenance, finding revisions, and causal/differential verification |
