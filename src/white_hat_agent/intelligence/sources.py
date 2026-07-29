@@ -72,6 +72,7 @@ _MAX_EPSS_ITEMS = 10_000
 _MAX_CVE_ADP_CONTAINERS = 1_000
 _URL_RE = re.compile(r"https?://[^\s,;]+")
 _CVE_ID_RE = re.compile(r"^CVE-(\d{4})-(\d{4,})$", re.IGNORECASE)
+_LEADING_VERSION_COMPARATOR_RE = re.compile(r"^(?:<=|>=|<|>)[ \t]*[^<>=\s]")
 _SUPPORTED_CVE_DATA_VERSIONS = {
     "5.0": "5.0.0",
     "5.1": "5.1.1",
@@ -829,11 +830,32 @@ def _parse_cve_affected(value: Any, *, container_pointer: str) -> list[AffectedP
             version = _optional_string(raw_version.get("version"))
             less_than = _optional_string(raw_version.get("lessThan"))
             less_than_or_equal = _optional_string(raw_version.get("lessThanOrEqual"))
-            raw_type = _optional_string(raw_version.get("versionType")) or "unknown"
+            declared_version_type = _optional_string(raw_version.get("versionType"))
+            raw_type = declared_version_type or "unknown"
             changes = _bounded_list(raw_version.get("changes"), "CVE version changes", _MAX_EVENTS_PER_RANGE)
             has_range_shape = bool(less_than or less_than_or_equal or changes or version == "*")
+            has_untyped_constraint = bool(
+                version
+                and version != "*"
+                and not has_range_shape
+                and declared_version_type is None
+                and _LEADING_VERSION_COMPARATOR_RE.match(version)
+            )
             events: list[VersionEvent] = []
-            if status == "affected" and version and version != "*" and not has_range_shape:
+            if has_untyped_constraint:
+                ranges.append(
+                    AffectedRange(
+                        type=RangeType.UNKNOWN,
+                        raw_type=raw_type,
+                        database_specific={
+                            "status": status,
+                            "default_status": default_status,
+                            "json_pointer": version_pointer,
+                            "version_expression": version,
+                        },
+                    )
+                )
+            elif status == "affected" and version and version != "*" and not has_range_shape:
                 exact_versions.append(version)
             elif has_range_shape:
                 default_status_key = (default_status or "unknown").casefold()
