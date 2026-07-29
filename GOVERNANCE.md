@@ -2,9 +2,9 @@
 
 ## Current model
 
-White Hat Agent Core uses a **single-maintainer model** during its foundation phase. The repository owner is the sole
+White Hat Agent Core uses a **single-maintainer model** while the project is early. The repository owner is the sole
 maintainer and final decision maker. This keeps corpus quality, protocol stability, release provenance, and security
-response unambiguous while the base is established.
+response unambiguous while the core interfaces are established.
 
 ## Contributions
 
