@@ -47,8 +47,10 @@ def smoke_distribution(artifact: Path, temporary_root: Path, expected_version: s
         str(python),
         "-c",
         (
-            "from white_hat_agent.adapter_execution import _fixture_bytes, _ghidra_script_bytes; "
+            "from white_hat_agent.adapter_execution import "
+            "_fixture_bytes, _ghidra_script_bytes, _jadx_fixture_bytes; "
             "assert len(_fixture_bytes()) == 784; "
+            "assert len(_jadx_fixture_bytes()) == 904; "
             "assert len(_ghidra_script_bytes()) == 6116"
         ),
         cwd=temporary_root,

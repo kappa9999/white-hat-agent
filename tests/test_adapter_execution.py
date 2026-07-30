@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import white_hat_agent.adapter_execution as adapter_execution
 from white_hat_agent.adapter_execution import (
     DRIVER_VERSION,
     MINIMUM_EVIDENCE_IMPORT_BYTES,
@@ -17,6 +18,8 @@ from white_hat_agent.adapter_execution import (
     AdapterExecutionReceipt,
     AdapterExecutionRequest,
     AdapterLimitOverrides,
+    JadxAndroidStaticMapDriver,
+    JadxAndroidStaticMapPayload,
     LlvmObjectInspectDriver,
     LlvmObjectInspectPayload,
     OfflineSandboxSupervisor,
@@ -24,6 +27,7 @@ from white_hat_agent.adapter_execution import (
     TrustedInvocation,
     _effective_limits,
     _fixture_bytes,
+    _jadx_fixture_bytes,
     _tree_usage,
     conformance_report_is_current,
 )
@@ -257,6 +261,16 @@ def test_fixture_and_request_secret_contract() -> None:
     assert "lease-token-that-is-long-enough" not in serialized
     assert "lease-token-that-is-long-enough" not in request.digest()
 
+    jadx_fixture = _jadx_fixture_bytes()
+    assert len(jadx_fixture) == 904
+    assert hashlib.sha256(jadx_fixture).hexdigest() == (
+        "865d09fc9bc4a407c2bab2516dd2576a63d410d036f30c21b6a28b8b875ec847"
+    )
+    jadx_request = request.model_copy(
+        update={"operation": JadxAndroidStaticMapPayload(operation_id="jadx.android-static-map")}
+    )
+    assert jadx_request.operation.operation_id == "jadx.android-static-map"
+
 
 def test_limit_overrides_can_only_reduce_contract() -> None:
     reduced = _effective_limits(_limits(), AdapterLimitOverrides(max_records=10, wall_seconds=5))
@@ -341,6 +355,196 @@ def test_llvm_normalization_uses_one_shared_record_budget(tmp_path) -> None:
     assert len(normalized.data["sections"]) == 2
     assert normalized.data["symbols"] == []
     assert normalized.data["needed_libraries"] == []
+
+
+def test_jadx_normalization_preserves_code_graph_and_manifest(tmp_path) -> None:
+    output = tmp_path / "jadx-output"
+    class_directory = output / "sources/org/whitehat/fixture"
+    resource_directory = output / "resources"
+    class_directory.mkdir(parents=True)
+    resource_directory.mkdir()
+    (output / "sources/mapping.json").write_text(
+        json.dumps(
+            {
+                "classes": [
+                    {
+                        "name": "org.whitehat.fixture.MinimalAndroid",
+                        "alias": "org.whitehat.fixture.MinimalAndroid",
+                        "json": "org/whitehat/fixture/MinimalAndroid.json",
+                        "inner": False,
+                        "methods": [
+                            {"signature": "marker()Ljava/lang/String;", "name": "marker"},
+                            {"signature": "markerLength()I", "name": "markerLength"},
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (output / "callgraph.json").write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {
+                        "id": 3,
+                        "method": "org.whitehat.fixture.MinimalAndroid.marker()Ljava/lang/String;",
+                    },
+                    {
+                        "id": 4,
+                        "method": "org.whitehat.fixture.MinimalAndroid.markerLength()I",
+                    },
+                ],
+                "edges": [{"from": 4, "to": 3, "resolved": True}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (class_directory / "MinimalAndroid.json").write_text(
+        json.dumps(
+            {
+                "name": "org.whitehat.fixture.MinimalAndroid",
+                "methods": [
+                    {
+                        "name": "marker",
+                        "lines": [{"code": 'return "WHA_ANDROID_FIXTURE";'}],
+                    },
+                    {"name": "markerLength", "lines": [{"code": "return marker().length();"}]},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = '<manifest package="org.whitehat.fixture" />\n'
+    (resource_directory / "AndroidManifest.xml").write_text(manifest, encoding="utf-8")
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stdout.write_bytes(b"")
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=output,
+        output_complete=True,
+        warnings=(),
+    )
+
+    driver = JadxAndroidStaticMapDriver()
+    normalized = driver.normalize(process, "a" * 64, _limits())
+
+    assert normalized.records_returned == 5
+    assert not normalized.truncated
+    assert normalized.data["format"] == "jadx-json"
+    assert normalized.data["resources"]["items"][0]["text"] == manifest
+    assert all(check.ok for check in driver.fixture_checks(normalized))
+
+    reduced = driver.normalize(
+        process,
+        "a" * 64,
+        _limits().model_copy(update={"max_records": 2}),
+    )
+    assert reduced.records_returned == 2
+    assert reduced.truncated
+
+
+def test_jadx_normalization_rejects_untrusted_output_paths(tmp_path) -> None:
+    output = tmp_path / "jadx-output"
+    sources = output / "sources"
+    sources.mkdir(parents=True)
+    (sources / "mapping.json").write_text(
+        json.dumps({"classes": [{"json": "../escape.json"}]}),
+        encoding="utf-8",
+    )
+    (output / "callgraph.json").write_text(
+        json.dumps({"nodes": [], "edges": []}),
+        encoding="utf-8",
+    )
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stdout.write_bytes(b"")
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=output,
+        output_complete=True,
+        warnings=(),
+    )
+
+    with pytest.raises(AdapterExecutionError, match="unsafe JSON path"):
+        JadxAndroidStaticMapDriver().normalize(process, "a" * 64, _limits())
+
+    (sources / "mapping.json").write_text(json.dumps({"classes": []}), encoding="utf-8")
+    (output / "link").symlink_to("/etc/passwd")
+    with pytest.raises(AdapterExecutionError, match="symbolic link"):
+        JadxAndroidStaticMapDriver().normalize(process, "a" * 64, _limits())
+
+
+def test_jadx_invocations_bind_one_distribution_and_fixed_arguments(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "jadx"
+    entrypoint = root / "bin/jadx"
+    payload = root / "lib/jadx-1.5.6-all.jar"
+    entrypoint.parent.mkdir(parents=True)
+    payload.parent.mkdir()
+    entrypoint.write_bytes(b"reviewed launcher")
+    payload.write_bytes(b"reviewed jar")
+    java = tmp_path / "java"
+    java.mkdir()
+    monkeypatch.setattr(
+        adapter_execution,
+        "_system_java_payload_digests",
+        lambda: ("a" * 64, "b" * 64),
+    )
+    monkeypatch.setattr(
+        adapter_execution,
+        "_system_java_mounts",
+        lambda: (adapter_execution.SandboxMount(java, "/opt/java"),),
+    )
+    status = AdapterStatus(
+        adapter_id="jadx",
+        manifest_digest="1" * 64,
+        observed_at=utc_now(),
+        platform="linux-x86_64",
+        supported=True,
+        installed=True,
+        healthy=True,
+        source="system",
+        version="1.5.6",
+        entrypoints=[str(entrypoint)],
+        observed_identity_sha256="2" * 64,
+    )
+    driver = JadxAndroidStaticMapDriver()
+    original_digest = driver.tool_payload_digest(status.entrypoints)
+    payload.write_bytes(b"changed jar")
+    assert driver.tool_payload_digest(status.entrypoints) != original_digest
+
+    version = driver.version_invocation(status)
+    invocation = driver.prepare(
+        status,
+        JadxAndroidStaticMapPayload(operation_id="jadx.android-static-map"),
+        _limits(),
+        {},
+    )
+
+    assert version.argv == ("/opt/tool/bin/jadx", "--version")
+    assert invocation.result_relative_path == "jadx-output"
+    assert invocation.argv[-2:] == ("/work/jadx-output", "/input/artifact")
+    assert "--output-format" in invocation.argv
+    assert "--call-graph" in invocation.argv
+    assert {mount.destination for mount in invocation.mounts} == {"/opt/tool", "/opt/java"}
+    with pytest.raises(AdapterExecutionError, match="different operation"):
+        driver.prepare(
+            status,
+            LlvmObjectInspectPayload(operation_id="llvm.object-inspect"),
+            _limits(),
+            {},
+        )
 
 
 def test_sandbox_exposes_tool_work_but_not_broker_captures(tmp_path) -> None:

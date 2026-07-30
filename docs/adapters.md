@@ -45,8 +45,8 @@ Search, status, resolution, campaign planning, fleet claiming, and `wha doctor` 
 execution boundary and writes its identity-bound conformance report.
 
 `adapter conform` is the separate local execution gate. It never reads campaign evidence: inside the same offline
-supervisor it runs fixed version/dependency probes, then the reviewed driver against a bundled 784-byte inert ELF
-fixture, and writes one identity-bound report under
+supervisor it runs fixed version/dependency probes, then the reviewed driver against its bundled inert fixture (the
+784-byte ELF or 904-byte DEX), and writes one identity-bound report under
 `.whitehat/adapters/.conformance/`. A tool or manifest change invalidates the report. `adapter resolve` reports a
 present, identity-observable but unproven provider under `conformance_required`, not `ready_adapters`. An installed
 tool whose identity cannot be read is repaired through its reviewed provisioner when one exists; it is otherwise an
@@ -84,6 +84,13 @@ The first executable family is deliberately small:
 | `llvm.object-inspect` | ELF header, sections, symbols, and needed libraries | `llvm-readobj` JSON only |
 | `capa.file-analyze` | Bounded behavior-rule summaries and analysis identity | capa JSON with embedded reviewed rules |
 | `ghidra.binary-summary` | Program, memory-block, function, and external-symbol summary | bundled `WhaBinarySummary.java` only |
+| `jadx.android-static-map` | Decompiled class JSON, method code, call graph, manifest text, and resource inventory | fixed JADX JSON and JSON call-graph modes |
+
+The JADX driver accepts one `artifact/mobile-build` evidence object and emits one `surface/static-map`. It fixes the
+configuration, mapping, deobfuscation, output, call-graph, thread, and logging modes; callers cannot add a plugin or
+CLI option. Class documents retain JADX's structured declarations, signatures, offsets, and decompiled code lines.
+All referenced class paths must remain canonical beneath the result root, and unexpected source files, links, special
+files, path escapes, or aggregate limit overruns invalidate the output.
 
 Execution requires one active fleet lease and one same-task local evidence ID. The request contains one required,
 provider-specific operation discriminator and optional resource reductions; the operation selects its only reviewed
