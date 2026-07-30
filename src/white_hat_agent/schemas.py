@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .adapter_ensure import AdapterEnsureResult
 from .adapter_execution import (
     AdapterExecutionManifest,
     AdapterExecutionReceipt,
@@ -85,6 +86,7 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "adapter-execution-receipt": AdapterExecutionReceipt,
     "adapter-execution-request": AdapterExecutionRequest,
     "adapter-execution-result": AdapterExecutionResult,
+    "adapter-ensure-result": AdapterEnsureResult,
     "adapter-manifest": AdapterManifest,
     "adapter-normalized-result": AdapterNormalizedResult,
     "adapter-operation-binding": AdapterOperationBinding,

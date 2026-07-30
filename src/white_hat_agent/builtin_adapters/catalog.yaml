@@ -1,6 +1,45 @@
 schema_version: "1.0"
 adapters:
   - schema_version: "1.0"
+    adapter_id: temurin-jdk
+    adapter_version: "1.0.0"
+    title: Eclipse Temurin JDK 21 runtime
+    description: Cross-platform Java 21 runtime dependency for Ghidra, JADX, and later reviewed JVM-backed operations.
+    kind: tool
+    provider: Eclipse Adoptium
+    provider_url: https://github.com/adoptium/temurin21-binaries
+    license:
+      name: GPL-2.0-only WITH Classpath-exception-2.0
+      url: https://github.com/adoptium/jdk21u/blob/master/LICENSE
+      attribution: Eclipse Temurin by the Eclipse Adoptium project
+    capabilities: [runtime.java]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
+    platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64, windows-arm64]
+    priority: 5
+    probe:
+      executable_names:
+        any: [java, java.exe]
+      version_args: [-version]
+      version_pattern: 'version "(?P<version>[0-9]+(?:\.[0-9]+)*)'
+      minimum_version: "21"
+    provisioner:
+      kind: adoptium-api
+      feature_version: 21
+      image_type: jdk
+      jvm_impl: hotspot
+      vendor: eclipse
+      entrypoints:
+        linux: [bin/java]
+        macos: [Contents/Home/bin/java]
+        windows: [bin/java.exe]
+      strip_single_directory: true
+      max_download_bytes: 402653184
+      max_install_bytes: 1073741824
+    operations: []
+    updated_at: 2026-07-30T05:00:00Z
+
+  - schema_version: "1.0"
     adapter_id: ghidra
     adapter_version: "1.0.0"
     title: Ghidra headless reverse engineering
@@ -25,10 +64,11 @@ adapters:
       version_property: application.version
     requirements:
       - executable_names:
-          any: [java]
+          any: [java, java.exe]
         version_args: [-version]
         version_pattern: 'version "(?P<version>[0-9]+(?:\.[0-9]+)*)'
         minimum_version: "21"
+        managed_adapter_id: temurin-jdk
     provisioner:
       kind: github-release
       repository: NationalSecurityAgency/ghidra
@@ -365,10 +405,11 @@ adapters:
       version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
     requirements:
       - executable_names:
-          any: [java]
+          any: [java, java.exe]
         version_args: [-version]
         version_pattern: 'version "(?P<version>[0-9]+(?:\.[0-9]+)*)'
         minimum_version: "11"
+        managed_adapter_id: temurin-jdk
     provisioner:
       kind: github-release
       repository: skylot/jadx
@@ -456,3 +497,28 @@ adapters:
       max_checkout_bytes: 268435456
     search_globs: ['**/*.yml', '**/*.yaml', 'doc/**/*.md']
     updated_at: 2026-07-29T21:00:00Z
+
+  - schema_version: "1.0"
+    adapter_id: owasp-wstg
+    adapter_version: "1.0.0"
+    title: OWASP Web Security Testing Guide
+    description: Revision-bound web and API security test objectives, procedures, evidence guidance, and remediation references.
+    kind: knowledge
+    provider: OWASP Foundation
+    provider_url: https://github.com/OWASP/wstg
+    license:
+      name: CC-BY-SA-4.0
+      url: https://github.com/OWASP/wstg/blob/master/LICENSE
+      attribution: OWASP Web Security Testing Guide contributors
+    capabilities: [code.search, experiment.design, hypothesis.generate]
+    modes: [offline]
+    max_execution_class: analysis
+    platforms: [any]
+    priority: 20
+    provisioner:
+      kind: git-checkout
+      repository: https://github.com/OWASP/wstg.git
+      ref: master
+      max_checkout_bytes: 268435456
+    search_globs: ['document/**/*.md', 'checklists/**/*.md', 'checklists/**/*.csv', 'checklists/**/*.json']
+    updated_at: 2026-07-30T05:00:00Z

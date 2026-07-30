@@ -113,6 +113,7 @@
     "method": {
       "enum": [
         "github-release",
+        "adoptium-api",
         "git-checkout"
       ],
       "title": "Method",

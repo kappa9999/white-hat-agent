@@ -82,10 +82,15 @@ prefers healthy tools already on the host and never installs as a side effect of
 wha adapter resolve --kind tool \
   --capability artifact.inspect --capability binary.behavior-identify
 
+# Resolve, update, provision dependencies, and fixture-conform in one explicit call.
+# This selects Ghidra for native RE and OWASP WSTG for experiment design.
+wha adapter ensure --yes \
+  --capability binary.static-inspect --capability experiment.design
+
 # Inspect the exact official release and SHA-256 without changing the host.
 wha adapter plan ghidra --out ghidra-plan.json
 
-# Explicit one-command install/update into this workspace when needed.
+# Explicit provider-specific install/update remains available for manual control.
 wha adapter install ghidra --yes
 
 # Prove one exact operation before agents can claim its capability.
@@ -116,9 +121,13 @@ wha adapter resolve --capability binary.runtime-inspect
 # Add and query exact, revision-bound machine-readable knowledge on demand.
 wha adapter install mitre-attack --yes
 wha adapter search mitre-attack T1059.001
+wha adapter ensure --kind knowledge --capability experiment.design --yes
+wha adapter search owasp-wstg "Test Objectives"
 ```
 
-The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Reviewed typed drivers
+The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Ghidra and JADX reuse a
+valid host Java runtime when one passes conformance; otherwise the explicit `ensure` path installs a checksum-bound,
+workspace-local Eclipse Temurin JDK 21 and retries once. Reviewed typed drivers
 execute Ghidra summaries and native-code maps, a fixed Frida pre-main executable runtime map, YARA-X signature
 evaluation, capa behavior identification, LLVM object inspection, JADX Android mapping, and TShark packet-capture
 mapping on Linux/WSL. Frida is provisioned from the exact current standalone official release asset and exposes no
@@ -127,7 +136,8 @@ order, protocol chains, transport streams, selected DNS/HTTP/TLS/QUIC/WebSocket 
 without exposing live capture or caller-defined decoder settings. All typed drivers run without network access over
 immutable fleet-task evidence. Status and resolution never execute discovered binaries; fixed command-backed version
 checks run only during explicit sandboxed conformance, and a version result alone grants no executable capability.
-Knowledge adapters cover MITRE ATT&CK STIX and capa rules; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
+Knowledge adapters cover MITRE ATT&CK STIX, capa rules, and the revision-bound OWASP Web Security Testing Guide; CVE
+List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
 remains in the intelligence layer. See
 [tools and knowledge adapters](docs/adapters.md).
 

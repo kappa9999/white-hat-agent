@@ -3,6 +3,24 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.13.0] - 2026-07-30
+
+### Added
+
+- one capability-level `adapter ensure` CLI/MCP operation that deterministically selects the smallest provider set,
+  updates exact upstream revisions, provisions missing providers, and runs only the relevant fixed conformance suites;
+- dependency-aware Ghidra and JADX provisioning with a checksum-bound Eclipse Temurin JDK 21 fallback across Linux,
+  macOS, Windows, x86-64, and ARM64 while retaining a valid host Java runtime when it passes conformance; and
+- the revision-bound OWASP Web Security Testing Guide knowledge adapter for experiment-design and hypothesis context.
+
+### Security
+
+- Adoptium resolution is restricted to one fixed API tuple and one official Temurin release package with declared
+  size and SHA-256, bounded extraction, content-tree identity, and atomic activation;
+- missing or incompatible host Java triggers at most one managed-runtime provision and conformance retry; and
+- `ensure` is an explicit mutating boundary with structured provision/conformance events and never runs as a side
+  effect of search, planning, status, campaign, or fleet work.
+
 ## [0.12.0] - 2026-07-30
 
 ### Added

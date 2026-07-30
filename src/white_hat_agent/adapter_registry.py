@@ -45,6 +45,7 @@ class ProbeDefinition(StrictModel):
     version_file: str | None = None
     version_property: str | None = None
     minimum_version: str | None = None
+    managed_adapter_id: Slug | None = None
     timeout_seconds: float = Field(default=10.0, gt=0, le=60)
 
     @model_validator(mode="after")
@@ -99,6 +100,29 @@ class GitHubReleaseProvisioner(StrictModel):
         return self
 
 
+class AdoptiumProvisioner(StrictModel):
+    kind: Literal["adoptium-api"] = "adoptium-api"
+    feature_version: int = Field(ge=21, le=99)
+    image_type: Literal["jdk"] = "jdk"
+    jvm_impl: Literal["hotspot"] = "hotspot"
+    vendor: Literal["eclipse"] = "eclipse"
+    entrypoints: dict[str, list[str]]
+    strip_single_directory: bool = True
+    max_download_bytes: int = Field(ge=1, le=2_147_483_648)
+    max_install_bytes: int = Field(ge=1, le=8_589_934_592)
+
+    @model_validator(mode="after")
+    def valid_entrypoints(self) -> Self:
+        if not self.entrypoints or any(not paths for paths in self.entrypoints.values()):
+            raise ValueError("Adoptium provisioner requires platform entrypoints")
+        for paths in self.entrypoints.values():
+            for value in paths:
+                path = Path(value)
+                if path.is_absolute() or ".." in path.parts:
+                    raise ValueError("Adoptium entrypoints must be contained relative paths")
+        return self
+
+
 class GitCheckoutProvisioner(StrictModel):
     kind: Literal["git-checkout"] = "git-checkout"
     repository: str = Field(pattern=r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$")
@@ -107,7 +131,7 @@ class GitCheckoutProvisioner(StrictModel):
 
 
 ProvisionerDefinition = Annotated[
-    GitHubReleaseProvisioner | GitCheckoutProvisioner,
+    GitHubReleaseProvisioner | AdoptiumProvisioner | GitCheckoutProvisioner,
     Field(discriminator="kind"),
 ]
 
@@ -216,9 +240,11 @@ class AdapterManifest(StrictModel):
         if self.kind == AdapterKind.TOOL and self.probe is None:
             raise ValueError("tool adapters require an executable probe")
         if self.kind == AdapterKind.TOOL:
+            if self.probe and self.probe.managed_adapter_id is not None:
+                raise ValueError("a tool's own executable probe cannot reference another adapter")
             if isinstance(self.provisioner, GitCheckoutProvisioner):
                 raise ValueError("tool adapters cannot provision executable code through Git checkout")
-            if isinstance(self.provisioner, GitHubReleaseProvisioner):
+            if isinstance(self.provisioner, (GitHubReleaseProvisioner, AdoptiumProvisioner)):
                 missing = [
                     platform
                     for platform in self.platforms
@@ -432,6 +458,7 @@ class AdapterRegistry:
             items = {item.adapter_id: item for item in manifest.adapters}
             if len(items) != len(manifest.adapters):
                 raise ValueError("adapter identifiers must be unique")
+            _validate_managed_requirement_graph(items)
             if self.capability_execution_classes is not None:
                 unknown = sorted(
                     {
@@ -563,7 +590,10 @@ class AdapterManager:
             raise AdapterRegistryError("conformance report fixture does not match the operation suite")
         if len(report.requirement_identity_sha256) != len(manifest.requirements):
             raise AdapterRegistryError("conformance report requirements do not match the manifest")
-        current_requirement_identities = _requirement_identities(manifest, current_platform())
+        current_requirement_identities = self._requirement_observations(
+            manifest,
+            current_platform(),
+        )[1]
         if report.requirement_identity_sha256 != current_requirement_identities:
             raise AdapterRegistryError("conformance report requirement identity does not match the runtime")
         if self.conformance_verifier is not None:
@@ -609,7 +639,10 @@ class AdapterManager:
             manifest,
             tool_version=status.version,
             observed_identity_sha256=status.observed_identity_sha256,
-            requirement_identity_sha256=_requirement_identities(manifest, status.platform),
+            requirement_identity_sha256=self._requirement_observations(
+                manifest,
+                status.platform,
+            )[1],
             entrypoints=status.entrypoints,
         )
 
@@ -737,7 +770,7 @@ class AdapterManager:
                     detail=f"managed install metadata; version={passive_version}",
                 )
 
-        requirement_paths, requirement_identity_sha256 = _requirement_observations(
+        requirement_paths, requirement_identity_sha256 = self._requirement_observations(
             manifest,
             platform,
         )
@@ -746,7 +779,7 @@ class AdapterManager:
             tool_version=passive_version,
             observed_identity_sha256=observed_identity_sha256,
             requirement_identity_sha256=requirement_identity_sha256,
-            entrypoints=entrypoints,
+            entrypoints=[*entrypoints, *[path for path in requirement_paths if path]],
         )
         version = passive_version
         if passive_version_check is not None:
@@ -845,11 +878,17 @@ class AdapterManager:
             if operation.operation_id in passing_reports
             for capability in operation.capabilities
         }
-        available_capabilities = (
-            [capability for capability in manifest.capabilities if capability in conformant_capabilities]
-            if healthy
-            else []
-        )
+        available_capabilities = []
+        if healthy:
+            available_capabilities = (
+                list(manifest.capabilities)
+                if not manifest.operations
+                else [
+                    capability
+                    for capability in manifest.capabilities
+                    if capability in conformant_capabilities
+                ]
+            )
         return AdapterStatus(
             adapter_id=adapter_id,
             manifest_digest=manifest.digest(),
@@ -861,7 +900,7 @@ class AdapterManager:
             source=source,
             version=version or (record.version if record else None),
             revision=record.revision if record and source == "managed" else None,
-            entrypoints=entrypoints,
+            entrypoints=[*entrypoints, *[path for path in requirement_paths if path]],
             observed_identity_sha256=observed_identity_sha256,
             conformant_operations=conformant_operations,
             declared_capabilities=manifest.capabilities,
@@ -874,6 +913,43 @@ class AdapterManager:
         return [
             self.status(item.adapter_id) for item in self.registry.all() if kind is None or item.kind == kind
         ]
+
+    def _requirement_observations(
+        self,
+        manifest: AdapterManifest,
+        platform: str,
+    ) -> tuple[list[str | None], list[str | None]]:
+        paths: list[str | None] = []
+        identities: list[str | None] = []
+        for requirement in manifest.requirements:
+            path: str | None = None
+            if requirement.managed_adapter_id is not None:
+                dependency = self.registry.get(requirement.managed_adapter_id)
+                record = self._installed_record(dependency)
+                if record is not None:
+                    names = {
+                        Path(name).name.casefold()
+                        for name in platform_values(requirement.executable_names, platform) or []
+                    }
+                    path = next(
+                        (
+                            candidate
+                            for candidate in self._managed_entrypoints(record)
+                            if Path(candidate).name.casefold() in names
+                        ),
+                        None,
+                    )
+            if path is None:
+                path = _which_probe(requirement, platform)
+            paths.append(path)
+            if path is None:
+                identities.append(None)
+                continue
+            try:
+                identities.append(observed_tool_identity_digest([path]))
+            except (OSError, AdapterRegistryError):
+                identities.append(None)
+        return paths, identities
 
     def resolve(
         self,
@@ -1228,36 +1304,13 @@ def _which_probe(probe: ProbeDefinition, platform: str) -> str | None:
     return None
 
 
-def _requirement_observations(
-    manifest: AdapterManifest,
-    platform: str,
-) -> tuple[list[str | None], list[str | None]]:
-    paths: list[str | None] = []
-    identities: list[str | None] = []
-    for requirement in manifest.requirements:
-        path = _which_probe(requirement, platform)
-        paths.append(path)
-        if path is None:
-            identities.append(None)
-            continue
-        try:
-            identities.append(observed_tool_identity_digest([path]))
-        except (OSError, AdapterRegistryError):
-            identities.append(None)
-    return paths, identities
-
-
-def _requirement_identities(manifest: AdapterManifest, platform: str) -> list[str | None]:
-    return _requirement_observations(manifest, platform)[1]
-
-
 def _report_check_ok(report: AdapterConformanceReport, name: str) -> bool:
     return any(check.name == name and check.ok for check in report.checks)
 
 
 def _system_entrypoints(manifest: AdapterManifest, executable: Path, platform: str) -> list[str]:
     definition = manifest.provisioner
-    if isinstance(definition, GitHubReleaseProvisioner):
+    if isinstance(definition, (GitHubReleaseProvisioner, AdoptiumProvisioner)):
         relatives = platform_values(definition.entrypoints, platform) or []
         if relatives and Path(relatives[0]).name.casefold() == executable.name.casefold():
             root = executable.resolve()
@@ -1410,7 +1463,7 @@ def _terms(value: str) -> set[str]:
 
 
 def _managed_content_limit(manifest: AdapterManifest) -> int:
-    if isinstance(manifest.provisioner, GitHubReleaseProvisioner):
+    if isinstance(manifest.provisioner, (GitHubReleaseProvisioner, AdoptiumProvisioner)):
         return manifest.provisioner.max_install_bytes
     if isinstance(manifest.provisioner, GitCheckoutProvisioner):
         return manifest.provisioner.max_checkout_bytes
@@ -1423,6 +1476,13 @@ def _resolution_capabilities(
 ) -> set[str]:
     if manifest.kind == AdapterKind.KNOWLEDGE:
         return set(manifest.capabilities)
+    if not manifest.operations:
+        if (
+            max_execution_class is None
+            or EXECUTION_CLASS_RANK[manifest.max_execution_class] <= EXECUTION_CLASS_RANK[max_execution_class]
+        ):
+            return set(manifest.capabilities)
+        return set()
     return {
         capability
         for operation in manifest.operations
@@ -1430,6 +1490,44 @@ def _resolution_capabilities(
         or EXECUTION_CLASS_RANK[operation.execution_class] <= EXECUTION_CLASS_RANK[max_execution_class]
         for capability in operation.capabilities
     }
+
+
+def _validate_managed_requirement_graph(items: dict[str, AdapterManifest]) -> None:
+    edges: dict[str, set[str]] = {adapter_id: set() for adapter_id in items}
+    for manifest in items.values():
+        for requirement in manifest.requirements:
+            dependency_id = requirement.managed_adapter_id
+            if dependency_id is None:
+                continue
+            if dependency_id == manifest.adapter_id:
+                raise ValueError(f"adapter {manifest.adapter_id} cannot provide its own runtime requirement")
+            dependency = items.get(dependency_id)
+            if dependency is None:
+                raise ValueError(
+                    f"adapter {manifest.adapter_id} references unknown managed requirement: {dependency_id}"
+                )
+            if dependency.kind != AdapterKind.TOOL or dependency.provisioner is None:
+                raise ValueError(f"managed requirement {dependency_id} must be a provisionable tool adapter")
+            if dependency.probe is None:
+                raise ValueError(f"managed requirement {dependency_id} has no executable probe")
+            edges[manifest.adapter_id].add(dependency_id)
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(adapter_id: str) -> None:
+        if adapter_id in visiting:
+            raise ValueError(f"managed adapter requirements contain a cycle at {adapter_id}")
+        if adapter_id in visited:
+            return
+        visiting.add(adapter_id)
+        for dependency_id in sorted(edges[adapter_id]):
+            visit(dependency_id)
+        visiting.remove(adapter_id)
+        visited.add(adapter_id)
+
+    for adapter_id in sorted(items):
+        visit(adapter_id)
 
 
 def _selection_cost(

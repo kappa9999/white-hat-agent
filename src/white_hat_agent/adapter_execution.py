@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import shutil
 import signal
 import stat
 import subprocess
@@ -32,7 +33,6 @@ from .adapter_registry import (
     OperationResourceLimits,
     ProbeDefinition,
     _probe_file_version,
-    _requirement_observations,
     _version_matches_probe,
 )
 from .campaign.fleet import FleetStore
@@ -1672,7 +1672,7 @@ def _ghidra_tool_payload_digest(entrypoints: list[str], script_payload: bytes) -
         root / "Ghidra/Processors/x86/data/languages/x86.ldefs",
     ]
     provider_digest = _hash_file_set(root, operation_files)
-    java_digest, java_config_digest = _system_java_payload_digests()
+    java_digest, java_config_digest = _system_java_payload_digests(entrypoints)
     return stable_digest(
         {
             "provider_payload_sha256": provider_digest,
@@ -1728,7 +1728,7 @@ class GhidraBinarySummaryDriver:
             ),
             mounts=(
                 SandboxMount(self._root(status.entrypoints), "/opt/tool"),
-                *_system_java_mounts(),
+                *_system_java_mounts(status.entrypoints),
                 SandboxMount(script, "/opt/wha-assets/WhaBinarySummary.java"),
             ),
             result_relative_path="summary.json",
@@ -1847,7 +1847,7 @@ class GhidraNativeCodeMapDriver:
             ),
             mounts=(
                 SandboxMount(_ghidra_root(status.entrypoints), "/opt/tool"),
-                *_system_java_mounts(),
+                *_system_java_mounts(status.entrypoints),
                 SandboxMount(script, "/opt/wha-assets/WhaNativeCodeMap.java"),
             ),
             result_relative_path="native-code-map.json",
@@ -2163,7 +2163,7 @@ class JadxAndroidStaticMapDriver:
             root,
             [self._entrypoint(entrypoints), self._payload_jar(root)],
         )
-        java_digest, java_config_digest = _system_java_payload_digests()
+        java_digest, java_config_digest = _system_java_payload_digests(entrypoints)
         return stable_digest(
             {
                 "provider_payload_sha256": provider_digest,
@@ -2175,7 +2175,7 @@ class JadxAndroidStaticMapDriver:
     def _mounts(self, entrypoints: list[str]) -> tuple[SandboxMount, ...]:
         return (
             SandboxMount(self._root(entrypoints), "/opt/tool"),
-            *_system_java_mounts(),
+            *_system_java_mounts(entrypoints),
         )
 
     def version_invocation(self, status: AdapterStatus) -> TrustedInvocation:
@@ -2503,7 +2503,7 @@ class AdapterExecutionBroker:
         tool_digest = driver.tool_payload_digest(status.entrypoints)
         tool_version = "unobserved"
         fixture = _conformance_fixture(operation_id)
-        requirement_paths, requirement_identity_sha256 = _requirement_observations(
+        requirement_paths, requirement_identity_sha256 = self.manager._requirement_observations(
             manifest,
             status.platform,
         )
@@ -3836,13 +3836,19 @@ def _bounded_json_records(
     return records, used_bytes
 
 
-def _system_java_home() -> Path:
-    java = Path("/usr/bin/java")
-    if not java.exists():
-        raise AdapterExecutionError("typed Java operation requires system Java")
+def _system_java_home(entrypoints: list[str] | tuple[str, ...] = ()) -> Path:
+    java = next(
+        (Path(value) for value in entrypoints if Path(value).name.casefold() in {"java", "java.exe"}),
+        None,
+    )
+    if java is None:
+        resolved = shutil.which("java")
+        java = Path(resolved) if resolved else None
+    if java is None or not java.exists():
+        raise AdapterExecutionError("typed Java operation requires an observed Java runtime")
     java_home = java.resolve(strict=True).parent.parent
     if not java_home.is_dir():
-        raise AdapterExecutionError("system Java home is unavailable")
+        raise AdapterExecutionError("Java home is unavailable")
     return java_home
 
 
@@ -3867,26 +3873,43 @@ def _system_java_config_roots(java_home: Path) -> tuple[Path, ...]:
     return tuple(sorted(roots))
 
 
-def _system_java_mounts() -> tuple[SandboxMount, ...]:
-    java_home = _system_java_home()
+def _system_java_mounts(
+    entrypoints: list[str] | tuple[str, ...] = (),
+) -> tuple[SandboxMount, ...]:
+    java_home = _system_java_home(entrypoints)
     return (
         SandboxMount(java_home, "/opt/java"),
         *(SandboxMount(root, root.as_posix()) for root in _system_java_config_roots(java_home)),
     )
 
 
-def _system_java_payload_digests() -> tuple[str, str]:
-    java_home = _system_java_home()
+def _system_java_payload_digests(
+    entrypoints: list[str] | tuple[str, ...] = (),
+) -> tuple[str, str]:
+    java_home = _system_java_home(entrypoints)
+    java_executable = next(
+        (path for path in (java_home / "bin/java", java_home / "bin/java.exe") if path.is_file()),
+        None,
+    )
+    if java_executable is None:
+        raise AdapterExecutionError("Java executable is unavailable beneath the observed home")
+    core_payloads = [java_home / "release", java_executable, java_home / "lib/modules"]
+    if any(not path.is_file() for path in core_payloads):
+        raise AdapterExecutionError("Java runtime is missing a required content-identity payload")
+    native_candidates = [
+        java_home / "lib/libjava.so",
+        java_home / "lib/libjli.so",
+        java_home / "lib/server/libjvm.so",
+        java_home / "lib/libjava.dylib",
+        java_home / "lib/libjli.dylib",
+        java_home / "lib/server/libjvm.dylib",
+        java_home / "bin/java.dll",
+        java_home / "bin/jli.dll",
+        java_home / "bin/server/jvm.dll",
+    ]
     java_digest = _hash_file_set(
         java_home,
-        [
-            java_home / "release",
-            java_home / "bin/java",
-            java_home / "lib/modules",
-            java_home / "lib/libjava.so",
-            java_home / "lib/libjli.so",
-            java_home / "lib/server/libjvm.so",
-        ],
+        [*core_payloads, *[path for path in native_candidates if path.is_file()]],
     )
     config_roots = _system_java_config_roots(java_home)
     config_payloads = [

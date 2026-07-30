@@ -132,10 +132,13 @@ provisions, then provider count, priority, and ID, and returns explicit gaps. Se
 and planning never install anything.
 
 Provisioning has a separate plan/apply boundary. A GitHub release plan resolves one official repository, exact release
-tag, asset size, and GitHub-published SHA-256; a Git plan resolves one reviewed repository/ref to an exact commit.
+tag, asset size, and GitHub-published SHA-256; an Adoptium plan resolves one platform-specific JDK package and its
+declared checksum; a Git plan resolves one reviewed repository/ref to an exact commit.
 Application revalidates manifest, host, release/commit identity, sources, digests, and bounds; rejects archive
 traversal, links, special files, and unbounded downloads/checkouts; and activates only a complete workspace-local
-installation. Managed knowledge is content-tree hashed and reverified before access. Native tool APIs and CLIs remain
+installation. The explicit `adapter ensure` operation composes resolution, dependency closure, plan/apply, and only
+the relevant fixed conformance suites; none of those mutations occur during ordinary planning. Managed knowledge is
+content-tree hashed and reverified before access. Native tool APIs and CLIs remain
 the automation surface; unofficial MCP wrappers are not silently installed. Tool health proves only observed
 availability. A typed operation grants executable capabilities only after its current manifest, driver, fixture,
 sandbox, observed entrypoint, and operation payload match one passing conformance report. Execution then requires an

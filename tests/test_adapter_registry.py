@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import json
 import lzma
 import shutil
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -16,6 +18,7 @@ from white_hat_agent.adapter_provisioning import (
     AdapterProvisionPlan,
     ProvisionAction,
     ResolvedArtifact,
+    _adoptium_api_url,
     _materialize_assets,
 )
 from white_hat_agent.adapter_registry import (
@@ -30,6 +33,7 @@ from white_hat_agent.adapter_registry import (
     AdapterRegistry,
     AdapterRegistryError,
     AdapterStatus,
+    AdoptiumProvisioner,
     GitHubReleaseProvisioner,
     InstalledAdapterRecord,
     OperationResourceLimits,
@@ -129,6 +133,47 @@ def _knowledge_manifest(adapter_id: str = "fixture-knowledge") -> AdapterManifes
     )
 
 
+def _runtime_manifest(adapter_id: str = "fixture-jdk") -> AdapterManifest:
+    return AdapterManifest(
+        adapter_id=adapter_id,
+        title="Fixture Java runtime",
+        description="Fixture managed Java runtime dependency",
+        kind=AdapterKind.TOOL,
+        provider="Fixture",
+        provider_url="https://example.test/runtime",
+        license=_license(),
+        capabilities=["runtime.java"],
+        modes=[ExecutionMode.OFFLINE],
+        max_execution_class=ExecutionClass.ANALYSIS,
+        platforms=[
+            "linux-x86_64",
+            "linux-arm64",
+            "macos-x86_64",
+            "macos-arm64",
+            "windows-x86_64",
+            "windows-arm64",
+        ],
+        probe=ProbeDefinition(
+            executable_names={"any": ["java", "java.exe"]},
+            version_args=["-version"],
+            version_pattern=r'version "(?P<version>[0-9]+(?:\.[0-9]+)*)',
+            minimum_version="21",
+        ),
+        provisioner=AdoptiumProvisioner(
+            feature_version=21,
+            entrypoints={
+                "linux": ["bin/java"],
+                "macos": ["Contents/Home/bin/java"],
+                "windows": ["bin/java.exe"],
+            },
+            max_download_bytes=400_000_000,
+            max_install_bytes=1_000_000_000,
+        ),
+        operations=[],
+        updated_at=utc_now(),
+    )
+
+
 def _registry(tmp_path: Path, manifests: list[AdapterManifest]) -> AdapterRegistry:
     path = tmp_path / "catalog.yaml"
     payload = json.loads(AdapterCatalogManifest(adapters=manifests).model_dump_json())
@@ -204,11 +249,13 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
             "binary.runtime-inspect": ExecutionClass.ANALYSIS,
             "binary.static-inspect": ExecutionClass.ANALYSIS,
             "code.search": ExecutionClass.ANALYSIS,
+            "experiment.design": ExecutionClass.ANALYSIS,
             "graph.reason": ExecutionClass.ANALYSIS,
             "hypothesis.generate": ExecutionClass.ANALYSIS,
             "mobile.runtime-observe": ExecutionClass.READ_ONLY,
             "mobile.static-inspect": ExecutionClass.ANALYSIS,
             "network.capture-inspect": ExecutionClass.ANALYSIS,
+            "runtime.java": ExecutionClass.ANALYSIS,
             "trace.capture": ExecutionClass.READ_ONLY,
         },
     )
@@ -218,11 +265,12 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     knowledge = registry.search("", kind=AdapterKind.KNOWLEDGE)
 
     assert report.valid
-    assert report.adapter_count == 9
+    assert report.adapter_count == 11
     assert reverse[0].adapter.adapter_id == "ghidra"
     assert {item.adapter.adapter_id for item in knowledge} == {
         "capa-rules",
         "mitre-attack",
+        "owasp-wstg",
     }
     jadx = registry.get("jadx")
     assert [operation.operation_id for operation in jadx.operations] == ["jadx.android-static-map"]
@@ -235,6 +283,10 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     ]
     assert ghidra.operations[1].capabilities == ["binary.static-inspect"]
     assert ghidra.operations[1].output_types == ["surface/native-code-map"]
+    assert ghidra.requirements[0].managed_adapter_id == "temurin-jdk"
+    temurin = registry.get("temurin-jdk")
+    assert temurin.capabilities == ["runtime.java"]
+    assert temurin.operations == []
     yara_x = registry.get("yara-x")
     assert yara_x.capabilities == ["artifact.signature-match"]
     assert [operation.operation_id for operation in yara_x.operations] == ["yara-x.file-scan"]
@@ -783,6 +835,159 @@ def test_release_plan_resolves_one_versioned_entrypoint(tmp_path, monkeypatch) -
 
     assert plan.entrypoints == ["tool-2.3.4"]
     assert plan.target_version == "2.3.4"
+
+
+def test_adoptium_plan_binds_platform_package_checksum_and_release(tmp_path, monkeypatch) -> None:
+    manifest = _runtime_manifest()
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+    monkeypatch.setattr(
+        manager,
+        "status",
+        lambda _: AdapterStatus(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            observed_at=utc_now(),
+            platform="linux-x86_64",
+            supported=True,
+            installed=False,
+            healthy=False,
+        ),
+    )
+    monkeypatch.setattr(adapter_provisioning, "current_platform", lambda: "linux-x86_64")
+    package_url = (
+        "https://github.com/adoptium/temurin21-binaries/releases/download/"
+        "jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz"
+    )
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_get_adoptium_json",
+        lambda _: [
+            {
+                "release_name": "jdk-21.0.12+8",
+                "binary": {
+                    "architecture": "x64",
+                    "os": "linux",
+                    "image_type": "jdk",
+                    "jvm_impl": "hotspot",
+                    "package": {
+                        "name": "OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz",
+                        "link": package_url,
+                        "size": 207_486_543,
+                        "checksum": "a" * 64,
+                    },
+                },
+            }
+        ],
+    )
+
+    plan = AdapterProvisioner(manager).plan(manifest.adapter_id)
+
+    assert plan.method == "adoptium-api"
+    assert plan.target_version == "21.0.12+8"
+    assert plan.revision == "jdk-21.0.12+8"
+    assert plan.entrypoints == ["bin/java"]
+    assert plan.artifacts == [
+        ResolvedArtifact(
+            name="OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz",
+            url=package_url,
+            size=207_486_543,
+            sha256="a" * 64,
+        )
+    ]
+    assert "architecture=x64" in plan.source_urls[0]
+
+    mismatched_url = package_url.removesuffix(plan.artifacts[0].name) + "other.tar.gz"
+    mismatched_artifact = plan.artifacts[0].model_copy(update={"url": mismatched_url})
+    mismatched_plan = plan.model_copy(
+        update={
+            "artifacts": [mismatched_artifact],
+            "source_urls": [plan.source_urls[0], mismatched_url],
+        }
+    )
+    with pytest.raises(AdapterRegistryError, match="package URL"):
+        AdapterProvisioner(manager).provision(mismatched_plan)
+
+    archive = tmp_path / plan.artifacts[0].name
+    with tarfile.open(archive, "w:gz") as bundle:
+        payload = b"managed java"
+        member = tarfile.TarInfo("jdk-21.0.12+8/bin/java")
+        member.size = len(payload)
+        bundle.addfile(member, io.BytesIO(payload))
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_download_artifact",
+        lambda _artifact, destination, max_bytes: shutil.copyfile(archive, destination),
+    )
+
+    result = AdapterProvisioner(manager).provision(plan)
+
+    assert result.changed
+    assert (tmp_path / "managed/fixture-jdk/content/bin/java").read_bytes() == b"managed java"
+
+
+@pytest.mark.parametrize(
+    ("platform", "coordinate", "entrypoint"),
+    [
+        ("linux-x86_64", "architecture=x64", "bin/java"),
+        ("linux-arm64", "architecture=aarch64", "bin/java"),
+        ("macos-x86_64", "os=mac", "Contents/Home/bin/java"),
+        ("macos-arm64", "architecture=aarch64", "Contents/Home/bin/java"),
+        ("windows-x86_64", "os=windows", "bin/java.exe"),
+        ("windows-arm64", "architecture=aarch64", "bin/java.exe"),
+    ],
+)
+def test_adoptium_platform_matrix_is_bounded(platform, coordinate, entrypoint) -> None:
+    definition = _runtime_manifest().provisioner
+    assert isinstance(definition, AdoptiumProvisioner)
+
+    url = _adoptium_api_url(definition, platform)
+
+    assert coordinate in url
+    assert entrypoint in definition.entrypoints[platform.split("-", 1)[0]]
+
+
+def test_managed_requirement_is_preferred_when_host_dependency_is_missing(tmp_path, monkeypatch) -> None:
+    runtime = _runtime_manifest()
+    requirement = ProbeDefinition(
+        executable_names={"any": ["java"]},
+        version_args=["-version"],
+        version_pattern=r'version "(?P<version>[0-9]+(?:\.[0-9]+)*)',
+        minimum_version="21",
+        managed_adapter_id=runtime.adapter_id,
+    )
+    tool = _tool_manifest().model_copy(update={"requirements": [requirement]})
+    manager = AdapterManager(_registry(tmp_path, [runtime, tool]), tmp_path / "managed")
+    content = tmp_path / "managed/fixture-jdk/content"
+    java = content / "bin/java"
+    java.parent.mkdir(parents=True)
+    java.write_bytes(b"managed java")
+    record = InstalledAdapterRecord(
+        adapter_id=runtime.adapter_id,
+        manifest_digest=runtime.digest(),
+        version="21.0.12",
+        revision="jdk-21.0.12+8",
+        source_urls=["https://api.adoptium.net/v3/assets/latest/21/hotspot"],
+        content_sha256=content_tree_digest(content),
+        entrypoints=["bin/java"],
+        installed_at=utc_now(),
+    )
+    (content.parent / "installed.json").write_text(record.model_dump_json())
+    monkeypatch.setattr("white_hat_agent.adapter_registry.shutil.which", lambda _name: None)
+
+    paths, identities = manager._requirement_observations(tool, current_platform())
+
+    assert paths == [str(java.resolve())]
+    assert identities == [observed_tool_identity_digest([str(java.resolve())])]
+
+
+def test_runtime_only_adapter_remains_resolvable_without_a_fake_operation(tmp_path) -> None:
+    runtime = _runtime_manifest()
+    manager = AdapterManager(_registry(tmp_path, [runtime]), tmp_path / "managed")
+
+    selection = manager.resolve(["runtime.java"])
+
+    assert selection.complete
+    assert selection.selected_adapters == [runtime.adapter_id]
 
 
 def test_release_entrypoint_rejects_unknown_or_repeated_templates() -> None:
