@@ -36,7 +36,7 @@ wha adapter install ghidra --yes
 # Exercise only the bundled inert fixture inside the offline sandbox.
 wha adapter conform ghidra
 
-# The status now exposes ghidra.binary-summary and artifact.inspect.
+# The status now exposes both reviewed Ghidra operations and their capabilities.
 wha adapter status ghidra
 ```
 
@@ -46,7 +46,7 @@ execution boundary and writes its identity-bound conformance report.
 
 `adapter conform` is the separate local execution gate. It never reads campaign evidence: inside the same offline
 supervisor it runs fixed version/dependency probes, then the reviewed driver against its bundled inert fixture (the
-784-byte ELF or 904-byte DEX), and writes one identity-bound report under
+784-byte summary ELF, 1,496-byte native-map ELF, or 904-byte DEX), and writes one identity-bound report under
 `.whitehat/adapters/.conformance/`. A tool or manifest change invalidates the report. `adapter resolve` reports a
 present, identity-observable but unproven provider under `conformance_required`, not `ready_adapters`. An installed
 tool whose identity cannot be read is repaired through its reviewed provisioner when one exists; it is otherwise an
@@ -84,7 +84,15 @@ The first executable family is deliberately small:
 | `llvm.object-inspect` | ELF header, sections, symbols, and needed libraries | `llvm-readobj` JSON only |
 | `capa.file-analyze` | Bounded behavior-rule summaries and analysis identity | capa JSON with embedded reviewed rules |
 | `ghidra.binary-summary` | Program, memory-block, function, and external-symbol summary | bundled `WhaBinarySummary.java` only |
+| `ghidra.native-code-map` | Decompiled functions, exact callsites, defined strings, and anchored string xrefs | bundled `WhaNativeCodeMap.java` only |
 | `jadx.android-static-map` | Decompiled class JSON, method code, call graph, manifest text, and resource inventory | fixed JADX JSON and JSON call-graph modes |
+
+The Ghidra native-code-map driver accepts one `artifact/file` evidence object and emits one
+`surface/native-code-map`. Its only script is packaged with the release and content-digested with the Ghidra and Java
+payloads. Record and character budgets are divided across functions, call edges, strings, and xrefs so one category
+cannot consume the complete result. Every decompiler failure, per-function code truncation, section truncation, exact
+callsite, and xref anchor remains explicit. The request has no script, symbol, address, option, path, environment, or
+project field.
 
 The JADX driver accepts one `artifact/mobile-build` evidence object and emits one `surface/static-map`. It fixes the
 configuration, mapping, deobfuscation, output, call-graph, thread, and logging modes; callers cannot add a plugin or

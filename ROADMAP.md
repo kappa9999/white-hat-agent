@@ -25,8 +25,8 @@
   before treating the local supervisor as a hostile-artifact detonation boundary;
 - bounded HTTP observation adapter for owned labs and exact program scopes;
 - repository/patch-diff adapter using local source artifacts;
-- expand typed operations beyond the current Ghidra summary, capa analysis, LLVM object inspection, and JADX Android
-  static map;
+- expand typed operations beyond the current Ghidra summary/native-code map, capa analysis, LLVM object inspection,
+  and JADX Android static map;
 - browser and cloud adapters only after transport, credential, and tenant controls are defined; and
 - evidence signing and adapter output truncation manifests.
 

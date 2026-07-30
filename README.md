@@ -92,6 +92,7 @@ wha adapter install ghidra --yes
 # Fixed command-backed version checks run only here, inside the offline sandbox.
 wha adapter conform ghidra
 wha adapter status ghidra
+wha adapter resolve --capability binary.static-inspect
 
 # Give a mobile-analysis agent a reviewed Android static map.
 wha adapter install jadx --yes
@@ -104,12 +105,13 @@ wha adapter search mitre-attack T1059.001
 ```
 
 The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Reviewed typed drivers
-execute Ghidra binary summaries, capa behavior identification, LLVM object inspection, and JADX Android class,
-call-graph, manifest, and resource mapping on Linux/WSL. They run without network access over immutable fleet-task
-evidence. Status and resolution never execute discovered binaries; fixed command-backed version checks run only
-during explicit sandboxed conformance, and a version result alone grants no executable capability. Knowledge adapters
-cover MITRE ATT&CK STIX and capa rules; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion remains in the
-intelligence layer. See
+execute Ghidra summaries and native-code maps, capa behavior identification, LLVM object inspection, and JADX Android
+class, call-graph, manifest, and resource mapping on Linux/WSL. Ghidra native-code maps include bounded decompiler
+text, exact callsites, defined strings, and anchored string xrefs. They run without network access over immutable
+fleet-task evidence. Status and resolution never execute discovered binaries; fixed command-backed version checks
+run only during explicit sandboxed conformance, and a version result alone grants no executable capability.
+Knowledge adapters cover MITRE ATT&CK STIX and capa rules; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
+remains in the intelligence layer. See
 [tools and knowledge adapters](docs/adapters.md).
 
 Start the production public-intelligence loop with bounded official sources:
