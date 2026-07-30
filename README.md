@@ -102,8 +102,8 @@ The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, ca
 capa behavior identification, and LLVM object inspection are executable through reviewed typed drivers on Linux/WSL.
 They run without network access over immutable fleet-task evidence. Status and resolution never execute discovered
 binaries; fixed command-backed version checks run only during explicit sandboxed conformance, and a version result
-alone grants no executable capability. Knowledge adapters cover MITRE ATT&CK STIX and capa rules; existing CVE List
-V5, CISA KEV, OSV, and EPSS ingestion remains in the intelligence layer. See
+alone grants no executable capability. Knowledge adapters cover MITRE ATT&CK STIX and capa rules; CVE List V5, NVD
+2.0, CISA KEV, OSV, and EPSS ingestion remains in the intelligence layer. See
 [tools and knowledge adapters](docs/adapters.md).
 
 Start the production public-intelligence loop with bounded official sources:
@@ -115,7 +115,10 @@ wha intelligence sync \
 wha intelligence sync \
   --source cve-list-v5 \
   --since-hours 6 --limit-per-source 5000 --require-success
-wha intelligence brief --source osv --source cve-list-v5 --limit 25
+wha intelligence sync \
+  --source nvd \
+  --since-hours 6 --limit-per-source 5000 --require-success
+wha intelligence brief --source osv --source cve-list-v5 --source nvd --limit 25
 ```
 
 Every selected upstream record is backed by an immutable raw snapshot and transparent priority factors. Intelligence

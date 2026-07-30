@@ -21,6 +21,14 @@ on:
         description: CVE List V5 record-request ceiling
         required: false
         default: "5000"
+      nvd_since_hours:
+        description: Closed NVD last-modified lookback; NVD permits at most 120 days
+        required: false
+        default: "6"
+      nvd_limit_per_source:
+        description: NVD record ceiling; the checkpoint fails closed above it
+        required: false
+        default: "5000"
 
 permissions:
   actions: read
@@ -38,6 +46,8 @@ env:
   LIMIT_PER_SOURCE: ${{ inputs.limit_per_source || '1000' }}
   CVE_SINCE_HOURS: ${{ inputs.cve_since_hours || '6' }}
   CVE_LIMIT_PER_SOURCE: ${{ inputs.cve_limit_per_source || '5000' }}
+  NVD_SINCE_HOURS: ${{ inputs.nvd_since_hours || '6' }}
+  NVD_LIMIT_PER_SOURCE: ${{ inputs.nvd_limit_per_source || '5000' }}
 
 jobs:
   synchronize:
@@ -123,11 +133,21 @@ jobs:
             --require-success \
             --out .whitehat/intelligence/reports/cve-list-v5-sync.json
 
+      - name: Synchronize NVD enrichment
+        run: |
+          uv run wha intelligence sync \
+            --source nvd \
+            --since-hours "$NVD_SINCE_HOURS" \
+            --limit-per-source "$NVD_LIMIT_PER_SOURCE" \
+            --require-success \
+            --out .whitehat/intelligence/reports/nvd-sync.json
+
       - name: Render ranked outputs
         run: |
           uv run wha intelligence list \
             --source osv \
             --source cve-list-v5 \
+            --source nvd \
             --limit 1000 \
             --out .whitehat/intelligence/reports/advisories.json
           uv run wha intelligence status \
@@ -135,6 +155,7 @@ jobs:
           uv run wha intelligence brief \
             --source osv \
             --source cve-list-v5 \
+            --source nvd \
             --limit 25 \
             --out .whitehat/intelligence/reports/brief.md
           cat .whitehat/intelligence/reports/brief.md >> "$GITHUB_STEP_SUMMARY"

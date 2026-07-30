@@ -288,6 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[
             IntelligenceSource.CISA_KEV.value,
             IntelligenceSource.CVE_LIST_V5.value,
+            IntelligenceSource.NVD.value,
             IntelligenceSource.OSV.value,
         ],
     )
@@ -297,7 +298,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit-per-source",
         type=int,
         default=1000,
-        help=("CVE List V5, OSV, and EPSS selection ceiling; CISA always diffs the complete bounded catalog"),
+        help=(
+            "CVE List V5, NVD, OSV, and EPSS selection ceiling; "
+            "CISA always diffs the complete bounded catalog"
+        ),
     )
     intelligence_sync.add_argument("--enrich-epss", action="store_true")
     intelligence_sync.add_argument(

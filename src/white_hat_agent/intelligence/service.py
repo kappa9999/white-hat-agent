@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import re
+import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -39,7 +40,9 @@ from .sources import (
     CISA_ATTRIBUTION,
     CVE_LIST_V5_ATTRIBUTION,
     EPSS_ATTRIBUTION,
+    NVD_ATTRIBUTION,
     OSV_ATTRIBUTION,
+    NvdPage,
     ParsedSourceRecord,
     decode_json_array,
     decode_json_object,
@@ -47,6 +50,7 @@ from .sources import (
     parse_cve_delta_log,
     parse_cve_record,
     parse_epss,
+    parse_nvd_page,
     parse_osv_modified_index,
     parse_osv_record,
 )
@@ -56,11 +60,13 @@ from .transport import (
     CVE_LIST_V5_DELTA_URL,
     DEFAULT_USER_AGENT,
     EPSS_API_URL,
+    NVD_CVE_API_URL,
     OSV_API_BASE_URL,
     OSV_MODIFIED_INDEX_URL,
     HttpResponse,
     HttpTransport,
     UrllibHttpTransport,
+    nvd_cve_api_url,
 )
 
 _CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
@@ -100,6 +106,7 @@ class IntelligenceService:
         requested_sources = _normalize_sources(sources)
         normalized_ecosystems = _normalize_ecosystems(ecosystems)
         self._validate_sync_bounds(
+            sources=requested_sources,
             since_hours=since_hours,
             ecosystems=normalized_ecosystems,
             limit_per_source=limit_per_source,
@@ -122,6 +129,12 @@ class IntelligenceService:
                     outcome = self._sync_cisa(started_at, limit_per_source)
                 elif source == IntelligenceSource.CVE_LIST_V5:
                     outcome = self._sync_cve_list_v5(
+                        started_at,
+                        since_hours=since_hours,
+                        limit_per_source=limit_per_source,
+                    )
+                elif source == IntelligenceSource.NVD:
+                    outcome = self._sync_nvd(
                         started_at,
                         since_hours=since_hours,
                         limit_per_source=limit_per_source,
@@ -716,6 +729,246 @@ class IntelligenceService:
         )
         return _SourceOutcome(result, tuple(_unique_strings(selected_ids)))
 
+    def _sync_nvd(
+        self,
+        started_at: datetime,
+        *,
+        since_hours: float,
+        limit_per_source: int,
+    ) -> _SourceOutcome:
+        source = IntelligenceSource.NVD
+        previous_state = self.store.get_source_state(source)
+        window_anchor = started_at - timedelta(hours=since_hours)
+        if previous_state and previous_state.cursor_at:
+            window_anchor = max(window_anchor, previous_state.cursor_at)
+        boundary = window_anchor - timedelta(hours=self.limits.nvd_overlap_hours)
+        boundary = max(boundary, started_at - timedelta(days=120))
+        page_size = min(self.limits.max_nvd_records_per_page, limit_per_source)
+        snapshot_count = self.store.snapshot_count()
+        pages: list[tuple[NvdPage, str, str, int]] = []
+        issues: list[SyncIssue] = []
+        total_results: int | None = None
+        start_index = 0
+        last_etag: str | None = None
+        last_modified: str | None = None
+        truncated = False
+
+        while True:
+            if len(pages) >= self.limits.max_nvd_pages:
+                truncated = True
+                issues.append(
+                    SyncIssue(
+                        code="nvd_page_limit",
+                        message=f"NVD response exceeded the {self.limits.max_nvd_pages}-page ceiling",
+                        retriable=True,
+                    )
+                )
+                break
+            if pages and isinstance(self.transport, UrllibHttpTransport):
+                time.sleep(self.limits.nvd_request_delay_seconds)
+            url = nvd_cve_api_url(
+                boundary,
+                started_at,
+                results_per_page=page_size,
+                start_index=start_index,
+            )
+            response = self._get(
+                url,
+                max_bytes=self.limits.max_nvd_page_bytes,
+                accept="application/json",
+            )
+            page_digest = hashlib.sha256(response.body).hexdigest()
+            snapshot = self.store.save_snapshot(
+                response.body,
+                source=source,
+                kind=SnapshotKind.API_PAGE,
+                source_url=response.url,
+                retrieved_at=started_at,
+                media_type=response.header("Content-Type") or "application/json",
+                attribution=NVD_ATTRIBUTION,
+                http_status=response.status,
+                etag=response.header("ETag"),
+                last_modified=response.header("Last-Modified"),
+                source_metadata={
+                    "closed_window_boundary": boundary.isoformat(),
+                    "closed_window_end": started_at.isoformat(),
+                    "requested_start_index": start_index,
+                    "requested_results_per_page": page_size,
+                    "fetch_error": response.status != 200,
+                },
+            )
+            _require_success(response, source)
+            document = decode_json_object(response.body, source=source)
+            page = parse_nvd_page(
+                document,
+                snapshot,
+                expected_start_index=start_index,
+                max_items=page_size,
+                max_record_bytes=self.limits.max_nvd_record_bytes,
+            )
+            if total_results is None:
+                total_results = page.total_results
+                if total_results > limit_per_source:
+                    truncated = True
+                    issues.append(
+                        SyncIssue(
+                            code="nvd_candidate_limit",
+                            message=(
+                                f"NVD window returned {total_results} records, exceeding the "
+                                f"{limit_per_source}-record fail-closed ceiling"
+                            ),
+                            retriable=True,
+                        )
+                    )
+            elif page.total_results != total_results:
+                raise IntelligenceParseError(
+                    "NVD totalResults changed during pagination",
+                    source=source,
+                    retriable=True,
+                )
+            pages.append((page, snapshot.snapshot_id, page_digest, len(response.body)))
+            last_etag = response.header("ETag")
+            last_modified = response.header("Last-Modified")
+            if truncated or start_index + len(page.records) >= page.total_results:
+                break
+            start_index += len(page.records)
+
+        record_snapshots = [
+            (record, snapshot_id) for page, snapshot_id, _, _ in pages for record in page.records
+        ]
+        if truncated:
+            record_snapshots = []
+        identifiers = [record.source_record_id.casefold() for record, _ in record_snapshots]
+        if len(identifiers) != len(set(identifiers)):
+            raise IntelligenceParseError("NVD pagination returned duplicate CVE records", source=source)
+
+        counts = _empty_counts()
+        selected_ids: list[str] = []
+        for record, page_snapshot_id in record_snapshots:
+            state = self.store.upsert_source_record(
+                record,
+                snapshot_id=page_snapshot_id,
+                seen_at=started_at,
+            )
+            _increment_count(counts, state)
+            selected_ids.append(self.store.get_advisory(record.source_record_id).advisory_id)
+
+        manifest = {
+            "schema_version": "1.0",
+            "kind": "nvd-cve-api-last-modified-selection",
+            "source_url": NVD_CVE_API_URL,
+            "retrieved_at": started_at.isoformat(),
+            "closed_window_boundary": boundary.isoformat(),
+            "closed_window_end": started_at.isoformat(),
+            "overlap_hours": self.limits.nvd_overlap_hours,
+            "total_results": total_results or 0,
+            "fail_closed": truncated,
+            "pages": [
+                {
+                    "start_index": page.start_index,
+                    "results_per_page": page.results_per_page,
+                    "records": len(page.records),
+                    "generated_at": page.generated_at.isoformat(),
+                    "snapshot_id": snapshot_id,
+                    "sha256": digest,
+                    "byte_length": byte_length,
+                }
+                for page, snapshot_id, digest, byte_length in pages
+            ],
+            "records": [
+                {
+                    "id": record.source_record_id,
+                    "raw_record_sha256": record.raw_record_sha256,
+                    "snapshot_id": snapshot_id,
+                }
+                for page, snapshot_id, _, _ in pages
+                for record in page.records
+                if not truncated
+            ],
+        }
+        manifest_body = json.dumps(
+            manifest,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+        manifest_snapshot = self.store.save_snapshot(
+            manifest_body,
+            source=source,
+            kind=SnapshotKind.SELECTION_MANIFEST,
+            source_url=NVD_CVE_API_URL,
+            retrieved_at=started_at,
+            media_type="application/vnd.white-hat-agent.nvd-selection+json",
+            attribution=NVD_ATTRIBUTION,
+            source_schema_version="1.0",
+            source_metadata={
+                "page_snapshot_ids": [snapshot_id for _, snapshot_id, _, _ in pages],
+                "total_results": total_results or 0,
+                "fail_closed": truncated,
+            },
+        )
+        status = SyncStatus.PARTIAL if issues or truncated else SyncStatus.SUCCESS
+        finished_at = _not_before(_aware_utc(self.clock()), started_at)
+        cursor_after = (
+            started_at
+            if status == SyncStatus.SUCCESS
+            else (previous_state.cursor_at if previous_state else None)
+        )
+        state = SourceState(
+            source=source,
+            last_attempt_at=finished_at,
+            last_success_at=(
+                finished_at
+                if status == SyncStatus.SUCCESS
+                else (previous_state.last_success_at if previous_state else None)
+            ),
+            cursor_at=cursor_after,
+            etag=(
+                last_etag
+                if status == SyncStatus.SUCCESS
+                else (previous_state.etag if previous_state else None)
+            ),
+            last_modified=(
+                last_modified
+                if status == SyncStatus.SUCCESS
+                else (previous_state.last_modified if previous_state else None)
+            ),
+            last_snapshot_id=manifest_snapshot.snapshot_id,
+            last_status=status,
+            metadata={
+                "closed_window_boundary": boundary.isoformat(),
+                "closed_window_end": started_at.isoformat(),
+                "overlap_hours": self.limits.nvd_overlap_hours,
+                "selection_manifest_id": manifest_snapshot.snapshot_id,
+                "page_snapshot_ids": [snapshot_id for _, snapshot_id, _, _ in pages],
+                "total_results": total_results or 0,
+            },
+        )
+        self.store.set_source_state(state)
+        result = SourceSyncResult(
+            source=source,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            records_seen=total_results or 0,
+            records_selected=len(record_snapshots),
+            records_inserted=counts[UpsertState.INSERTED],
+            records_updated=counts[UpsertState.UPDATED],
+            records_unchanged=counts[UpsertState.UNCHANGED],
+            snapshots_stored=self.store.snapshot_count() - snapshot_count,
+            truncated=truncated,
+            cursor_before=previous_state.cursor_at if previous_state else None,
+            cursor_after=cursor_after,
+            issues=issues,
+            metadata={
+                "selection_manifest_id": manifest_snapshot.snapshot_id,
+                "page_snapshot_ids": [snapshot_id for _, snapshot_id, _, _ in pages],
+                "page_count": len(pages),
+                "total_results": total_results or 0,
+            },
+        )
+        return _SourceOutcome(result, tuple(_unique_strings(selected_ids)))
+
     def _sync_osv(
         self,
         started_at: datetime,
@@ -1245,7 +1498,12 @@ class IntelligenceService:
         )
 
     def _validate_sync_bounds(
-        self, *, since_hours: float, ecosystems: list[str], limit_per_source: int
+        self,
+        *,
+        sources: list[IntelligenceSource],
+        since_hours: float,
+        ecosystems: list[str],
+        limit_per_source: int,
     ) -> None:
         if not 0.0 < since_hours <= 24 * 365:
             raise IntelligenceLimitError("since_hours must be between 0 and 8760")
@@ -1253,6 +1511,8 @@ class IntelligenceService:
             raise IntelligenceLimitError(
                 f"limit_per_source must be between 1 and {self.limits.max_limit_per_source}"
             )
+        if IntelligenceSource.NVD in sources and since_hours > 120 * 24:
+            raise IntelligenceLimitError("NVD since_hours cannot exceed the API's 120-day window")
         if len(ecosystems) > 100:
             raise IntelligenceLimitError("ecosystems filter exceeds 100 items")
         if any(len(ecosystem) > 200 for ecosystem in ecosystems):

@@ -793,12 +793,13 @@ def _merge_source_records(advisory_id: str, rows: list[sqlite3.Row]) -> Normaliz
     preference = {
         IntelligenceSource.CVE_LIST_V5: 0,
         IntelligenceSource.OSV: 1,
-        IntelligenceSource.CISA_KEV: 2,
-        IntelligenceSource.EPSS: 3,
+        IntelligenceSource.NVD: 2,
+        IntelligenceSource.CISA_KEV: 3,
+        IntelligenceSource.EPSS: 4,
     }
     semantic.sort(
         key=lambda item: (
-            4
+            5
             if item[0] == IntelligenceSource.CVE_LIST_V5
             and item[2].cve_record_state == CveRecordState.REJECTED
             else preference[item[0]],

@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .errors import IntelligenceLimitError, IntelligenceTransportError
@@ -16,11 +17,40 @@ CVE_LIST_V5_RECORD_BASE_URL = "https://raw.githubusercontent.com/CVEProject/cvel
 OSV_MODIFIED_INDEX_URL = "https://osv-vulnerabilities.storage.googleapis.com/modified_id.csv"
 OSV_API_BASE_URL = "https://api.osv.dev/v1/vulns/"
 EPSS_API_URL = "https://api.first.org/data/v1/epss"
+NVD_CVE_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 DEFAULT_USER_AGENT = "white-hat-agent-public-intelligence/1 (+https://github.com/kappa9999/white-hat-agent)"
 
 _CVE_LIST_V5_RECORD_PATH = re.compile(
     r"^/CVEProject/cvelistV5/main/cves/\d{4}/\d+xxx/CVE-\d{4}-\d{4,}\.json$"
 )
+
+
+def nvd_cve_api_url(
+    start: datetime,
+    end: datetime,
+    *,
+    results_per_page: int,
+    start_index: int,
+) -> str:
+    """Build the one supported NVD API 2.0 incremental request shape."""
+
+    if start.tzinfo is None or end.tzinfo is None or start > end:
+        raise ValueError("NVD window requires ordered timezone-aware datetimes")
+    if end - start > timedelta(days=120):
+        raise ValueError("NVD last-modified windows cannot exceed 120 days")
+    if not 1 <= results_per_page <= 2_000:
+        raise ValueError("NVD results_per_page must be between 1 and 2000")
+    if start_index < 0:
+        raise ValueError("NVD start_index cannot be negative")
+    query = urlencode(
+        (
+            ("lastModStartDate", _nvd_datetime(start)),
+            ("lastModEndDate", _nvd_datetime(end)),
+            ("resultsPerPage", str(results_per_page)),
+            ("startIndex", str(start_index)),
+        )
+    )
+    return f"{NVD_CVE_API_URL}?{query}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,9 +229,54 @@ def _validate_official_url(url: str) -> None:
             and not parsed.query
         )
         or (host == "api.first.org" and path == "/data/v1/epss")
+        or (
+            host == "services.nvd.nist.gov"
+            and path == "/rest/json/cves/2.0"
+            and _is_allowed_nvd_query(parsed.query)
+        )
     )
     if not allowed:
         raise IntelligenceTransportError("public source URL is outside the official allowlist")
+
+
+def _nvd_datetime(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _is_allowed_nvd_query(query: str) -> bool:
+    if not query or len(query) > 2_000:
+        return False
+    try:
+        pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return False
+    if len(pairs) != 4 or len({key for key, _ in pairs}) != 4:
+        return False
+    values = dict(pairs)
+    if set(values) != {"lastModStartDate", "lastModEndDate", "resultsPerPage", "startIndex"}:
+        return False
+    try:
+        start = _parse_nvd_datetime(values["lastModStartDate"])
+        end = _parse_nvd_datetime(values["lastModEndDate"])
+        results_per_page = int(values["resultsPerPage"])
+        start_index = int(values["startIndex"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        start <= end
+        and end - start <= timedelta(days=120)
+        and 1 <= results_per_page <= 2_000
+        and start_index >= 0
+        and str(results_per_page) == values["resultsPerPage"]
+        and str(start_index) == values["startIndex"]
+    )
+
+
+def _parse_nvd_datetime(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
+    if parsed.tzinfo is None:
+        raise ValueError("NVD datetime must include a timezone")
+    return parsed.astimezone(UTC)
 
 
 class _AllowlistedRedirectHandler(HTTPRedirectHandler):

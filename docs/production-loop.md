@@ -67,12 +67,25 @@ flowchart LR
 | CVE List V5 | Canonical CNA/ADP records and CVE state | 6 hours | Checkpoint the captured upstream batch time with overlap; never equate rejection, withdrawal, and source deletion |
 | OSV | Package, version, and Git-range applicability | 6 hours | Read the reverse-chronological modified index with an overlap window, then snapshot selected records |
 | FIRST EPSS | Dated probability enrichment | With each selected CVE set | Preserve score date; never treat probability as proof of exploitation |
-| NVD 2.0 | CVSS, CWE, CPE, and reference enrichment | Next adapter; no more than every 2 hours | Closed overlapping last-modified windows and documented rate limits |
+| NVD 2.0 | CVSS, SSVC, CWE, CPE/configuration, and reference enrichment | 6 hours; no more than every 2 hours | Closed overlapping last-modified windows, fail-closed pagination, and documented rate limits |
 
 OSV aggregates records with different upstream licenses. Every snapshot and normalized record therefore retains its
 own source URI and attribution metadata; the corpus license is never assumed to replace an upstream source license.
 EPSS is enrichment-only: missing scores remain visible as a partial enrichment result but do not invalidate a
-successful CISA/OSV primary-source checkpoint.
+successful primary-source checkpoint. NVD records use the required attribution: "This product uses data from the NVD
+API but is not endorsed or certified by the NVD."
+
+### NVD record contract
+
+The `nvd` adapter requests only the official CVE API 2.0 endpoint with a closed last-modified start/end window,
+`resultsPerPage`, and `startIndex`. The public-client path waits six seconds between pages. A successful checkpoint
+advances only after every declared result is captured within the configured record and page ceilings; a changing
+`totalResults`, duplicate CVE, malformed page, or exceeded ceiling retains evidence but fails the checkpoint closed.
+
+Each page and its selection manifest are immutable snapshots. Normalized CVSS, SSVC, CWE, and reference fields enrich
+the correlated CVE without replacing canonical CVE List V5 title, description, state, or affected-package semantics.
+The full NVD `configurations` and `affected` values remain source-native evidence. White Hat Agent does not flatten
+NVD's Boolean CPE applicability tree into package claims without a dedicated evaluator.
 
 ### CVE Program record contract
 
@@ -118,9 +131,9 @@ tenant isolation, audit principals, and a secrets boundary exist, use stdio or b
 
 The scheduled monitor is healthy when:
 
-- every successful run emits a machine-readable sync report, bounded recent OSV advisory selection, Markdown brief,
-  and raw content-addressed snapshots;
-- the latest successful CISA/OSV run is no more than 12 hours old;
+- every successful run emits machine-readable source reports, a bounded ranked selection, a Markdown brief, and raw
+  content-addressed snapshots;
+- the latest successful CISA, CVE List V5, NVD, and OSV checkpoints are no more than 12 hours old;
 - repeated overlapping runs are idempotent and record source updates without duplicating advisories;
 - malformed, oversized, or partial upstream data fails closed and is visible in the run report;
 - every ranked item exposes its score factors, aliases, source timestamp, observed time, raw digest, and attribution;
@@ -169,9 +182,14 @@ wha intelligence sync \
   --source cve-list-v5 \
   --since-hours 6 --limit-per-source 5000 --require-success \
   --out white-hat-workspace/.whitehat/intelligence/reports/cve-list-v5-sync.json
+wha intelligence sync \
+  --workspace white-hat-workspace \
+  --source nvd \
+  --since-hours 6 --limit-per-source 5000 --require-success \
+  --out white-hat-workspace/.whitehat/intelligence/reports/nvd-sync.json
 wha intelligence brief \
   --workspace white-hat-workspace \
-  --source osv --source cve-list-v5 \
+  --source osv --source cve-list-v5 --source nvd \
   --limit 25 \
   --out white-hat-workspace/.whitehat/intelligence/reports/brief.md
 wha intelligence applicability \
@@ -182,8 +200,8 @@ wha intelligence applicability \
 `applicability` is a pure local check. Its generated request/decision schemas bind the normalized advisory and exact
 artifact digests; the result never substitutes for the existing scope evaluator.
 
-`limit-per-source` is a CVE List V5, OSV, or EPSS fail-closed ceiling, not a request target; CISA always validates and
-diffs its complete bounded catalog. Incremental readers stop at their closed-window boundaries. If a ceiling is
+`limit-per-source` is a CVE List V5, NVD, OSV, or EPSS fail-closed ceiling, not a request target; CISA always validates
+and diffs its complete bounded catalog. Incremental readers stop at their closed-window boundaries. If a ceiling is
 reached first, the source reports `partial`, and `--require-success` prevents cursor advancement from being mistaken
 for a complete production run. Use `--include-rejected` on `list` or `brief` only when rejected CVE records are part
 of the analysis. Ecosystem filters narrow OSV acquisition and query views; canonical CVE records are always persisted

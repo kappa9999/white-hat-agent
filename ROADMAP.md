@@ -30,10 +30,9 @@
 
 ## Campaign intelligence
 
-- production advisory ingestion for CISA KEV, OSV, and FIRST EPSS with immutable source snapshots and transparent
-  prioritization;
-- NVD enrichment for the existing CVE List V5 records, with alias-graph correlation, source-specific attribution,
-  and periodic full reconciliation;
+- production advisory ingestion for CVE List V5, NVD 2.0, CISA KEV, OSV, and FIRST EPSS with immutable source
+  snapshots, source-specific attribution, and transparent prioritization;
+- periodic full NVD reconciliation beyond the implemented bounded incremental last-modified checkpoint;
 - importers for public bounty/open-source program feeds with exact policy and scope snapshots;
 - corpus-aware campaign decomposition across target inventories;
 - distributed coordinator with authenticated workers and tenant isolation;

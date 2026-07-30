@@ -59,6 +59,13 @@ EPSS_ATTRIBUTION = SourceAttribution(
     license_name="FIRST EPSS data terms",
     license_url="https://www.first.org/epss/",
 )
+NVD_ATTRIBUTION = SourceAttribution(
+    publisher="National Institute of Standards and Technology",
+    dataset="National Vulnerability Database CVE API 2.0",
+    attribution="This product uses data from the NVD API but is not endorsed or certified by the NVD.",
+    license_name="NVD API Terms of Use and NIST public data",
+    license_url="https://nvd.nist.gov/developers/request-an-api-key",
+)
 
 _MAX_ALIASES = 1_000
 _MAX_RELATED = 1_000
@@ -70,6 +77,9 @@ _MAX_REFERENCES = 10_000
 _MAX_SEVERITY_SIGNALS = 1_000
 _MAX_EPSS_ITEMS = 10_000
 _MAX_CVE_ADP_CONTAINERS = 1_000
+_MAX_NVD_WEAKNESSES = 10_000
+_MAX_NVD_CONFIGURATIONS = 10_000
+_MAX_NVD_AFFECTED = 10_000
 _URL_RE = re.compile(r"https?://[^\s,;]+")
 _CVE_ID_RE = re.compile(r"^CVE-(\d{4})-(\d{4,})$", re.IGNORECASE)
 _LEADING_VERSION_COMPARATOR_RE = re.compile(r"^(?:<=|>=|<|>)[ \t]*[^<>=\s]")
@@ -86,6 +96,17 @@ class ParsedSourceRecord:
     source_record_id: str
     advisory: NormalizedAdvisory
     raw_record_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class NvdPage:
+    records: tuple[ParsedSourceRecord, ...]
+    total_results: int
+    start_index: int
+    results_per_page: int
+    generated_at: datetime
+    format: str
+    version: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +176,247 @@ def decode_json_array(payload: bytes, *, source: IntelligenceSource) -> list[Any
     if not isinstance(value, list):
         raise IntelligenceParseError("public source JSON root must be an array", source=source)
     return value
+
+
+def parse_nvd_page(
+    document: dict[str, Any],
+    provenance: RawSnapshotProvenance,
+    *,
+    expected_start_index: int,
+    max_items: int,
+    max_record_bytes: int,
+) -> NvdPage:
+    """Validate and normalize one bounded NVD CVE API 2.0 response page."""
+
+    source = IntelligenceSource.NVD
+    if provenance.source != source:
+        raise IntelligenceParseError("NVD page provenance source is invalid", source=source)
+    source_format = _optional_string(document.get("format"))
+    source_version = _optional_string(document.get("version"))
+    if source_format != "NVD_CVE" or source_version != "2.0":
+        raise IntelligenceParseError("NVD page format or version is unsupported", source=source)
+    generated_at = _optional_datetime(document.get("timestamp"))
+    if generated_at is None:
+        raise IntelligenceParseError("NVD page timestamp is invalid", source=source)
+    total_results = _required_integer(document.get("totalResults"), "NVD totalResults", source)
+    start_index = _required_integer(document.get("startIndex"), "NVD startIndex", source)
+    results_per_page = _required_integer(document.get("resultsPerPage"), "NVD resultsPerPage", source)
+    if start_index != expected_start_index:
+        raise IntelligenceParseError("NVD page startIndex differs from the request", source=source)
+    if results_per_page > 2_000:
+        raise IntelligenceLimitError("NVD page exceeds the 2000-record API limit", source=source)
+    wrappers = _bounded_list(document.get("vulnerabilities"), "NVD vulnerabilities", max_items)
+    if len(wrappers) > results_per_page:
+        raise IntelligenceParseError("NVD page contains more records than resultsPerPage", source=source)
+    if start_index + len(wrappers) > total_results:
+        raise IntelligenceParseError("NVD page exceeds totalResults", source=source)
+    if start_index < total_results and not wrappers:
+        raise IntelligenceParseError("NVD pagination stopped before totalResults", source=source)
+
+    records: list[ParsedSourceRecord] = []
+    for wrapper in wrappers:
+        if not isinstance(wrapper, dict) or not isinstance(wrapper.get("cve"), dict):
+            raise IntelligenceParseError("NVD vulnerability wrapper is invalid", source=source)
+        raw = wrapper["cve"]
+        raw_size = len(
+            json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        )
+        if raw_size > max_record_bytes:
+            raise IntelligenceLimitError(f"NVD record exceeds {max_record_bytes} byte limit", source=source)
+        cve = _required_nvd_cve_id(raw.get("id"))
+        descriptions = _cve_text_values(raw.get("descriptions"), "NVD descriptions")
+        configurations = _bounded_list(
+            raw.get("configurations"), "NVD configurations", _MAX_NVD_CONFIGURATIONS
+        )
+        affected = _bounded_list(raw.get("affected"), "NVD affected", _MAX_NVD_AFFECTED)
+        cve_tags = _bounded_list(raw.get("cveTags"), "NVD CVE tags", 10_000)
+        source_metadata: dict[str, Any] = {
+            "source_identifier": _optional_string(raw.get("sourceIdentifier")),
+            "vulnerability_status": _optional_string(raw.get("vulnStatus")),
+            "cve_tags": cve_tags,
+            # Preserve source-native Boolean configuration trees. They are evidence,
+            # not flattened package claims, until a dedicated CPE evaluator exists.
+            "configurations": configurations,
+            "affected": affected,
+            "evaluator_comment": _optional_string(raw.get("evaluatorComment")),
+            "evaluator_impact": _optional_string(raw.get("evaluatorImpact")),
+            "evaluator_solution": _optional_string(raw.get("evaluatorSolution")),
+            "cisa_exploit_add": _optional_string(raw.get("cisaExploitAdd")),
+            "cisa_action_due": _optional_string(raw.get("cisaActionDue")),
+            "cisa_required_action": _optional_string(raw.get("cisaRequiredAction")),
+            "cisa_vulnerability_name": _optional_string(raw.get("cisaVulnerabilityName")),
+            "unknown_fields": sorted(
+                set(raw)
+                - {
+                    "id",
+                    "sourceIdentifier",
+                    "published",
+                    "lastModified",
+                    "vulnStatus",
+                    "descriptions",
+                    "metrics",
+                    "weaknesses",
+                    "configurations",
+                    "affected",
+                    "references",
+                    "cveTags",
+                    "evaluatorComment",
+                    "evaluatorImpact",
+                    "evaluatorSolution",
+                    "cisaExploitAdd",
+                    "cisaActionDue",
+                    "cisaRequiredAction",
+                    "cisaVulnerabilityName",
+                }
+            ),
+        }
+        source_metadata = {key: value for key, value in source_metadata.items() if value is not None}
+        advisory = NormalizedAdvisory(
+            advisory_id=cve,
+            identifiers=[cve],
+            sources=[source],
+            summary=descriptions[0] if descriptions else None,
+            details="\n\n".join(descriptions[1:]) or None,
+            published_at=_optional_datetime(raw.get("published")),
+            modified_at=_optional_datetime(raw.get("lastModified")),
+            cwes=_parse_nvd_weaknesses(raw.get("weaknesses")),
+            references=_parse_nvd_references(raw.get("references")),
+            severity=_parse_nvd_metrics(raw.get("metrics"), provenance.source_url),
+            provenance=[provenance],
+            source_metadata={source.value: source_metadata},
+        )
+        records.append(
+            ParsedSourceRecord(
+                source=source,
+                source_record_id=cve,
+                advisory=advisory,
+                raw_record_sha256=_canonical_sha256(raw),
+            )
+        )
+    return NvdPage(
+        records=tuple(records),
+        total_results=total_results,
+        start_index=start_index,
+        results_per_page=results_per_page,
+        generated_at=generated_at,
+        format=source_format,
+        version=source_version,
+    )
+
+
+def _parse_nvd_weaknesses(value: Any) -> list[str]:
+    cwes: list[str] = []
+    for weakness in _bounded_list(value, "NVD weaknesses", _MAX_NVD_WEAKNESSES):
+        if not isinstance(weakness, dict):
+            continue
+        for description in _bounded_list(
+            weakness.get("description"), "NVD weakness descriptions", _MAX_NVD_WEAKNESSES
+        ):
+            if not isinstance(description, dict):
+                continue
+            candidate = _optional_string(description.get("value"))
+            if candidate and re.fullmatch(r"CWE-\d+", candidate, re.IGNORECASE):
+                cwes.append(candidate.upper())
+    return _unique_strings(cwes)
+
+
+def _parse_nvd_references(value: Any) -> list[AdvisoryReference]:
+    references: list[AdvisoryReference] = []
+    for item in _bounded_list(value, "NVD references", _MAX_REFERENCES):
+        if not isinstance(item, dict):
+            continue
+        url = _optional_string(item.get("url"))
+        if not url or not url.startswith(("https://", "http://")):
+            continue
+        tags = _unique_strings(_bounded_list(item.get("tags"), "NVD reference tags", 1_000))
+        normalized_tags = {tag.casefold() for tag in tags}
+        if "patch" in normalized_tags:
+            reference_type = ReferenceType.FIX
+        elif normalized_tags & {"vendor advisory", "third party advisory"}:
+            reference_type = ReferenceType.ADVISORY
+        elif "exploit" in normalized_tags:
+            reference_type = ReferenceType.EVIDENCE
+        else:
+            reference_type = ReferenceType.WEB
+        references.append(
+            AdvisoryReference(
+                url=url,
+                type=reference_type,
+                raw_type=", ".join(tags) or None,
+                source=IntelligenceSource.NVD,
+            )
+        )
+    return _unique_models(
+        references,
+        key=lambda item: (item.url, item.type.value, item.raw_type or ""),
+    )
+
+
+def _parse_nvd_metrics(value: Any, source_url: str) -> list[SeveritySignal]:
+    metrics = _json_object(value)
+    severity: list[SeveritySignal] = []
+    for metric_name in sorted(metrics):
+        rows = _bounded_list(metrics.get(metric_name), f"NVD {metric_name}", _MAX_SEVERITY_SIGNALS)
+        if metric_name.startswith("cvssMetric"):
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                cvss = _json_object(row.get("cvssData"))
+                raw_score = cvss.get("baseScore")
+                score = (
+                    float(raw_score)
+                    if isinstance(raw_score, (int, float))
+                    and not isinstance(raw_score, bool)
+                    and 0 <= float(raw_score) <= 10
+                    else None
+                )
+                severity.append(
+                    SeveritySignal(
+                        kind=SeverityKind.CVSS,
+                        source=IntelligenceSource.NVD,
+                        score=score,
+                        vector=_optional_string(cvss.get("vectorString")),
+                        label=_optional_string(cvss.get("baseSeverity")),
+                        source_url=source_url,
+                        metadata={
+                            "raw_type": metric_name,
+                            "version": _optional_string(cvss.get("version")),
+                            "provider": _optional_string(row.get("source")),
+                            "provider_type": _optional_string(row.get("type")),
+                            "exploitability_score": row.get("exploitabilityScore"),
+                            "impact_score": row.get("impactScore"),
+                        },
+                    )
+                )
+        elif metric_name == "ssvcV203":
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                data = _json_object(row.get("ssvcData"))
+                options: dict[str, str] = {}
+                for option in _bounded_list(data.get("options"), "NVD SSVC options", 100):
+                    if not isinstance(option, dict) or len(option) != 1:
+                        continue
+                    key, raw = next(iter(option.items()))
+                    if isinstance(key, str) and isinstance(raw, str):
+                        options[key] = raw
+                severity.append(
+                    SeveritySignal(
+                        kind=SeverityKind.SSVC,
+                        source=IntelligenceSource.NVD,
+                        label=options.get("exploitation"),
+                        observed_at=_optional_datetime(data.get("timestamp")),
+                        source_url=source_url,
+                        metadata={
+                            "raw_type": metric_name,
+                            "provider": _optional_string(row.get("source")),
+                            "version": _optional_string(data.get("version")),
+                            "role": _optional_string(data.get("role")),
+                            "options": options,
+                        },
+                    )
+                )
+    return severity
 
 
 def parse_cisa_kev(
@@ -1204,6 +1466,19 @@ def _required_cve_id(value: Any) -> str:
             "CVE List V5 identifier is invalid", source=IntelligenceSource.CVE_LIST_V5
         )
     return result.upper()
+
+
+def _required_nvd_cve_id(value: Any) -> str:
+    result = _optional_string(value)
+    if result is None or _CVE_ID_RE.fullmatch(result) is None:
+        raise IntelligenceParseError("NVD CVE identifier is invalid", source=IntelligenceSource.NVD)
+    return result.upper()
+
+
+def _required_integer(value: Any, label: str, source: IntelligenceSource) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise IntelligenceParseError(f"{label} is invalid", source=source)
+    return value
 
 
 def _required_identifier(value: Any, label: str) -> str:
