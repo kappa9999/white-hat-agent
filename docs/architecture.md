@@ -64,7 +64,7 @@ contains an editable corpus and capability catalog plus ignored state:
 corpus/playbooks/             reviewed public knowledge
 capabilities/catalog.yaml    provider-neutral adapter contracts
 adapters/catalog.yaml        concrete official tool and knowledge manifests
-.whitehat/adapters/           ignored managed tools and exact knowledge snapshots
+.whitehat/adapters/           ignored managed tools, knowledge snapshots, and conformance reports
 .whitehat/submissions/       untrusted intake drafts
 .whitehat/artifacts/         content-addressed evidence blobs
 .whitehat/intelligence/      source snapshots and production reports
@@ -135,8 +135,10 @@ tag, asset size, and GitHub-published SHA-256; a Git plan resolves one reviewed 
 Application revalidates manifest, host, release/commit identity, sources, digests, and bounds; rejects archive
 traversal, links, special files, and unbounded downloads/checkouts; and activates only a complete workspace-local
 installation. Managed knowledge is content-tree hashed and reverified before access. Native tool APIs and CLIs remain
-the automation surface; unofficial MCP wrappers are not silently installed. Tool health proves observed availability,
-not full execution-adapter conformance or target authorization.
+the automation surface; unofficial MCP wrappers are not silently installed. Tool health proves only observed
+availability. A typed operation grants executable capabilities only after its current manifest, driver, fixture,
+sandbox, observed entrypoint, and operation payload match one passing conformance report. Execution then requires an
+active lease and exact task-bound evidence; it never grants target authorization by itself.
 
 ### Opportunities, scope, and campaigns
 

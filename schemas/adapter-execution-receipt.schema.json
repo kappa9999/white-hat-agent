@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "AdapterCapture": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_length": {
+          "minimum": 0,
+          "title": "Byte Length",
+          "type": "integer"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "content_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "evidence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Id"
+        },
+        "media_type": {
+          "title": "Media Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "media_type",
+        "byte_length",
+        "content_sha256",
+        "complete"
+      ],
+      "title": "AdapterCapture",
+      "type": "object"
+    },
+    "AdapterExecutionOutcome": {
+      "enum": [
+        "succeeded",
+        "tool-failed",
+        "timed-out",
+        "resource-limited",
+        "invalid-output"
+      ],
+      "title": "AdapterExecutionOutcome",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapter_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "campaign_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "captures": {
+      "items": {
+        "$ref": "#/$defs/AdapterCapture"
+      },
+      "title": "Captures",
+      "type": "array"
+    },
+    "evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/AdapterExecutionOutcome"
+    },
+    "records_returned": {
+      "minimum": 0,
+      "title": "Records Returned",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "execution_id",
+    "campaign_id",
+    "task_id",
+    "adapter_id",
+    "operation_id",
+    "outcome",
+    "records_returned",
+    "truncated",
+    "captures",
+    "evidence_ids",
+    "warnings",
+    "started_at",
+    "finished_at"
+  ],
+  "title": "AdapterExecutionReceipt",
+  "type": "object"
+}

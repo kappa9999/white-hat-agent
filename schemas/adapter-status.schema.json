@@ -54,6 +54,22 @@
       "title": "Checks",
       "type": "array"
     },
+    "conformant_operations": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Conformant Operations",
+      "type": "array"
+    },
+    "declared_capabilities": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Declared Capabilities",
+      "type": "array"
+    },
     "entrypoints": {
       "items": {
         "type": "string"
@@ -78,6 +94,19 @@
       "format": "date-time",
       "title": "Observed At",
       "type": "string"
+    },
+    "observed_identity_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Observed Identity Sha256"
     },
     "platform": {
       "title": "Platform",

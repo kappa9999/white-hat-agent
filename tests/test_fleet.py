@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
@@ -179,6 +180,66 @@ def test_expired_lease_cannot_be_bypassed_with_reported_completion_time(tmp_path
                 completed_at=expired_at - timedelta(seconds=10),
             ),
         )
+
+
+def test_active_lease_accessor_returns_current_task_and_fails_closed(tmp_path) -> None:
+    store = FleetStore(tmp_path / "fleet.db")
+    store.initialize()
+    store.create_campaign(build_campaign())
+    outcome = store.enqueue_intent("example-lab-campaign", _intent())
+    assert outcome.task is not None
+    store.register_agent(
+        AgentRegistration(
+            agent_id="http-agent",
+            display_name="HTTP fixture adapter",
+            provider="fixture",
+            capabilities=["http.request", "http.capture", "data.diff", "evidence.write"],
+            max_execution_class=ExecutionClass.CONTROLLED_ACTIVE,
+        )
+    )
+    store.set_campaign_state("example-lab-campaign", CampaignState.READY)
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+    lease = store.claim_task("http-agent", lease_seconds=60)
+    assert lease is not None
+
+    active = store.assert_active_lease(lease.task.task_id, "http-agent", lease.lease_token)
+
+    assert active == store.get_task(lease.task.task_id)
+    assert active.state == TaskState.LEASED
+    assert active.lease_owner == "http-agent"
+    assert lease.lease_token not in active.model_dump_json()
+    with sqlite3.connect(store.database) as connection:
+        token_digest, task_json = connection.execute(
+            "SELECT lease_token_sha256, task_json FROM tasks WHERE task_id = ?",
+            (lease.task.task_id,),
+        ).fetchone()
+    assert token_digest == hashlib.sha256(lease.lease_token.encode()).hexdigest()
+    assert lease.lease_token not in task_json
+
+    with pytest.raises(FleetError, match="invalid lease token"):
+        store.assert_active_lease(lease.task.task_id, "http-agent", "wrong-token")
+    with pytest.raises(FleetError, match="not leased by this agent"):
+        store.assert_active_lease(lease.task.task_id, "different-agent", lease.lease_token)
+
+    with sqlite3.connect(store.database) as connection:
+        connection.execute(
+            "UPDATE tasks SET lease_expires_at = ? WHERE task_id = ?",
+            ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), lease.task.task_id),
+        )
+    with pytest.raises(FleetError, match="expired"):
+        store.assert_active_lease(lease.task.task_id, "http-agent", lease.lease_token)
+
+    with sqlite3.connect(store.database) as connection:
+        connection.execute(
+            "UPDATE tasks SET lease_expires_at = ? WHERE task_id = ?",
+            ((datetime.now(UTC) + timedelta(seconds=60)).isoformat(), lease.task.task_id),
+        )
+        connection.execute(
+            "UPDATE campaigns SET state = ? WHERE campaign_id = ?",
+            (CampaignState.PAUSED.value, "example-lab-campaign"),
+        )
+    with pytest.raises(FleetError, match="campaign is not running"):
+        store.assert_active_lease(lease.task.task_id, "http-agent", lease.lease_token)
 
 
 def test_campaign_rejects_under_declared_or_unselected_playbooks(tmp_path) -> None:

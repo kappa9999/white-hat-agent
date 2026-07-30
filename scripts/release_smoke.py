@@ -43,6 +43,16 @@ def smoke_distribution(artifact: Path, temporary_root: Path, expected_version: s
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     executable = environment / ("Scripts/wha.exe" if os.name == "nt" else "bin/wha")
     run("uv", "pip", "install", "--python", str(python), str(artifact), cwd=temporary_root)
+    run(
+        str(python),
+        "-c",
+        (
+            "from white_hat_agent.adapter_execution import _fixture_bytes, _ghidra_script_bytes; "
+            "assert len(_fixture_bytes()) == 784; "
+            "assert len(_ghidra_script_bytes()) == 6116"
+        ),
+        cwd=temporary_root,
+    )
     verify_cli(executable, temporary_root, expected_version, label)
 
 

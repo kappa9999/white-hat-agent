@@ -27,6 +27,15 @@ capabilities:
     adapter_contract: [Preserve exact input digests and normalization settings.]
     status: experimental
     updated_at: 2026-07-29T12:00:00Z
+  - capability_id: binary.behavior-identify
+    title: Identify executable behavior
+    description: Match bounded static executable features to revision-bound behavior rules.
+    execution_class: analysis
+    input_types: [artifact/file]
+    output_types: [artifact/behavior-summary]
+    adapter_contract: [Bind rule, tool, and artifact identities; report match counts and truncation.]
+    status: experimental
+    updated_at: 2026-07-29T22:00:00Z
   - capability_id: code.search
     title: Search code or decompiler text
     description: Run bounded structural or textual searches over a captured code corpus.

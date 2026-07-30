@@ -7,10 +7,19 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .adapter_execution import (
+    AdapterExecutionManifest,
+    AdapterExecutionReceipt,
+    AdapterExecutionRequest,
+    AdapterExecutionResult,
+    AdapterNormalizedResult,
+)
 from .adapter_provisioning import AdapterProvisionPlan, AdapterProvisionResult
 from .adapter_registry import (
     AdapterCatalogManifest,
+    AdapterConformanceReport,
     AdapterManifest,
+    AdapterOperationBinding,
     AdapterSelection,
     AdapterStatus,
     InstalledAdapterRecord,
@@ -71,7 +80,14 @@ from .simulator import SimulationResult
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "adapter-catalog": AdapterCatalogManifest,
+    "adapter-conformance-report": AdapterConformanceReport,
+    "adapter-execution-manifest": AdapterExecutionManifest,
+    "adapter-execution-receipt": AdapterExecutionReceipt,
+    "adapter-execution-request": AdapterExecutionRequest,
+    "adapter-execution-result": AdapterExecutionResult,
     "adapter-manifest": AdapterManifest,
+    "adapter-normalized-result": AdapterNormalizedResult,
+    "adapter-operation-binding": AdapterOperationBinding,
     "adapter-provision-plan": AdapterProvisionPlan,
     "adapter-provision-result": AdapterProvisionResult,
     "adapter-selection": AdapterSelection,

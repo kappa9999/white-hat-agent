@@ -1,0 +1,163 @@
+{
+  "$defs": {
+    "ExecutionClass": {
+      "enum": [
+        "analysis",
+        "read-only",
+        "controlled-active",
+        "state-changing",
+        "high-impact"
+      ],
+      "title": "ExecutionClass",
+      "type": "string"
+    },
+    "ExecutionMode": {
+      "enum": [
+        "offline",
+        "sandbox",
+        "live-readonly",
+        "live-active"
+      ],
+      "title": "ExecutionMode",
+      "type": "string"
+    },
+    "OperationResourceLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Cpu Seconds",
+          "type": "integer"
+        },
+        "max_files": {
+          "exclusiveMinimum": 0,
+          "maximum": 100000,
+          "title": "Max Files",
+          "type": "integer"
+        },
+        "max_input_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 2147483648,
+          "title": "Max Input Bytes",
+          "type": "integer"
+        },
+        "max_output_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 2147483648,
+          "title": "Max Output Bytes",
+          "type": "integer"
+        },
+        "max_processes": {
+          "exclusiveMinimum": 0,
+          "maximum": 4096,
+          "title": "Max Processes",
+          "type": "integer"
+        },
+        "max_records": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000000,
+          "title": "Max Records",
+          "type": "integer"
+        },
+        "memory_mib": {
+          "exclusiveMinimum": 0,
+          "maximum": 1048576,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "wall_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Wall Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_input_bytes",
+        "max_output_bytes",
+        "max_files",
+        "max_records",
+        "wall_seconds",
+        "cpu_seconds",
+        "memory_mib",
+        "max_processes"
+      ],
+      "title": "OperationResourceLimits",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "conformance_suite_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Conformance Suite Id",
+      "type": "string"
+    },
+    "execution_class": {
+      "$ref": "#/$defs/ExecutionClass"
+    },
+    "input_types": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Input Types",
+      "type": "array"
+    },
+    "limits": {
+      "$ref": "#/$defs/OperationResourceLimits"
+    },
+    "modes": {
+      "items": {
+        "$ref": "#/$defs/ExecutionMode"
+      },
+      "minItems": 1,
+      "title": "Modes",
+      "type": "array"
+    },
+    "operation_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "operation_version": {
+      "maxLength": 64,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "title": "Operation Version",
+      "type": "string"
+    },
+    "output_types": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._:/-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Output Types",
+      "type": "array"
+    }
+  },
+  "required": [
+    "operation_id",
+    "operation_version",
+    "capabilities",
+    "execution_class",
+    "modes",
+    "input_types",
+    "output_types",
+    "conformance_suite_id",
+    "limits"
+  ],
+  "title": "AdapterOperationBinding",
+  "type": "object"
+}

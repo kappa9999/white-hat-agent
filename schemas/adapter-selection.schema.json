@@ -5,6 +5,14 @@
       "title": "Complete",
       "type": "boolean"
     },
+    "conformance_required": {
+      "items": {
+        "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "title": "Conformance Required",
+      "type": "array"
+    },
     "provisioning_required": {
       "items": {
         "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
@@ -62,6 +70,7 @@
     "selected_adapters",
     "ready_adapters",
     "provisioning_required",
+    "conformance_required",
     "uncovered_capabilities",
     "complete",
     "ready",

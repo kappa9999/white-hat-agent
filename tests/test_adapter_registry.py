@@ -19,23 +19,32 @@ from white_hat_agent.adapter_provisioning import (
 )
 from white_hat_agent.adapter_registry import (
     AdapterCatalogManifest,
+    AdapterConformanceCheck,
+    AdapterConformanceReport,
     AdapterKind,
     AdapterLicense,
     AdapterManager,
     AdapterManifest,
+    AdapterOperationBinding,
     AdapterRegistry,
     AdapterRegistryError,
     AdapterStatus,
     GitHubReleaseProvisioner,
     InstalledAdapterRecord,
+    OperationResourceLimits,
     ProbeDefinition,
     content_tree_digest,
     current_platform,
+    observed_tool_identity_digest,
 )
 from white_hat_agent.knowledge.models import ExecutionClass
 from white_hat_agent.models import ExecutionMode, utc_now
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _accept_fixture_conformance(*_args) -> bool:
+    return True
 
 
 def _license() -> AdapterLicense:
@@ -52,6 +61,7 @@ def _tool_manifest(
     capabilities: list[str] | None = None,
     provisioner: GitHubReleaseProvisioner | None = None,
 ) -> AdapterManifest:
+    declared_capabilities = capabilities or ["artifact.inspect"]
     return AdapterManifest(
         adapter_id=adapter_id,
         title="Fixture tool",
@@ -60,7 +70,7 @@ def _tool_manifest(
         provider="Fixture",
         provider_url="https://example.test/tool",
         license=_license(),
-        capabilities=capabilities or ["artifact.inspect"],
+        capabilities=declared_capabilities,
         modes=[ExecutionMode.OFFLINE],
         max_execution_class=ExecutionClass.ANALYSIS,
         platforms=["any"],
@@ -69,6 +79,28 @@ def _tool_manifest(
             version_args=["--version"],
             version_pattern=r"Python (?P<version>[0-9]+(?:\.[0-9]+)+)",
         ),
+        operations=[
+            AdapterOperationBinding(
+                operation_id="inspect",
+                operation_version="1.0.0",
+                capabilities=declared_capabilities,
+                execution_class=ExecutionClass.ANALYSIS,
+                modes=[ExecutionMode.OFFLINE],
+                input_types=["artifact.file"],
+                output_types=["artifact.summary"],
+                conformance_suite_id="fixture-inspect",
+                limits=OperationResourceLimits(
+                    max_input_bytes=1_000_000,
+                    max_output_bytes=1_000_000,
+                    max_files=10,
+                    max_records=1_000,
+                    wall_seconds=30,
+                    cpu_seconds=30,
+                    memory_mib=512,
+                    max_processes=4,
+                ),
+            )
+        ],
         provisioner=provisioner,
         updated_at=utc_now(),
     )
@@ -108,11 +140,64 @@ def _registry(tmp_path: Path, manifests: list[AdapterManifest]) -> AdapterRegist
     return registry
 
 
+def _conformance_report(
+    manifest: AdapterManifest,
+    status: AdapterStatus,
+    *,
+    passed: bool = True,
+    tool_version: str = "1.2.3",
+    requirement_identity_sha256: list[str | None] | None = None,
+) -> AdapterConformanceReport:
+    operation = manifest.operations[0]
+    assert status.observed_identity_sha256
+    now = utc_now()
+    return AdapterConformanceReport(
+        adapter_id=manifest.adapter_id,
+        operation_id=operation.operation_id,
+        operation_version=operation.operation_version,
+        manifest_digest=manifest.digest(),
+        operation_contract_digest=operation.digest(),
+        observed_identity_sha256=status.observed_identity_sha256,
+        requirement_identity_sha256=requirement_identity_sha256 or [],
+        tool_payload_sha256="a" * 64,
+        tool_version=tool_version,
+        driver_id="fixture-driver",
+        driver_version="1.0.0",
+        sandbox_profile_sha256="b" * 64,
+        fixture_id=operation.conformance_suite_id,
+        fixture_sha256="c" * 64,
+        started_at=now,
+        finished_at=now,
+        passed=passed,
+        checks=[
+            AdapterConformanceCheck(
+                name="tool-version",
+                ok=True,
+                detail=f"version={tool_version}",
+            ),
+            *[
+                AdapterConformanceCheck(
+                    name=f"requirement-{index}-version",
+                    ok=identity is not None,
+                    detail=f"identity={identity or 'unobserved'}",
+                )
+                for index, identity in enumerate(requirement_identity_sha256 or [], start=1)
+            ],
+            AdapterConformanceCheck(
+                name="deterministic-output",
+                ok=passed,
+                detail="fixture result matched" if passed else "fixture result differed",
+            ),
+        ],
+    )
+
+
 def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     registry = AdapterRegistry(
         REPOSITORY_ROOT / "adapters/catalog.yaml",
         capability_execution_classes={
             "artifact.inspect": ExecutionClass.ANALYSIS,
+            "binary.behavior-identify": ExecutionClass.ANALYSIS,
             "binary.diff": ExecutionClass.ANALYSIS,
             "code.search": ExecutionClass.ANALYSIS,
             "graph.reason": ExecutionClass.ANALYSIS,
@@ -136,24 +221,50 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     }
 
 
-def test_status_observes_real_path_and_version_without_installing(tmp_path, monkeypatch) -> None:
-    registry = _registry(tmp_path, [_tool_manifest()])
-    manager = AdapterManager(registry, tmp_path / "managed")
+def test_status_defers_path_execution_and_uses_cached_conformance(tmp_path, monkeypatch) -> None:
+    manifest = _tool_manifest()
+    registry = _registry(tmp_path, [manifest])
+    manager = AdapterManager(
+        registry,
+        tmp_path / "managed",
+        conformance_verifier=_accept_fixture_conformance,
+    )
+    marker = tmp_path / "executed"
+    executable = tmp_path / "fixture-tool"
+    executable.write_text(f"#!/bin/sh\ntouch {marker}\nprintf 'Python 1.2.3\\n'\n", encoding="utf-8")
+    executable.chmod(0o755)
     monkeypatch.setattr(
         "white_hat_agent.adapter_registry.shutil.which",
-        lambda executable: sys.executable if executable == "fixture-tool" else None,
+        lambda name: str(executable) if name == "fixture-tool" else None,
     )
 
     status = manager.status("fixture-tool")
 
-    assert status.healthy
+    assert not status.healthy
     assert status.source == "system"
-    assert status.version
-    assert status.entrypoints == [str(Path(sys.executable).resolve())]
-    assert status.available_capabilities == ["artifact.inspect"]
+    assert status.version is None
+    assert status.entrypoints == [str(executable.resolve())]
+    assert status.observed_identity_sha256
+    assert status.declared_capabilities == ["artifact.inspect"]
+    assert status.conformant_operations == []
+    assert status.available_capabilities == []
+    assert not marker.exists()
+
+    report = _conformance_report(manifest, status)
+    report_path = manager.save_conformance_report(report)
+    conformed = manager.status("fixture-tool")
+
+    assert report_path == tmp_path / "managed/.conformance/fixture-tool/inspect.json"
+    assert conformed.healthy
+    assert conformed.version == "1.2.3"
+    assert conformed.conformant_operations == ["inspect"]
+    assert conformed.available_capabilities == ["artifact.inspect"]
+    reports = manager.conformance_reports(manifest.adapter_id)
+    assert len(reports) == 1
+    assert reports[0].digest() == report.digest()
 
 
-def test_status_rejects_a_version_match_from_a_failing_probe(tmp_path, monkeypatch) -> None:
+def test_status_never_executes_a_failing_path_version_probe(tmp_path, monkeypatch) -> None:
     executable = tmp_path / "failing-version"
     executable.write_text("#!/bin/sh\nprintf '1.2.3\\n'\nexit 1\n", encoding="utf-8")
     executable.chmod(0o755)
@@ -176,8 +287,8 @@ def test_status_rejects_a_version_match_from_a_failing_probe(tmp_path, monkeypat
     status = manager.status(manifest.adapter_id)
 
     assert not status.healthy
-    assert status.version == "1.2.3"
-    assert "tool version probe did not satisfy the manifest" in status.blockers
+    assert status.version is None
+    assert "tool version requires explicit conformance" in status.blockers
 
 
 def test_probe_rejects_arbitrary_command_arguments() -> None:
@@ -188,6 +299,14 @@ def test_probe_rejects_arbitrary_command_arguments() -> None:
                 version_args=arguments,
                 version_pattern=r"(?P<version>[0-9.]+)",
             )
+
+
+def test_operation_version_is_bounded_for_evidence_manifests() -> None:
+    payload = _tool_manifest().model_dump(mode="json")
+    payload["operations"][0]["operation_version"] = f"1.0.0-{'a' * 65}"
+
+    with pytest.raises(ValueError):
+        AdapterManifest.model_validate(payload)
 
 
 def test_registry_rejects_underclassified_capability_execution(tmp_path) -> None:
@@ -204,6 +323,220 @@ def test_registry_rejects_underclassified_capability_execution(tmp_path) -> None
 
     assert not report.valid
     assert "underclassify" in report.issues[0].message
+
+
+def test_operation_contract_is_strict_and_resource_bounded() -> None:
+    operation = _tool_manifest().operations[0]
+    payload = operation.model_dump(mode="json")
+    payload["command"] = ["fixture-tool", "--unsafe"]
+
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        AdapterOperationBinding.model_validate(payload)
+
+    limits = operation.limits.model_dump(mode="json")
+    limits["max_files"] = 0
+    with pytest.raises(ValueError):
+        OperationResourceLimits.model_validate(limits)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("duplicate-operation", "operation identifiers"),
+        ("undeclared-capability", "undeclared capabilities"),
+        ("undeclared-mode", "undeclared modes"),
+        ("excessive-execution", "exceeds the manifest execution class"),
+    ],
+)
+def test_manifest_validates_typed_operation_boundaries(mutation: str, message: str) -> None:
+    payload = _tool_manifest().model_dump(mode="json")
+    if mutation == "duplicate-operation":
+        payload["operations"].append(dict(payload["operations"][0]))
+    elif mutation == "undeclared-capability":
+        payload["operations"][0]["capabilities"] = ["code.search"]
+    elif mutation == "undeclared-mode":
+        payload["operations"][0]["modes"] = ["sandbox"]
+    else:
+        payload["operations"][0]["execution_class"] = "read-only"
+
+    with pytest.raises(ValueError, match=message):
+        AdapterManifest.model_validate(payload)
+
+
+def test_knowledge_manifest_rejects_operation_bindings() -> None:
+    payload = _knowledge_manifest().model_dump(mode="json")
+    operation = _tool_manifest(capabilities=["code.search"]).operations[0]
+    payload["operations"] = [operation.model_dump(mode="json")]
+
+    with pytest.raises(ValueError, match="knowledge adapters cannot declare executable operations"):
+        AdapterManifest.model_validate(payload)
+
+
+def test_conformance_is_invalidated_by_observed_tool_identity_drift(tmp_path, monkeypatch) -> None:
+    executable = tmp_path / "fixture-tool"
+    executable.write_text("#!/bin/sh\nprintf 'Python 1.2.3\\n'\n", encoding="utf-8")
+    executable.chmod(0o755)
+    manifest = _tool_manifest()
+    manager = AdapterManager(
+        _registry(tmp_path, [manifest]),
+        tmp_path / "managed",
+        conformance_verifier=_accept_fixture_conformance,
+    )
+    monkeypatch.setattr(
+        "white_hat_agent.adapter_registry.shutil.which",
+        lambda name: str(executable) if name == "fixture-tool" else None,
+    )
+    initial = manager.status(manifest.adapter_id)
+    manager.save_conformance_report(_conformance_report(manifest, initial))
+
+    conformed = manager.status(manifest.adapter_id)
+    executable.write_text("#!/bin/sh\n# changed\nprintf 'Python 1.2.3\\n'\n", encoding="utf-8")
+    drifted = manager.status(manifest.adapter_id)
+
+    assert conformed.available_capabilities == ["artifact.inspect"]
+    assert not drifted.healthy
+    assert drifted.observed_identity_sha256 != initial.observed_identity_sha256
+    assert drifted.conformant_operations == []
+    assert drifted.available_capabilities == []
+    assert manager.conformance_reports(manifest.adapter_id) == []
+
+
+def test_conformance_is_invalidated_by_runtime_requirement_identity_drift(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    executable = tmp_path / "fixture-tool"
+    executable.write_bytes(b"tool")
+    executable.chmod(0o755)
+    dependency = tmp_path / "fixture-runtime"
+    dependency.write_bytes(b"runtime-v1")
+    dependency.chmod(0o755)
+    requirement = ProbeDefinition(
+        executable_names={"any": ["fixture-runtime"]},
+        version_args=["--version"],
+        version_pattern=r"(?P<version>[0-9]+(?:\.[0-9]+)+)",
+        minimum_version="1.0.0",
+    )
+    manifest = _tool_manifest().model_copy(update={"requirements": [requirement]})
+    manager = AdapterManager(
+        _registry(tmp_path, [manifest]),
+        tmp_path / "managed",
+        conformance_verifier=_accept_fixture_conformance,
+    )
+    monkeypatch.setattr(
+        "white_hat_agent.adapter_registry.shutil.which",
+        lambda name: {
+            "fixture-tool": str(executable),
+            "fixture-runtime": str(dependency),
+        }.get(name),
+    )
+    initial = manager.status(manifest.adapter_id)
+    dependency_identity = observed_tool_identity_digest([str(dependency)])
+    manager.save_conformance_report(
+        _conformance_report(
+            manifest,
+            initial,
+            requirement_identity_sha256=[dependency_identity],
+        )
+    )
+
+    assert manager.status(manifest.adapter_id).available_capabilities == ["artifact.inspect"]
+    dependency.write_bytes(b"runtime-v2")
+    drifted = manager.status(manifest.adapter_id)
+
+    assert not drifted.healthy
+    assert drifted.available_capabilities == []
+    assert manager.conformance_reports(manifest.adapter_id) == []
+
+
+def test_conformance_save_rejects_manifest_and_operation_contract_drift(tmp_path, monkeypatch) -> None:
+    manifest = _tool_manifest()
+    manager = AdapterManager(
+        _registry(tmp_path, [manifest]),
+        tmp_path / "managed",
+        conformance_verifier=_accept_fixture_conformance,
+    )
+    monkeypatch.setattr(
+        "white_hat_agent.adapter_registry.shutil.which",
+        lambda executable: sys.executable if executable == "fixture-tool" else None,
+    )
+    report = _conformance_report(manifest, manager.status(manifest.adapter_id))
+
+    with pytest.raises(AdapterRegistryError, match="manifest identity"):
+        manager.save_conformance_report(report.model_copy(update={"manifest_digest": "d" * 64}))
+    with pytest.raises(AdapterRegistryError, match="operation contract"):
+        manager.save_conformance_report(report.model_copy(update={"operation_contract_digest": "e" * 64}))
+
+
+def test_only_passing_explicit_conformance_grants_capabilities(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    manifest = _tool_manifest()
+    manager = AdapterManager(
+        _registry(tmp_path, [manifest]),
+        tmp_path / "managed",
+        conformance_verifier=_accept_fixture_conformance,
+    )
+    monkeypatch.setattr(
+        "white_hat_agent.adapter_registry.shutil.which",
+        lambda executable: sys.executable if executable == "fixture-tool" else None,
+    )
+    status = manager.status(manifest.adapter_id)
+    passing = _conformance_report(manifest, status)
+    manager.save_conformance_report(passing)
+    assert manager.status(manifest.adapter_id).available_capabilities == ["artifact.inspect"]
+
+    manager.save_conformance_report(_conformance_report(manifest, status, passed=False))
+    failed = manager.status(manifest.adapter_id)
+    assert failed.conformant_operations == []
+    assert failed.available_capabilities == []
+    assert manager.conformance_reports(manifest.adapter_id)[0].passed is False
+
+
+def test_persisted_conformance_is_invalidated_by_manifest_operation_drift(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    manifest = _tool_manifest()
+    managed_root = tmp_path / "managed"
+    manager = AdapterManager(
+        _registry(tmp_path, [manifest]),
+        managed_root,
+        conformance_verifier=_accept_fixture_conformance,
+    )
+    monkeypatch.setattr(
+        "white_hat_agent.adapter_registry.shutil.which",
+        lambda executable: sys.executable if executable == "fixture-tool" else None,
+    )
+    status = manager.status(manifest.adapter_id)
+    manager.save_conformance_report(_conformance_report(manifest, status))
+    assert manager.status(manifest.adapter_id).available_capabilities == ["artifact.inspect"]
+
+    payload = manifest.model_dump(mode="json")
+    payload["operations"][0]["limits"]["max_records"] += 1
+    drifted_manifest = AdapterManifest.model_validate(payload)
+    drifted = AdapterManager(
+        _registry(tmp_path, [drifted_manifest]),
+        managed_root,
+        conformance_verifier=_accept_fixture_conformance,
+    )
+
+    assert drifted.status(manifest.adapter_id).available_capabilities == []
+    assert drifted.conformance_reports(manifest.adapter_id) == []
+
+
+def test_tool_resolution_covers_only_bound_operation_capabilities(tmp_path) -> None:
+    payload = _tool_manifest(capabilities=["artifact.inspect", "code.search"]).model_dump(mode="json")
+    payload["operations"][0]["capabilities"] = ["artifact.inspect"]
+    manifest = AdapterManifest.model_validate(payload)
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+
+    selection = manager.resolve(["code.search"], kind=AdapterKind.TOOL)
+
+    assert not selection.complete
+    assert selection.selected_adapters == []
+    assert selection.uncovered_capabilities == ["code.search"]
 
 
 def test_resolver_prefers_healthy_tools_then_reports_provisioning(tmp_path, monkeypatch) -> None:
@@ -232,7 +565,9 @@ def test_resolver_prefers_healthy_tools_then_reports_provisioning(tmp_path, monk
             healthy=healthy,
             source="system" if healthy else None,
             version="1.0.0" if healthy else None,
-            available_capabilities=manifest.capabilities if healthy else [],
+            observed_identity_sha256="a" * 64 if healthy else None,
+            declared_capabilities=manifest.capabilities,
+            available_capabilities=[],
             blockers=[] if healthy else ["not installed"],
         )
 
@@ -244,6 +579,41 @@ def test_resolver_prefers_healthy_tools_then_reports_provisioning(tmp_path, monk
     assert not selection.ready
     assert selection.selected_adapters == ["healthy", "installable"]
     assert selection.provisioning_required == ["installable"]
+    assert selection.conformance_required == ["healthy"]
+
+
+def test_resolver_does_not_offer_impossible_conformance_for_unobservable_tool(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    manifest = _tool_manifest()
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+    monkeypatch.setattr(
+        manager,
+        "status",
+        lambda _adapter_id: AdapterStatus(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            observed_at=utc_now(),
+            platform=current_platform(),
+            supported=True,
+            installed=True,
+            healthy=False,
+            source="system",
+            entrypoints=["/unobservable/tool"],
+            observed_identity_sha256=None,
+            declared_capabilities=manifest.capabilities,
+            blockers=["tool identity could not be observed"],
+        ),
+    )
+
+    selection = manager.resolve(["artifact.inspect"], kind=AdapterKind.TOOL)
+
+    assert not selection.complete
+    assert selection.selected_adapters == []
+    assert selection.provisioning_required == []
+    assert selection.conformance_required == []
+    assert selection.uncovered_capabilities == ["artifact.inspect"]
 
 
 def test_resolver_finds_exact_minimum_after_health_preference(tmp_path, monkeypatch) -> None:
@@ -269,6 +639,9 @@ def test_resolver_finds_exact_minimum_after_health_preference(tmp_path, monkeypa
             healthy=True,
             source="system",
             version="1.0.0",
+            observed_identity_sha256="a" * 64,
+            conformant_operations=[item.operation_id for item in manifest.operations],
+            declared_capabilities=manifest.capabilities,
             available_capabilities=manifest.capabilities,
         )
 
@@ -279,6 +652,7 @@ def test_resolver_finds_exact_minimum_after_health_preference(tmp_path, monkeypa
     assert selection.complete
     assert selection.ready
     assert selection.selected_adapters == ["left", "right"]
+    assert selection.conformance_required == []
 
 
 def test_release_plan_requires_exact_asset_digest_and_is_update_aware(tmp_path, monkeypatch) -> None:
@@ -476,8 +850,12 @@ def test_knowledge_search_preserves_snapshot_revision_and_locations(tmp_path) ->
     )
     (root / "installed.json").write_text(record.model_dump_json())
 
+    status = manager.status(manifest.adapter_id)
     hits = manager.search_knowledge(manifest.adapter_id, "scripting interpreter")
 
+    assert status.healthy
+    assert status.available_capabilities == manifest.capabilities
+    assert status.conformant_operations == []
     assert len(hits) == 1
     assert hits[0].revision == "f" * 40
     assert hits[0].relative_path == "data.json"

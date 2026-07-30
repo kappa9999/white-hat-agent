@@ -1,6 +1,13 @@
 """White Hat Agent Core: a model-neutral cyber knowledge and orchestration brain."""
 
 from ._version import __version__
+from .adapter_execution import (
+    AdapterExecutionBroker,
+    AdapterExecutionManifest,
+    AdapterExecutionReceipt,
+    AdapterExecutionRequest,
+    AdapterExecutionResult,
+)
 from .campaign.contracts import contract_from_playbook, validate_campaign_manifest
 from .campaign.fleet import FleetStore
 from .campaign.models import CampaignManifest, CampaignPlaybookContract, ProbeIntent, ScopeManifest
@@ -19,6 +26,11 @@ from .verification import verify_causality
 from .workspace import Workspace
 
 __all__ = [
+    "AdapterExecutionBroker",
+    "AdapterExecutionManifest",
+    "AdapterExecutionReceipt",
+    "AdapterExecutionRequest",
+    "AdapterExecutionResult",
     "AdaptivePlanner",
     "CampaignBlueprint",
     "CampaignManifest",
