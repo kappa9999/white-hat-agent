@@ -32,7 +32,12 @@ def verify_cli(executable: Path, temporary_root: Path, expected_version: str, la
     if version != f"White Hat Agent Core {expected_version}":
         raise RuntimeError(f"unexpected {label} version output: {version}")
     playbooks = list((workspace / "corpus/playbooks").rglob("playbook.yaml"))
-    if len(playbooks) != 8 or not (workspace / "capabilities/catalog.yaml").is_file():
+    if (
+        len(playbooks) != 9
+        or not (workspace / "capabilities/catalog.yaml").is_file()
+        or not (workspace / "adapters/catalog.yaml").is_file()
+        or not (workspace / "corpus/playbooks/binary/go-symbol-recovery/playbook.yaml").is_file()
+    ):
         raise RuntimeError(f"{label} candidate omitted bundled assets")
 
 

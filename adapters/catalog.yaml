@@ -223,6 +223,63 @@ adapters:
     updated_at: 2026-07-29T21:00:00Z
 
   - schema_version: "1.0"
+    adapter_id: goresym
+    adapter_version: "1.0.0"
+    title: GoReSym Go symbol recovery
+    description: Recover Go compiler, build, module, function, source-file, type, interface, and embedded-string metadata from stripped or malformed binaries.
+    kind: tool
+    provider: Google Mandiant FLARE
+    provider_url: https://github.com/mandiant/GoReSym
+    license:
+      name: MIT
+      url: https://github.com/mandiant/GoReSym/blob/master/LICENSE
+      attribution: GoReSym by Google Mandiant FLARE
+    capabilities: [binary.go-symbol-recover]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
+    platforms: [linux-x86_64, macos-x86_64, windows-x86_64]
+    priority: 8
+    probe:
+      executable_names:
+        any: [GoReSym, GoReSym.exe]
+      version_args: [-about]
+      version_pattern: 'Version: v(?P<version>[0-9]+(?:\.[0-9]+)+)'
+      minimum_version: "3.4"
+    provisioner:
+      kind: github-release
+      repository: mandiant/GoReSym
+      asset_patterns:
+        linux-x86_64: ['^GoReSym-linux\.zip$']
+        macos-x86_64: ['^GoReSym-mac\.zip$']
+        windows-x86_64: ['^GoReSym-windows\.zip$']
+      entrypoints:
+        linux: [GoReSym]
+        macos: [GoReSym]
+        windows: [GoReSym.exe]
+      strip_single_directory: false
+      max_download_bytes: 16777216
+      max_install_bytes: 33554432
+    operations:
+      - operation_id: goresym.symbol-map
+        operation_version: "1.0.0"
+        capabilities: [binary.go-symbol-recover]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/file]
+        output_types: [surface/go-symbol-map]
+        conformance_suite_id: goresym-self-analysis-v1
+        limits:
+          max_input_bytes: 536870912
+          max_output_bytes: 134217728
+          max_files: 64
+          max_records: 100000
+          wall_seconds: 600
+          cpu_seconds: 480
+          memory_mib: 4096
+          max_processes: 8
+    updated_at: 2026-07-30T13:20:00Z
+
+  - schema_version: "1.0"
     adapter_id: yara-x
     adapter_version: "1.0.0"
     title: YARA-X artifact signature engine
