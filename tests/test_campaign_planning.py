@@ -7,7 +7,7 @@ import pytest
 from conftest import build_scope
 
 from white_hat_agent.campaign.contracts import validate_campaign_manifest
-from white_hat_agent.campaign.models import CampaignObjective, ScopeManifest
+from white_hat_agent.campaign.models import CampaignObjective, ScopeManifest, TargetKind
 from white_hat_agent.campaign.planning import (
     CampaignPlanningRequest,
     CampaignTarget,
@@ -123,3 +123,44 @@ def test_campaign_contract_snapshot_must_match_the_exact_corpus_playbook() -> No
     manifest.playbook_contracts[0].capabilities = []
     with pytest.raises(ValueError, match="does not match corpus"):
         validate_campaign_manifest(corpus, manifest)
+
+
+def test_campaign_planner_selects_typed_packet_capture_mapping() -> None:
+    scope_payload = build_scope().model_dump(mode="json")
+    scope_payload["targets"] = [
+        {
+            "rule_id": "owned-capture",
+            "kind": "packet-capture",
+            "pattern": "fixture.pcap",
+        }
+    ]
+    scope_payload["allowed_execution_classes"] = ["analysis"]
+    scope_payload["allowed_capabilities"] = ["network.capture-inspect"]
+    request = CampaignPlanningRequest(
+        campaign_id="planned-packet-capture",
+        name="Planned packet capture mapping",
+        scope=ScopeManifest.model_validate(scope_payload),
+        objective=CampaignObjective(
+            statement="Map protocols and streams in an owned capture",
+            success_criteria=["Produce a bounded protocol map"],
+            desired_artifacts=["surface/network-protocol-map"],
+            priority_domains=["network-security", "protocol-analysis"],
+        ),
+        targets=[
+            CampaignTarget(
+                target_id="owned-capture",
+                kind=TargetKind.PACKET_CAPTURE,
+                value="fixture.pcap",
+                initial_artifacts=["artifact/packet-capture"],
+            )
+        ],
+        available_capabilities=["network.capture-inspect"],
+        execution_ceiling=ExecutionClass.ANALYSIS,
+        max_playbooks_per_target=1,
+    )
+
+    blueprint = plan_campaign(_corpus(), request)
+
+    assert blueprint.complete
+    assert blueprint.manifest.selected_playbooks == ["packet-capture-protocol-map"]
+    assert blueprint.targets[0].stages[0].scope_decision.allowed

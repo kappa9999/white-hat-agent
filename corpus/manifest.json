@@ -1,5 +1,5 @@
 {
-  "corpus_version": "sha256:a4ca7dd4a67a0448",
+  "corpus_version": "sha256:4af9070ca2277cdd",
   "entries": [
     {
       "capabilities": [
@@ -134,6 +134,34 @@
     },
     {
       "capabilities": [
+        "network.capture-inspect"
+      ],
+      "consumes": [
+        "artifact/packet-capture"
+      ],
+      "digest": "db9cae8c2e7fe856d03b6b99daae9be48532485390dfbf0fda837e384740388f",
+      "domains": [
+        "network-security",
+        "protocol-analysis",
+        "reverse-engineering"
+      ],
+      "playbook_id": "packet-capture-protocol-map",
+      "provides": [
+        "surface/network-protocol-map"
+      ],
+      "relative_path": "network/packet-capture-mapping/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Decode one bounded packet capture without name resolution or live traffic access, preserving packet order, protocol chains, stream endpoints, selected application metadata, and truncation state.",
+      "tags": [
+        "packet-capture",
+        "pcap",
+        "static-analysis"
+      ],
+      "title": "Map protocols and streams in an immutable packet capture",
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
         "artifact.hash",
         "artifact.inspect",
         "binary.diff",
@@ -213,7 +241,7 @@
       "version": "1.0.0"
     }
   ],
-  "generated_at": "2026-07-30T02:40:00Z",
-  "manifest_digest": "c92d2837415787f7af616cefbe6ee5365ffa53eb2975b229d1960ce95439da40",
+  "generated_at": "2026-07-30T04:00:00Z",
+  "manifest_digest": "228c37674b4af27d2a8ae5c4324d2fc2d33a96b22c1f1fb22b12f5e9a295a296",
   "schema_version": "1.0"
 }

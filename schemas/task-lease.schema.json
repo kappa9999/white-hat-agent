@@ -166,6 +166,7 @@
         "package",
         "mobile-app",
         "binary",
+        "packet-capture",
         "cloud-account",
         "api",
         "generic"

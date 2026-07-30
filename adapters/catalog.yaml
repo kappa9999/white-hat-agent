@@ -206,7 +206,7 @@ adapters:
     adapter_id: tshark
     adapter_version: "1.0.0"
     title: TShark protocol analysis
-    description: Headless multi-protocol packet decoding with bounded field, JSON, and expert-information output.
+    description: Headless offline packet decoding with bounded protocol, stream, and application metadata output.
     kind: tool
     provider: Wireshark Foundation
     provider_url: https://www.wireshark.org/docs/man-pages/tshark.html
@@ -214,9 +214,9 @@ adapters:
       name: GPL-2.0-or-later
       url: https://www.wireshark.org/faq.html#_license
       attribution: TShark from the Wireshark project
-    capabilities: [artifact.inspect, trace.capture]
-    modes: [offline, live-readonly]
-    max_execution_class: read-only
+    capabilities: [network.capture-inspect]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
     platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64, windows-arm64]
     priority: 20
     probe:
@@ -224,7 +224,26 @@ adapters:
         any: [tshark, tshark.exe]
       version_args: [--version]
       version_pattern: 'TShark \(Wireshark\) (?P<version>[0-9]+(?:\.[0-9]+)+)'
-    updated_at: 2026-07-29T21:00:00Z
+      minimum_version: "4.2.0"
+    operations:
+      - operation_id: tshark.packet-capture-map
+        operation_version: "1.0.0"
+        capabilities: [network.capture-inspect]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/packet-capture]
+        output_types: [surface/network-protocol-map]
+        conformance_suite_id: protocol-map-ethernet-ipv4-v1
+        limits:
+          max_input_bytes: 536870912
+          max_output_bytes: 67108864
+          max_files: 64
+          max_records: 10000
+          wall_seconds: 300
+          cpu_seconds: 240
+          memory_mib: 2048
+          max_processes: 8
+    updated_at: 2026-07-30T04:00:00Z
 
   - schema_version: "1.0"
     adapter_id: capa

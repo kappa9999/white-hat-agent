@@ -29,6 +29,7 @@ class TargetKind(StrEnum):
     PACKAGE = "package"
     MOBILE_APP = "mobile-app"
     BINARY = "binary"
+    PACKET_CAPTURE = "packet-capture"
     CLOUD_ACCOUNT = "cloud-account"
     API = "api"
     GENERIC = "generic"

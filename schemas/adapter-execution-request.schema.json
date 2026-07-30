@@ -197,6 +197,21 @@
       "title": "LlvmObjectInspectPayload",
       "type": "object"
     },
+    "TsharkPacketCaptureMapPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "tshark.packet-capture-map",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "TsharkPacketCaptureMapPayload",
+      "type": "object"
+    },
     "YaraXFileScanPayload": {
       "additionalProperties": false,
       "properties": {
@@ -253,6 +268,7 @@
           "ghidra.native-code-map": "#/$defs/GhidraNativeCodeMapPayload",
           "jadx.android-static-map": "#/$defs/JadxAndroidStaticMapPayload",
           "llvm.object-inspect": "#/$defs/LlvmObjectInspectPayload",
+          "tshark.packet-capture-map": "#/$defs/TsharkPacketCaptureMapPayload",
           "yara-x.file-scan": "#/$defs/YaraXFileScanPayload"
         },
         "propertyName": "operation_id"
@@ -272,6 +288,9 @@
         },
         {
           "$ref": "#/$defs/JadxAndroidStaticMapPayload"
+        },
+        {
+          "$ref": "#/$defs/TsharkPacketCaptureMapPayload"
         },
         {
           "$ref": "#/$defs/YaraXFileScanPayload"

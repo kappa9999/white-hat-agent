@@ -3,6 +3,26 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.11.0] - 2026-07-29
+
+### Added
+
+- the provider-neutral `network.capture-inspect` capability, typed `packet-capture` campaign target, reviewed
+  `tshark.packet-capture-map` operation, and a single-step protocol-mapping playbook;
+- bounded ordered packet metadata, protocol counts, TCP/UDP stream endpoints, TCP analysis signals, and selected
+  ARP, ICMP, DNS, HTTP, TLS, QUIC, and WebSocket fields without raw payload bytes; and
+- a production TShark 4.2.2 fleet run over the inert 755-byte PCAP, decoding all seven DNS and HTTP fixture packets
+  into two streams with no warning or truncation.
+
+### Security
+
+- callers cannot select interfaces, live capture, capture or display filters, decode-as rules, profiles, keys,
+  plugins, commands, flags, paths, or environment;
+- the fixed offline invocation disables name resolution and network access, limits packets and output, and exposes
+  only a reviewed field set; and
+- strict normalization rejects unselected fields, malformed values, duplicate or unordered frame numbers, schema
+  drift, and resource overruns while conformance binds the exact decoder, contract, fixture, and sandbox identities.
+
 ## [0.10.0] - 2026-07-29
 
 ### Added

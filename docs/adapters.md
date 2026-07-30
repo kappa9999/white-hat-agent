@@ -46,7 +46,7 @@ execution boundary and writes its identity-bound conformance report.
 
 `adapter conform` is the separate local execution gate. It never reads campaign evidence: inside the same offline
 supervisor it runs fixed version/dependency probes, then the reviewed driver against its bundled inert fixture (the
-784-byte summary ELF, 1,496-byte native-map ELF, 211-byte standalone YARA-X rule, or 904-byte DEX), and writes one
+784-byte summary ELF, 1,496-byte native-map ELF, 211-byte standalone YARA-X rule, 904-byte DEX, or 755-byte PCAP), and writes one
 identity-bound report under `.whitehat/adapters/.conformance/`. A tool or manifest change invalidates the report.
 `adapter resolve` reports a
 present, identity-observable but unproven provider under `conformance_required`, not `ready_adapters`. An installed
@@ -88,6 +88,7 @@ The first executable family is deliberately small:
 | `ghidra.native-code-map` | Decompiled functions, exact callsites, defined strings, and anchored string xrefs | bundled `WhaNativeCodeMap.java` only |
 | `yara-x.file-scan` | Rule identities, metadata, tags, string offsets, and bounded matched bytes | fixed YARA-X NDJSON mode against one artifact |
 | `jadx.android-static-map` | Decompiled class JSON, method code, call graph, manifest text, and resource inventory | fixed JADX JSON and JSON call-graph modes |
+| `tshark.packet-capture-map` | Ordered packets, protocol counts, stream endpoints, and selected application metadata | fixed TShark JSON fields against one offline capture |
 
 The Ghidra native-code-map driver accepts one `artifact/file` evidence object and emits one
 `surface/native-code-map`. Its only script is packaged with the release and content-digested with the Ghidra and Java
@@ -104,6 +105,15 @@ and at most 32 occurrences per pattern with 64 matched bytes per occurrence. Str
 records, fields, duplicate identities, malformed offsets, or inconsistent XOR output and reports every rule, string,
 record, and engine ceiling. The measured YARA-X runtime floor is 2 GiB of address space and eight process/thread slots;
 requests below either floor fail before execution.
+
+The TShark driver accepts one `artifact/packet-capture` evidence object and emits one
+`surface/network-protocol-map`. It fixes offline input, packet count, JSON mode, selected fields, temporary directory,
+and disabled name resolution. Callers cannot select interfaces, capture filters, display filters, decode-as rules,
+profiles, keys, plugins, commands, flags, paths, or environment. Normalization preserves ordered frame identities,
+timestamps, lengths, protocol chains, endpoint and stream metadata, common DNS/HTTP/TLS/QUIC/WebSocket fields, TCP
+analysis flags, packet ceilings, and conservative truncation. It rejects unselected fields, malformed values,
+duplicate or unordered frame numbers, output schema drift, and record or byte overruns. It never emits raw payload
+bytes or performs live capture.
 
 The JADX driver accepts one `artifact/mobile-build` evidence object and emits one `surface/static-map`. It fixes the
 configuration, mapping, deobfuscation, output, call-graph, thread, and logging modes; callers cannot add a plugin or
