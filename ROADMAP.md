@@ -17,11 +17,14 @@
 
 - concrete manifest, observed status, deterministic resolver, official release/Git provisioning, and bounded local
   knowledge search (initial built-in implementation complete);
-- execution handshake and conformance test kit beyond tool/version availability;
-- sandboxed local subprocess adapter runner with explicit filesystem/network resources;
+- typed execution handshake and exact-identity conformance kit (Ghidra, capa, and LLVM implemented on Linux/WSL);
+- Bubblewrap offline subprocess supervisor with fixed drivers, no network, bounded resources, and evidence-only input
+  (initial implementation complete);
+- sealed content-addressed runtime roots with cgroup-v2 aggregate CPU, memory, PID, disk-byte, and inode enforcement
+  before treating the local supervisor as a hostile-artifact detonation boundary;
 - bounded HTTP observation adapter for owned labs and exact program scopes;
 - repository/patch-diff adapter using local source artifacts;
-- mobile and binary inspection adapters that preserve exact tool/database identities;
+- expand typed binary/mobile operations beyond the current Ghidra summary, capa analysis, and LLVM object inspection;
 - browser and cloud adapters only after transport, credential, and tenant controls are defined; and
 - evidence signing and adapter output truncation manifests.
 
@@ -29,8 +32,8 @@
 
 - production advisory ingestion for CISA KEV, OSV, and FIRST EPSS with immutable source snapshots and transparent
   prioritization;
-- CVE List V5 and NVD enrichment with alias-graph correlation, source-specific attribution, and periodic full
-  reconciliation;
+- NVD enrichment for the existing CVE List V5 records, with alias-graph correlation, source-specific attribution,
+  and periodic full reconciliation;
 - importers for public bounty/open-source program feeds with exact policy and scope snapshots;
 - corpus-aware campaign decomposition across target inventories;
 - distributed coordinator with authenticated workers and tenant isolation;

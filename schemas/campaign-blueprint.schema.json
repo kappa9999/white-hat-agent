@@ -261,6 +261,7 @@
           "type": "array"
         },
         "version": {
+          "maxLength": 64,
           "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Version",
           "type": "string"
@@ -711,6 +712,7 @@
           "type": "string"
         },
         "playbook_version": {
+          "maxLength": 64,
           "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Playbook Version",
           "type": "string"

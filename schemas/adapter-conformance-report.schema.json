@@ -1,0 +1,176 @@
+{
+  "$defs": {
+    "AdapterConformanceCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "ok",
+        "detail"
+      ],
+      "title": "AdapterConformanceCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapter_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/AdapterConformanceCheck"
+      },
+      "minItems": 1,
+      "title": "Checks",
+      "type": "array"
+    },
+    "driver_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Driver Id",
+      "type": "string"
+    },
+    "driver_version": {
+      "maxLength": 64,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "title": "Driver Version",
+      "type": "string"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "fixture_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Fixture Id",
+      "type": "string"
+    },
+    "fixture_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Fixture Sha256",
+      "type": "string"
+    },
+    "manifest_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Manifest Digest",
+      "type": "string"
+    },
+    "observed_identity_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Observed Identity Sha256",
+      "type": "string"
+    },
+    "operation_contract_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Operation Contract Digest",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "operation_version": {
+      "maxLength": 64,
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "title": "Operation Version",
+      "type": "string"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "requirement_identity_sha256": {
+      "items": {
+        "anyOf": [
+          {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "maxItems": 32,
+      "title": "Requirement Identity Sha256",
+      "type": "array"
+    },
+    "sandbox_profile_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sandbox Profile Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "tool_payload_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Tool Payload Sha256",
+      "type": "string"
+    },
+    "tool_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Tool Version",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "adapter_id",
+    "operation_id",
+    "operation_version",
+    "manifest_digest",
+    "operation_contract_digest",
+    "observed_identity_sha256",
+    "requirement_identity_sha256",
+    "tool_payload_sha256",
+    "tool_version",
+    "driver_id",
+    "driver_version",
+    "sandbox_profile_sha256",
+    "fixture_id",
+    "fixture_sha256",
+    "started_at",
+    "finished_at",
+    "passed",
+    "checks"
+  ],
+  "title": "AdapterConformanceReport",
+  "type": "object"
+}

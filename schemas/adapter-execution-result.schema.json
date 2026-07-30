@@ -1,0 +1,366 @@
+{
+  "$defs": {
+    "AdapterCapture": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_length": {
+          "minimum": 0,
+          "title": "Byte Length",
+          "type": "integer"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "content_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "evidence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Id"
+        },
+        "media_type": {
+          "title": "Media Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "media_type",
+        "byte_length",
+        "content_sha256",
+        "complete"
+      ],
+      "title": "AdapterCapture",
+      "type": "object"
+    },
+    "AdapterExecutionOutcome": {
+      "enum": [
+        "succeeded",
+        "tool-failed",
+        "timed-out",
+        "resource-limited",
+        "invalid-output"
+      ],
+      "title": "AdapterExecutionOutcome",
+      "type": "string"
+    },
+    "AdapterNormalizedResult": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Artifact Sha256",
+          "type": "string"
+        },
+        "data": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Data",
+          "type": "object"
+        },
+        "operation_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "records_returned": {
+          "minimum": 0,
+          "title": "Records Returned",
+          "type": "integer"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "operation_id",
+        "artifact_sha256",
+        "records_returned",
+        "truncated",
+        "data"
+      ],
+      "title": "AdapterNormalizedResult",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "OperationResourceLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Cpu Seconds",
+          "type": "integer"
+        },
+        "max_files": {
+          "exclusiveMinimum": 0,
+          "maximum": 100000,
+          "title": "Max Files",
+          "type": "integer"
+        },
+        "max_input_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 2147483648,
+          "title": "Max Input Bytes",
+          "type": "integer"
+        },
+        "max_output_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 2147483648,
+          "title": "Max Output Bytes",
+          "type": "integer"
+        },
+        "max_processes": {
+          "exclusiveMinimum": 0,
+          "maximum": 4096,
+          "title": "Max Processes",
+          "type": "integer"
+        },
+        "max_records": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000000,
+          "title": "Max Records",
+          "type": "integer"
+        },
+        "memory_mib": {
+          "exclusiveMinimum": 0,
+          "maximum": 1048576,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "wall_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Wall Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_input_bytes",
+        "max_output_bytes",
+        "max_files",
+        "max_records",
+        "wall_seconds",
+        "cpu_seconds",
+        "memory_mib",
+        "max_processes"
+      ],
+      "title": "OperationResourceLimits",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapter_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Adapter Id",
+      "type": "string"
+    },
+    "campaign_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "captures": {
+      "items": {
+        "$ref": "#/$defs/AdapterCapture"
+      },
+      "title": "Captures",
+      "type": "array"
+    },
+    "conformance_report_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Conformance Report Digest",
+      "type": "string"
+    },
+    "effective_limits": {
+      "$ref": "#/$defs/OperationResourceLimits"
+    },
+    "evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "exit_code": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exit Code"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "input_content_sha256": {
+      "items": {
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+      },
+      "title": "Input Content Sha256",
+      "type": "array"
+    },
+    "input_evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Input Evidence Ids",
+      "type": "array"
+    },
+    "intent_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Intent Id",
+      "type": "string"
+    },
+    "manifest_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Manifest Digest",
+      "type": "string"
+    },
+    "normalized": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AdapterNormalizedResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "observed_identity_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Observed Identity Sha256",
+      "type": "string"
+    },
+    "operation_contract_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Operation Contract Digest",
+      "type": "string"
+    },
+    "operation_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "operation_version": {
+      "title": "Operation Version",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/AdapterExecutionOutcome"
+    },
+    "request_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Request Digest",
+      "type": "string"
+    },
+    "sandbox_profile_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sandbox Profile Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope_decision_id": {
+      "title": "Scope Decision Id",
+      "type": "string"
+    },
+    "signal": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Signal"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "target": {
+      "title": "Target",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "tool_payload_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Tool Payload Sha256",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "execution_id",
+    "request_digest",
+    "campaign_id",
+    "task_id",
+    "target",
+    "intent_id",
+    "scope_decision_id",
+    "adapter_id",
+    "operation_id",
+    "operation_version",
+    "manifest_digest",
+    "operation_contract_digest",
+    "observed_identity_sha256",
+    "tool_payload_sha256",
+    "conformance_report_digest",
+    "sandbox_profile_sha256",
+    "input_evidence_ids",
+    "input_content_sha256",
+    "effective_limits",
+    "outcome",
+    "started_at",
+    "finished_at"
+  ],
+  "title": "AdapterExecutionResult",
+  "type": "object"
+}

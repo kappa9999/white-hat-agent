@@ -1,0 +1,240 @@
+{
+  "$defs": {
+    "AdapterLimitOverrides": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Seconds"
+        },
+        "max_files": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Files"
+        },
+        "max_input_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Input Bytes"
+        },
+        "max_output_bytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Output Bytes"
+        },
+        "max_processes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Processes"
+        },
+        "max_records": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Records"
+        },
+        "memory_mib": {
+          "anyOf": [
+            {
+              "minimum": 64,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Mib"
+        },
+        "wall_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Seconds"
+        }
+      },
+      "title": "AdapterLimitOverrides",
+      "type": "object"
+    },
+    "CapaFileAnalyzePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operating_system": {
+          "default": "auto",
+          "enum": [
+            "auto",
+            "linux",
+            "macos",
+            "windows"
+          ],
+          "title": "Operating System",
+          "type": "string"
+        },
+        "operation_id": {
+          "const": "capa.file-analyze",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "CapaFileAnalyzePayload",
+      "type": "object"
+    },
+    "GhidraBinarySummaryPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "ghidra.binary-summary",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "GhidraBinarySummaryPayload",
+      "type": "object"
+    },
+    "LlvmObjectInspectPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "llvm.object-inspect",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "LlvmObjectInspectPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "input_evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Input Evidence Ids",
+      "type": "array"
+    },
+    "lease_token": {
+      "format": "password",
+      "title": "Lease Token",
+      "type": "string",
+      "writeOnly": true
+    },
+    "limits": {
+      "$ref": "#/$defs/AdapterLimitOverrides"
+    },
+    "operation": {
+      "discriminator": {
+        "mapping": {
+          "capa.file-analyze": "#/$defs/CapaFileAnalyzePayload",
+          "ghidra.binary-summary": "#/$defs/GhidraBinarySummaryPayload",
+          "llvm.object-inspect": "#/$defs/LlvmObjectInspectPayload"
+        },
+        "propertyName": "operation_id"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/GhidraBinarySummaryPayload"
+        },
+        {
+          "$ref": "#/$defs/CapaFileAnalyzePayload"
+        },
+        {
+          "$ref": "#/$defs/LlvmObjectInspectPayload"
+        }
+      ],
+      "title": "Operation"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Task Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent_id",
+    "task_id",
+    "lease_token",
+    "operation",
+    "input_evidence_ids"
+  ],
+  "title": "AdapterExecutionRequest",
+  "type": "object"
+}

@@ -328,6 +328,28 @@ class FleetStore:
         )
         return task
 
+    def assert_active_lease(self, task_id: str, agent_id: str, lease_token: str) -> FleetTask:
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            self._assert_lease(connection, task_id, agent_id, lease_token, datetime.now(UTC))
+            row = connection.execute(
+                """
+                SELECT task_json, state, attempts, lease_owner, lease_expires_at
+                FROM tasks WHERE task_id = ?
+                """,
+                (task_id,),
+            ).fetchone()
+        if not row:  # pragma: no cover - established by _assert_lease in the same transaction
+            raise FleetError(f"unknown task: {task_id}")
+        task = FleetTask.model_validate_json(row["task_json"])
+        task.state = TaskState(row["state"])
+        task.attempts = int(row["attempts"])
+        task.lease_owner = row["lease_owner"]
+        task.lease_expires_at = (
+            datetime.fromisoformat(row["lease_expires_at"]) if row["lease_expires_at"] else None
+        )
+        return task
+
     def register_agent(self, registration: AgentRegistration) -> None:
         now = _iso(datetime.now(UTC))
         payload = json.dumps(registration.model_dump(mode="json"), sort_keys=True)

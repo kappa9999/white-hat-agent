@@ -10,12 +10,14 @@ from fastmcp.server.middleware.timing import TimingMiddleware
 from pydantic import Field, ValidationError
 
 from ._version import __version__
+from .adapter_execution import AdapterExecutionReceipt, AdapterExecutionRequest
 from .adapter_provisioning import (
     AdapterProvisioner,
     AdapterProvisionPlan,
     AdapterProvisionResult,
 )
 from .adapter_registry import (
+    AdapterConformanceReport,
     AdapterKind,
     AdapterManifest,
     AdapterSearchHit,
@@ -502,6 +504,28 @@ def _adapter_server(workspace: Workspace) -> FastMCP:
     )
     def provision(plan: AdapterProvisionPlan) -> AdapterProvisionResult:
         return AdapterProvisioner(workspace.adapters).provision(plan)
+
+    @server.tool(
+        name="conform",
+        version="1.0",
+        description="Run one fixed synthetic adapter operation suite in the isolated offline sandbox.",
+        annotations={"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False},
+        tags={"adapter", "conformance", "sandbox", "write"},
+    )
+    def conform(adapter_id: str, operation_id: str) -> AdapterConformanceReport:
+        return workspace.adapter_execution.conform(adapter_id, operation_id)
+
+    @server.tool(
+        name="execute",
+        version="1.0",
+        description=(
+            "Execute one reviewed typed offline operation over immutable task evidence under an active lease."
+        ),
+        annotations={"readOnlyHint": False, "idempotentHint": False, "openWorldHint": False},
+        tags={"adapter", "execution", "sandbox", "evidence", "write"},
+    )
+    def execute(request: AdapterExecutionRequest) -> AdapterExecutionReceipt:
+        return AdapterExecutionReceipt.from_result(workspace.adapter_execution.execute(request))
 
     @server.tool(
         name="search_knowledge",

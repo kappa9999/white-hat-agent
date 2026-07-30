@@ -1,0 +1,43 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifact_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Artifact Sha256",
+      "type": "string"
+    },
+    "data": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Data",
+      "type": "object"
+    },
+    "operation_id": {
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "records_returned": {
+      "minimum": 0,
+      "title": "Records Returned",
+      "type": "integer"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "operation_id",
+    "artifact_sha256",
+    "records_returned",
+    "truncated",
+    "data"
+  ],
+  "title": "AdapterNormalizedResult",
+  "type": "object"
+}

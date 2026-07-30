@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pydantic import Field
 
+from .adapter_execution import AdapterExecutionBroker, conformance_report_is_current
 from .adapter_registry import AdapterManager, AdapterRegistry
 from .campaign.fleet import FleetStore
 from .capabilities.catalog import CapabilityCatalog
@@ -152,7 +153,15 @@ class Workspace:
 
     @property
     def adapters(self) -> AdapterManager:
-        return AdapterManager(self.adapter_registry, self.adapters_dir)
+        return AdapterManager(
+            self.adapter_registry,
+            self.adapters_dir,
+            conformance_verifier=conformance_report_is_current,
+        )
+
+    @property
+    def adapter_execution(self) -> AdapterExecutionBroker:
+        return AdapterExecutionBroker(self.adapters, self.fleet, self.evidence)
 
     @property
     def campaigns_dir(self) -> Path:

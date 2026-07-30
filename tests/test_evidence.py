@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -45,6 +47,112 @@ def test_content_addressed_import_is_verified_and_idempotent(tmp_path) -> None:
     assert stored.read_bytes() == source.read_bytes()
     assert store.get_evidence(first.evidence_id) == first
     assert store.list_evidence(campaign_id="example-lab-campaign") == [first]
+
+
+def test_local_file_resolution_requires_exact_binding_and_reverifies_content(tmp_path) -> None:
+    source = tmp_path / "trace.txt"
+    source.write_text("trace fixture", encoding="utf-8")
+    store = EvidenceStore(tmp_path / "state.db", tmp_path / "artifacts")
+    store.initialize()
+    evidence = store.import_file(source, _descriptor(), media_type="text/plain")
+
+    resolved_record, resolved_path = store.resolve_local_file(
+        evidence.evidence_id,
+        "example-lab-campaign",
+        "task-fixture",
+    )
+
+    assert resolved_record == evidence
+    assert resolved_path == (store.artifacts_dir / evidence.storage_path).resolve()
+    with pytest.raises(EvidenceError, match="different campaign"):
+        store.resolve_local_file(evidence.evidence_id, "different-campaign", "task-fixture")
+    with pytest.raises(EvidenceError, match="exact task"):
+        store.resolve_local_file(evidence.evidence_id, "example-lab-campaign", "different-task")
+
+    unbound_source = tmp_path / "unbound.txt"
+    unbound_source.write_text("unbound", encoding="utf-8")
+    unbound = store.import_file(
+        unbound_source,
+        _descriptor().model_copy(update={"task_id": None}),
+        media_type="text/plain",
+    )
+    with pytest.raises(EvidenceError, match="exact task"):
+        store.resolve_local_file(unbound.evidence_id, "example-lab-campaign", "task-fixture")
+
+    resolved_path.write_text("drift fixture", encoding="utf-8")
+    assert resolved_path.stat().st_size == evidence.byte_length
+    with pytest.raises(EvidenceError, match="digest verification"):
+        store.resolve_local_file(evidence.evidence_id, "example-lab-campaign", "task-fixture")
+
+    resolved_path.write_text("short", encoding="utf-8")
+    with pytest.raises(EvidenceError, match="byte length verification"):
+        store.resolve_local_file(evidence.evidence_id, "example-lab-campaign", "task-fixture")
+
+
+def test_local_file_snapshot_is_private_digest_verified_and_bounded(tmp_path) -> None:
+    source = tmp_path / "binary"
+    source.write_bytes(b"owned fixture")
+    store = EvidenceStore(tmp_path / "state.db", tmp_path / "artifacts")
+    store.initialize()
+    evidence = store.import_file(source, _descriptor(), media_type="application/octet-stream")
+
+    record, snapshot = store.snapshot_local_file(
+        evidence.evidence_id,
+        "example-lab-campaign",
+        "task-fixture",
+        tmp_path / "broker/input.artifact",
+        max_bytes=1024,
+    )
+
+    assert record == evidence
+    assert snapshot.read_bytes() == b"owned fixture"
+    assert snapshot.stat().st_mode & 0o777 == 0o400
+    with pytest.raises(EvidenceError, match="snapshot byte limit"):
+        store.snapshot_local_file(
+            evidence.evidence_id,
+            "example-lab-campaign",
+            "task-fixture",
+            tmp_path / "broker/second.artifact",
+            max_bytes=1,
+        )
+
+
+def test_local_file_resolution_rejects_external_links_special_files_and_path_drift(tmp_path) -> None:
+    store = EvidenceStore(tmp_path / "state.db", tmp_path / "artifacts")
+    store.initialize()
+    external = store.register_external(
+        _descriptor(),
+        content_sha256="a" * 64,
+        byte_length=1,
+        media_type="text/plain",
+        external_uri="https://evidence.invalid/fixture",
+    )
+    with pytest.raises(EvidenceError, match="not local content-addressed"):
+        store.resolve_local_file(external.evidence_id, "example-lab-campaign", "task-fixture")
+
+    source = tmp_path / "local.txt"
+    source.write_text("local fixture", encoding="utf-8")
+    evidence = store.import_file(source, _descriptor(), media_type="text/plain")
+    stored = store.artifacts_dir / evidence.storage_path
+    stored.unlink()
+    stored.symlink_to(source)
+    with pytest.raises(EvidenceError, match="symbolic link"):
+        store.resolve_local_file(evidence.evidence_id, "example-lab-campaign", "task-fixture")
+
+    stored.unlink()
+    stored.mkdir()
+    with pytest.raises(EvidenceError, match="regular file"):
+        store.resolve_local_file(evidence.evidence_id, "example-lab-campaign", "task-fixture")
+
+    payload = evidence.model_dump(mode="json")
+    payload["storage_path"] = "../local.txt"
+    with sqlite3.connect(store.database) as connection:
+        connection.execute(
+            "UPDATE evidence_records SET record_json = ? WHERE evidence_id = ?",
+            (json.dumps(payload, sort_keys=True), evidence.evidence_id),
+        )
+    with pytest.raises(EvidenceError, match="not content-addressed"):
+        store.resolve_local_file(evidence.evidence_id, "example-lab-campaign", "task-fixture")
 
 
 def test_symlink_and_oversized_imports_are_rejected(tmp_path) -> None:

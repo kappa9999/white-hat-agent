@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ._version import __version__
+from .adapter_execution import AdapterExecutionError, AdapterExecutionRequest
 from .adapter_provisioning import AdapterProvisioner, AdapterProvisionPlan
 from .adapter_registry import AdapterKind, AdapterRegistryError
 from .adapters import ReplayAdapter, ReplayTranscript
@@ -174,6 +175,19 @@ def build_parser() -> argparse.ArgumentParser:
     adapter_read.add_argument("relative_path")
     adapter_read.add_argument("--start-line", type=int, default=1)
     adapter_read.add_argument("--line-count", type=int, default=80)
+    adapter_conform = adapter_commands.add_parser(
+        "conform", help="run a fixed synthetic operation suite in the offline sandbox"
+    )
+    _workspace_option(adapter_conform)
+    adapter_conform.add_argument("adapter_id")
+    adapter_conform.add_argument("--operation")
+    adapter_conform.add_argument("--out", type=Path)
+    adapter_execute = adapter_commands.add_parser(
+        "execute", help="run one typed evidence-bound operation under an active fleet lease"
+    )
+    _workspace_option(adapter_execute)
+    adapter_execute.add_argument("--request", type=Path, required=True)
+    adapter_execute.add_argument("--out", type=Path)
 
     knowledge = commands.add_parser("knowledge", help="turn plain-language knowledge into a playbook draft")
     knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
@@ -604,6 +618,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         FileNotFoundError,
         AdapterRegistryError,
+        AdapterExecutionError,
         EvidenceError,
         FleetError,
         IntelligenceError,
@@ -710,6 +725,21 @@ def _run_adapter(args: argparse.Namespace) -> None:
                 line_count=args.line_count,
             )
         )
+    elif args.adapter_command == "conform":
+        manifest = registry.get(args.adapter_id)
+        operation_ids = [operation.operation_id for operation in manifest.operations]
+        if args.operation:
+            operation_ids = [args.operation]
+        if not operation_ids:
+            raise ValueError(f"adapter has no executable operations: {args.adapter_id}")
+        reports = [
+            workspace.adapter_execution.conform(args.adapter_id, operation_id)
+            for operation_id in operation_ids
+        ]
+        _emit(reports[0] if len(reports) == 1 else reports, args.out)
+    elif args.adapter_command == "execute":
+        request = _read_model(args.request, AdapterExecutionRequest)
+        _emit(workspace.adapter_execution.execute(request), args.out)
 
 
 def _run_knowledge(args: argparse.Namespace) -> None:

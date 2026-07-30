@@ -78,9 +78,9 @@ White Hat Agent maps concrete tools and knowledge sources to the existing provid
 prefers healthy tools already on the host and never installs as a side effect of search, planning, or fleet work.
 
 ```bash
-# Prefer already healthy providers, then minimize the provider set.
+# Resolve the smallest provider set and expose any install/conformance gap.
 wha adapter resolve --kind tool \
-  --capability artifact.inspect --capability code.search --capability graph.reason
+  --capability artifact.inspect --capability binary.behavior-identify
 
 # Inspect the exact official release and SHA-256 without changing the host.
 wha adapter plan ghidra --out ghidra-plan.json
@@ -88,14 +88,23 @@ wha adapter plan ghidra --out ghidra-plan.json
 # Explicit one-command install/update into this workspace when needed.
 wha adapter install ghidra --yes
 
+# Prove one exact operation before agents can claim its capability.
+# Fixed command-backed version checks run only here, inside the offline sandbox.
+wha adapter conform ghidra
+wha adapter status ghidra
+
 # Add and query exact, revision-bound machine-readable knowledge on demand.
 wha adapter install mitre-attack --yes
 wha adapter search mitre-attack T1059.001
 ```
 
-The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Knowledge adapters cover
-MITRE ATT&CK STIX and capa rules; existing CVE List V5, CISA KEV, OSV, and EPSS ingestion remains in the intelligence
-layer. See [tools and knowledge adapters](docs/adapters.md).
+The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Ghidra binary summaries,
+capa behavior identification, and LLVM object inspection are executable through reviewed typed drivers on Linux/WSL.
+They run without network access over immutable fleet-task evidence. Status and resolution never execute discovered
+binaries; fixed command-backed version checks run only during explicit sandboxed conformance, and a version result
+alone grants no executable capability. Knowledge adapters cover MITRE ATT&CK STIX and capa rules; existing CVE List
+V5, CISA KEV, OSV, and EPSS ingestion remains in the intelligence layer. See
+[tools and knowledge adapters](docs/adapters.md).
 
 Start the production public-intelligence loop with bounded official sources:
 
@@ -124,7 +133,7 @@ before the scope gate.
 |---|---|
 | **Knowledge** | Lossless multilingual intake, provenance, strict playbooks, review state, and versioned validation |
 | **Composition** | Deterministic chaining through semantic artifacts, capabilities, compatibility, and explicit blockers |
-| **Adapters** | Observed tool identity, deterministic selection, digest-bound provisioning, and revision-bound knowledge |
+| **Adapters** | Observed identity, conformance-proven typed execution, digest-bound provisioning, and revision-bound knowledge |
 | **Intelligence** | Bounded official-source ingestion, immutable snapshots, transparent priority, and exact-artifact applicability |
 | **Campaigns** | Exact scope snapshots, target identity, budgets, typed probe intent, and playbook contracts |
 | **Fleet** | Compatible-agent matching, atomic task deduplication, expiring leases, and bounded retries |
@@ -194,7 +203,7 @@ wha serve --workspace /absolute/path/to/white-hat-workspace --transport http --h
 ## Project status
 
 > **Alpha:** the knowledge compiler, composition engine, public vulnerability-intelligence monitor, scope evaluator,
-> opportunity ranking, concrete adapter registry/provisioning, SQLite fleet, evidence store, adaptive discovery kernel,
+> opportunity ranking, concrete adapter registry/provisioning and typed offline execution, SQLite fleet, evidence store, adaptive discovery kernel,
 > MCP server, schemas, and deterministic fixtures are implemented. Network access is limited to fixed public
 > intelligence sources and explicit official adapter upstreams. The repository does not ship a general target scanner;
 > live target capability belongs in explicit adapters with exact campaign scope, not hidden inside the planner.

@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from jsonschema import ValidationError as JsonSchemaValidationError
 from jsonschema import validate
+from pydantic import ValidationError as PydanticValidationError
 
+from white_hat_agent.adapter_execution import AdapterExecutionRequest
 from white_hat_agent.cli import main
 from white_hat_agent.fixtures import (
     build_active_data_episode,
@@ -95,8 +99,32 @@ def test_exported_episode_schema_validates_fixture(tmp_path) -> None:
     assert "campaign-manifest.schema.json" in names
     assert "normalized-advisory.schema.json" in names
     assert "adapter-manifest.schema.json" in names
+    assert "adapter-execution-manifest.schema.json" in names
+    assert "adapter-execution-receipt.schema.json" in names
     assert "adapter-provision-plan.schema.json" in names
     assert "intelligence-sync-report.schema.json" in names
+
+
+def test_execution_request_schema_matches_runtime_discriminator_rules(tmp_path) -> None:
+    schema_path = next(
+        path for path in export_schemas(tmp_path) if path.name == "adapter-execution-request.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    request = {
+        "agent_id": "fixture-agent",
+        "task_id": "task-fixture",
+        "lease_token": "lease-token-that-is-long-enough",
+        "operation": {"operation_id": "llvm.object-inspect"},
+        "input_evidence_ids": ["evidence-fixture"],
+    }
+
+    validate(instance=request, schema=schema)
+    AdapterExecutionRequest.model_validate(request)
+    request["operation"] = {}
+    with pytest.raises(JsonSchemaValidationError):
+        validate(instance=request, schema=schema)
+    with pytest.raises(PydanticValidationError):
+        AdapterExecutionRequest.model_validate(request)
 
 
 def test_intelligence_cli_status_and_empty_brief_are_local(tmp_path) -> None:

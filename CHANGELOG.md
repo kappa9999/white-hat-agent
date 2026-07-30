@@ -3,6 +3,33 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.6.0] - 2026-07-29
+
+### Added
+
+- reviewed typed operations for Ghidra headless binary summaries, capa behavior identification, and LLVM object
+  inspection, available through Python, CLI, MCP, and generated JSON Schemas;
+- fixed inert ELF conformance suites whose reports bind the exact manifest, operation, tool identity, provider driver,
+  fixture, and offline sandbox profile; and
+- lease- and task-bound execution that resolves only immutable local evidence IDs and persists normalized output,
+  stdout, stderr, and an execution manifest as content-addressed evidence; and
+- compact MCP execution receipts that keep bounded analyzer data behind evidence handles.
+
+### Security
+
+- tool availability and version health no longer grant executable capabilities; only a current passing conformance
+  report does;
+- the Linux/WSL supervisor clears the environment, drops capabilities, unshares network/PID/IPC/UTS namespaces,
+  excludes host `/etc`, snapshots one immutable input, keeps captures outside the tool mount, mounts reviewed tool
+  payloads read-only, and enforces wall, CPU, memory, monitored process, entry, record, and output ceilings; and
+- callers cannot supply commands, arguments, environment variables, paths, scripts, plugins, mounts, or output
+  directories, and lease tokens are neither returned nor persisted;
+- passive status and resolution never launch PATH-discovered binaries; fixed version and dependency probes run only
+  during explicit offline conformance, and tool plus dependency digests invalidate cached observations on drift;
+- execution manifests reference normalized evidence by digest and ID instead of duplicating analyzer output, keeping
+  each evidence artifact independently inside the configured import ceiling; and
+- resolver output never routes an installed but unobservable tool to a conformance action that must refuse it.
+
 ## [0.5.0] - 2026-07-29
 
 ### Added
@@ -117,6 +144,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.6.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.3.2...v0.4.0

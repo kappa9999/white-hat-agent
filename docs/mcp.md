@@ -66,9 +66,20 @@ commit API. `adapter_provision` applies an exact plan by downloading only its re
 into `.whitehat/adapters/`; it is both networked and mutating. None contacts advisory targets. Clients should require
 approval for synchronization and provisioning when those side effects are not already part of operator policy.
 
-The other adapter tools search manifests, observe local versions, resolve capability coverage, or query already
-provisioned snapshots. They never install as a side effect. In particular, campaign planning and fleet claiming do
-not invoke provisioning.
+`adapter_conform` is local, closed-world execution: it runs fixed version/dependency checks and one synthetic fixture
+through one reviewed typed driver in an offline Bubblewrap sandbox, then records the identity-bound result.
+`adapter_execute` is also local and
+closed-world: it requires an active fleet lease, exact immutable task evidence, a matching operation contract, and a
+current passing conformance report. It emits normalized and raw evidence plus an execution manifest. Neither accepts
+caller-defined commands, arguments, environment variables, paths, scripts, plugins, mounts, or output directories.
+Both are mutating because they write local conformance or evidence records, so clients should normally require
+approval. `adapter_execute` returns a compact receipt and evidence handles; normalized analyzer data stays in the
+content-addressed evidence store instead of crossing the MCP response-size boundary.
+
+The remaining adapter tools search manifests, resolve and hash paths, read file-backed version metadata or cached
+conformance observations, resolve capability coverage, or query already provisioned snapshots. They never install or
+execute adapters as a side effect. In particular, status, campaign planning, adapter resolution, and fleet claiming do
+not invoke provisioning, conformance, or execution.
 
 Mutating tools are visibly annotated and use explicit identifiers. Response limiting applies at the root, mounted
 servers mask error details consistently, tool lists are bounded, and HTTP sessions are stateless. Tool results still

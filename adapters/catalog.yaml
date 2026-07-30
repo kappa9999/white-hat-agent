@@ -41,6 +41,24 @@ adapters:
       strip_single_directory: true
       max_download_bytes: 1073741824
       max_install_bytes: 2147483648
+    operations:
+      - operation_id: ghidra.binary-summary
+        operation_version: "1.0.0"
+        capabilities: [artifact.inspect]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/file]
+        output_types: [artifact/metadata]
+        conformance_suite_id: minimal-elf64-x86-64-v1
+        limits:
+          max_input_bytes: 134217728
+          max_output_bytes: 67108864
+          max_files: 10000
+          max_records: 10000
+          wall_seconds: 600
+          cpu_seconds: 300
+          memory_mib: 8192
+          max_processes: 64
     updated_at: 2026-07-29T21:00:00Z
 
   - schema_version: "1.0"
@@ -86,9 +104,27 @@ adapters:
     priority: 15
     probe:
       executable_names:
-        any: [llvm-config, llvm-config.exe]
+        any: [llvm-readobj, llvm-readobj.exe]
       version_args: [--version]
       version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
+    operations:
+      - operation_id: llvm.object-inspect
+        operation_version: "1.0.0"
+        capabilities: [artifact.inspect]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/file]
+        output_types: [artifact/metadata]
+        conformance_suite_id: minimal-elf64-x86-64-v1
+        limits:
+          max_input_bytes: 268435456
+          max_output_bytes: 33554432
+          max_files: 32
+          max_records: 10000
+          wall_seconds: 60
+          cpu_seconds: 30
+          memory_mib: 2048
+          max_processes: 16
     updated_at: 2026-07-29T21:00:00Z
 
   - schema_version: "1.0"
@@ -167,7 +203,7 @@ adapters:
       name: Apache-2.0
       url: https://github.com/mandiant/capa/blob/master/LICENSE.txt
       attribution: capa by Google Mandiant FLARE
-    capabilities: [artifact.inspect, graph.reason]
+    capabilities: [artifact.inspect, binary.behavior-identify, graph.reason]
     modes: [offline, sandbox]
     max_execution_class: analysis
     platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64]
@@ -193,6 +229,24 @@ adapters:
       strip_single_directory: true
       max_download_bytes: 134217728
       max_install_bytes: 268435456
+    operations:
+      - operation_id: capa.file-analyze
+        operation_version: "1.0.0"
+        capabilities: [binary.behavior-identify]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/file]
+        output_types: [artifact/behavior-summary]
+        conformance_suite_id: minimal-elf64-x86-64-v1
+        limits:
+          max_input_bytes: 134217728
+          max_output_bytes: 67108864
+          max_files: 64
+          max_records: 5000
+          wall_seconds: 300
+          cpu_seconds: 240
+          memory_mib: 4096
+          max_processes: 32
     updated_at: 2026-07-29T21:00:00Z
 
   - schema_version: "1.0"

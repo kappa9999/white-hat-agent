@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import stat
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -122,6 +123,110 @@ class EvidenceStore:
         if not row:
             raise EvidenceError(f"unknown evidence: {evidence_id}")
         return EvidenceRecord.model_validate_json(row["record_json"])
+
+    def resolve_local_file(
+        self,
+        evidence_id: str,
+        campaign_id: str,
+        task_id: str,
+    ) -> tuple[EvidenceRecord, Path]:
+        record = self.get_evidence(evidence_id)
+        if record.descriptor.campaign_id != campaign_id:
+            raise EvidenceError(f"evidence {evidence_id} belongs to a different campaign")
+        if record.descriptor.task_id is None or record.descriptor.task_id != task_id:
+            raise EvidenceError(f"evidence {evidence_id} does not belong to the exact task")
+        if record.storage_path is None or record.external_uri is not None:
+            raise EvidenceError(f"evidence {evidence_id} is not local content-addressed evidence")
+
+        relative = Path("sha256") / record.content_sha256[:2] / record.content_sha256
+        if Path(record.storage_path) != relative:
+            raise EvidenceError("local evidence storage path is not content-addressed")
+
+        candidate = self.artifacts_dir
+        if candidate.is_symlink():
+            raise EvidenceError("local evidence storage contains a symbolic link")
+        for part in relative.parts:
+            candidate /= part
+            if candidate.is_symlink():
+                raise EvidenceError("local evidence storage contains a symbolic link")
+        try:
+            resolved = candidate.resolve(strict=True)
+            root = self.artifacts_dir.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise EvidenceError("local evidence file is unavailable") from exc
+        if resolved != root and root not in resolved.parents:
+            raise EvidenceError("local evidence path escapes storage root")
+        if not resolved.is_file():
+            raise EvidenceError("local evidence path is not a regular file")
+        try:
+            byte_length = resolved.stat().st_size
+        except OSError as exc:
+            raise EvidenceError("local evidence file is unavailable") from exc
+        if byte_length != record.byte_length:
+            raise EvidenceError("local evidence byte length verification failed")
+        try:
+            digest = _hash_file(resolved)
+        except OSError as exc:
+            raise EvidenceError("local evidence file is unavailable") from exc
+        if digest != record.content_sha256:
+            raise EvidenceError("local evidence digest verification failed")
+        return record, resolved
+
+    def snapshot_local_file(
+        self,
+        evidence_id: str,
+        campaign_id: str,
+        task_id: str,
+        destination: Path,
+        *,
+        max_bytes: int,
+    ) -> tuple[EvidenceRecord, Path]:
+        record, _ = self.resolve_local_file(evidence_id, campaign_id, task_id)
+        if record.byte_length > max_bytes:
+            raise EvidenceError("local evidence exceeds the snapshot byte limit")
+        relative = Path("sha256") / record.content_sha256[:2] / record.content_sha256
+        source_descriptor = _open_relative_regular_file(self.artifacts_dir, relative)
+        destination = destination.resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists() or destination.is_symlink():
+            os.close(source_descriptor)
+            raise EvidenceError("evidence snapshot destination already exists")
+        output_descriptor = -1
+        digest = hashlib.sha256()
+        byte_length = 0
+        try:
+            source_metadata = os.fstat(source_descriptor)
+            if not stat.S_ISREG(source_metadata.st_mode) or source_metadata.st_size != record.byte_length:
+                raise EvidenceError("local evidence changed before snapshot")
+            output_descriptor = os.open(
+                destination,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            with os.fdopen(output_descriptor, "wb") as output_handle:
+                output_descriptor = -1
+                while chunk := os.read(source_descriptor, 1_048_576):
+                    byte_length += len(chunk)
+                    if byte_length > max_bytes:
+                        raise EvidenceError("local evidence exceeds the snapshot byte limit")
+                    digest.update(chunk)
+                    output_handle.write(chunk)
+                output_handle.flush()
+                os.fsync(output_handle.fileno())
+            final_metadata = os.fstat(source_descriptor)
+            if final_metadata.st_size != source_metadata.st_size:
+                raise EvidenceError("local evidence changed during snapshot")
+            if byte_length != record.byte_length or digest.hexdigest() != record.content_sha256:
+                raise EvidenceError("local evidence snapshot identity verification failed")
+            destination.chmod(0o400)
+        except BaseException:
+            destination.unlink(missing_ok=True)
+            raise
+        finally:
+            os.close(source_descriptor)
+            if output_descriptor >= 0:
+                os.close(output_descriptor)
+        return record, destination
 
     def list_evidence(
         self,
@@ -305,6 +410,38 @@ def _hash_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _open_relative_regular_file(root: Path, relative: Path) -> int:
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+        raise EvidenceError("local evidence path is not contained")
+    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+        raise EvidenceError("secure local evidence snapshots require POSIX openat support")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_NOFOLLOW
+    descriptors: list[int] = []
+    file_descriptor = -1
+    try:
+        current = os.open(root, directory_flags)
+        descriptors.append(current)
+        for part in relative.parts[:-1]:
+            current = os.open(part, directory_flags, dir_fd=current)
+            descriptors.append(current)
+        file_descriptor = os.open(relative.parts[-1], file_flags, dir_fd=current)
+        if not stat.S_ISREG(os.fstat(file_descriptor).st_mode):
+            raise EvidenceError("local evidence path is not a regular file")
+        return file_descriptor
+    except OSError as exc:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+        raise EvidenceError("local evidence file could not be opened safely") from exc
+    except BaseException:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+        raise
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def _atomic_copy(source: Path, destination: Path) -> None:
