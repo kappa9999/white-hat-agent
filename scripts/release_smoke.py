@@ -33,7 +33,7 @@ def verify_cli(executable: Path, temporary_root: Path, expected_version: str, la
         raise RuntimeError(f"unexpected {label} version output: {version}")
     playbooks = list((workspace / "corpus/playbooks").rglob("playbook.yaml"))
     if (
-        len(playbooks) != 9
+        len(playbooks) != 10
         or not (workspace / "capabilities/catalog.yaml").is_file()
         or not (workspace / "adapters/catalog.yaml").is_file()
         or not (workspace / "corpus/playbooks/binary/go-symbol-recovery/playbook.yaml").is_file()
@@ -56,13 +56,14 @@ def smoke_distribution(artifact: Path, temporary_root: Path, expected_version: s
             "_fixture_bytes, _ghidra_native_map_fixture_bytes, "
             "_ghidra_native_map_script_bytes, _ghidra_script_bytes, _jadx_fixture_bytes, "
             "_frida_fixture_bytes, _frida_runtime_map_script_bytes, "
-            "_tshark_fixture_bytes, _yara_x_conformance_rule; "
+            "_tshark_fixture_bytes, _unblob_fixture_bytes, _yara_x_conformance_rule; "
             "assert len(_fixture_bytes()) == 784; "
             "assert len(_ghidra_native_map_fixture_bytes()) == 1496; "
             "assert len(_jadx_fixture_bytes()) == 904; "
             "assert len(_frida_fixture_bytes()) == 15584; "
             "assert len(_frida_runtime_map_script_bytes()) == 2486; "
             "assert len(_tshark_fixture_bytes()) == 755; "
+            "assert len(_unblob_fixture_bytes()) == 175; "
             "assert len(_yara_x_conformance_rule().encode()) == 211; "
             "assert len(_ghidra_script_bytes()) == 6116; "
             "assert len(_ghidra_native_map_script_bytes()) == 17951"

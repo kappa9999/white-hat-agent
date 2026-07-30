@@ -3,6 +3,29 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.17.0] - 2026-07-30
+
+### Added
+
+- a reusable OCI-image provisioner that binds a stable GitHub release and source commit to exact GHCR index,
+  platform-manifest, config, and layer digests before pulling by immutable manifest identity;
+- the provider-neutral `artifact.recursive-unpack` capability and fixed `unblob.extraction-map` operation for nested
+  archives, firmware containers, filesystems, and compressed streams; and
+- a validated recursive-unpack playbook plus a 175-byte ZIP conformance fixture that proves handler identification,
+  extraction, independent marker hashing, and clean normalization; and
+- a completed production fleet run over the owned v0.16 wheel that retained the raw provider report and normalized
+  80 files, 29 directories, and one ZIP chunk with 1,134,475 extracted bytes, no errors, and no truncation.
+
+### Security
+
+- OCI execution disables pulls and networking, mounts one read-only artifact and one private output directory, uses a
+  read-only root filesystem, drops all capabilities, disables privilege escalation, and enforces CPU, memory, PID,
+  wall-clock, file, byte, and record ceilings;
+- callers cannot supply images, tags, plugins, paths, flags, extractors, recursion depth, process counts, environment,
+  mounts, or networks; and
+- normalization rejects path escapes, duplicate paths, special files, invalid chunk ranges, schema drift, artifact
+  drift, and any disagreement between unblob's report and an independently hashed transient extraction tree.
+
 ## [0.16.0] - 2026-07-30
 
 ### Added

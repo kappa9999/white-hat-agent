@@ -74,6 +74,10 @@ class GoReSymSymbolMapPayload(StrictModel):
     operation_id: Literal["goresym.symbol-map"]
 
 
+class UnblobExtractionMapPayload(StrictModel):
+    operation_id: Literal["unblob.extraction-map"]
+
+
 class JadxAndroidStaticMapPayload(StrictModel):
     operation_id: Literal["jadx.android-static-map"]
 
@@ -183,6 +187,7 @@ AdapterOperationPayload = Annotated[
     | CapaFileAnalyzePayload
     | LlvmObjectInspectPayload
     | GoReSymSymbolMapPayload
+    | UnblobExtractionMapPayload
     | JadxAndroidStaticMapPayload
     | TsharkPacketCaptureMapPayload
     | FridaExecutableRuntimeMapPayload
@@ -393,6 +398,17 @@ class TrustedInvocation:
 
 
 @dataclass(frozen=True)
+class OciTrustedInvocation:
+    image_reference: str
+    platform: Literal["linux/amd64", "linux/arm64"]
+    argv: tuple[str, ...]
+    result_relative_path: str | None = None
+
+
+AdapterInvocation = TrustedInvocation | OciTrustedInvocation
+
+
+@dataclass(frozen=True)
 class SupervisedProcessResult:
     outcome: AdapterExecutionOutcome
     return_code: int | None
@@ -420,6 +436,21 @@ SANDBOX_PROFILE: dict[str, JsonValue] = {
     "stdin": "null",
 }
 SANDBOX_PROFILE_SHA256 = stable_digest(SANDBOX_PROFILE)
+OCI_SANDBOX_PROFILE: dict[str, JsonValue] = {
+    "profile": "docker-oci-offline-v1",
+    "image": "release-and-platform-manifest-digest-bound",
+    "pull": "never-during-execution",
+    "network": "none",
+    "root_filesystem": "read-only",
+    "capabilities": "dropped",
+    "privilege_escalation": "disabled",
+    "input": "single-read-only-file",
+    "output": "single-private-bind-mount",
+    "temporary_filesystems": ["home", "tmp"],
+    "resources": ["cpu-seconds", "memory", "pids", "wall-clock", "output-tree"],
+    "stdin": "null",
+}
+OCI_SANDBOX_PROFILE_SHA256 = stable_digest(OCI_SANDBOX_PROFILE)
 
 
 @dataclass(frozen=True)
@@ -474,6 +505,12 @@ GORESYM_SELF_FIXTURE = ConformanceFixture(
     sha256=None,
     source="tool-entrypoint",
 )
+UNBLOB_FIXTURE = ConformanceFixture(
+    fixture_id="unblob-marker-zip-v1",
+    filename="fixture.zip",
+    resource_name="unblob_marker_zip.b64",
+    sha256="a46bf7434ad415379cd4b5019fd96ad0766559d76bfc2e4da2195498e0f89cd3",
+)
 # Backward-compatible public constants for the original shared ELF fixture.
 FIXTURE_ID = ELF_FIXTURE.fixture_id
 FIXTURE_SHA256 = ELF_FIXTURE.sha256
@@ -488,6 +525,7 @@ TSHARK_DRIVER_VERSION = "1.0.0"
 FRIDA_RUNTIME_MAP_SCRIPT_SHA256 = "810cc52ec4f789f01742f4d974419056923d07e66966f39e46c6df2a88b30ebf"
 FRIDA_DRIVER_VERSION = "1.0.0"
 GORESYM_DRIVER_VERSION = "1.0.0"
+UNBLOB_DRIVER_VERSION = "1.0.0"
 MINIMUM_EVIDENCE_IMPORT_BYTES = 65_536
 
 
@@ -505,7 +543,7 @@ class ProviderDriver(Protocol):
         operation: AdapterOperationPayload,
         limits: OperationResourceLimits,
         assets: dict[str, Path],
-    ) -> TrustedInvocation: ...
+    ) -> AdapterInvocation: ...
 
     def normalize(
         self,
@@ -796,6 +834,307 @@ class OfflineSandboxSupervisor:
         return command
 
 
+class OciSandboxSupervisor:
+    def __init__(self, docker: Path | None = None) -> None:
+        if sys.platform != "linux":
+            raise AdapterExecutionError("OCI adapter execution currently requires Linux or WSL")
+        if docker is None:
+            from .adapter_provisioning import _trusted_docker_executable
+
+            docker = _trusted_docker_executable()
+        resolved = docker.resolve(strict=True)
+        if not resolved.is_file() or not os.access(resolved, os.X_OK):
+            raise AdapterExecutionError("Docker CLI is not an executable file")
+        self.docker = resolved
+
+    def run(
+        self,
+        invocation: OciTrustedInvocation,
+        input_path: Path,
+        work_dir: Path,
+        limits: OperationResourceLimits,
+    ) -> SupervisedProcessResult:
+        self._validate_invocation(invocation)
+        input_path = input_path.resolve(strict=True)
+        work_dir = work_dir.resolve(strict=True)
+        if any("," in str(path) or "\x00" in str(path) for path in (input_path, work_dir)):
+            raise AdapterExecutionError("OCI bind paths contain an unsupported mount delimiter")
+        tool_work_dir = work_dir / "tool-work"
+        tool_work_dir.mkdir(mode=0o700)
+        stdout_path = work_dir / "stdout.bin"
+        stderr_path = work_dir / "stderr.bin"
+        stdout_path.touch(mode=0o600)
+        stderr_path.touch(mode=0o600)
+        container_name = (
+            "wha-"
+            + hashlib.sha256(f"{os.getpid()}:{time.monotonic_ns()}:{work_dir}".encode()).hexdigest()[:24]
+        )
+        container_id: str | None = None
+        process: subprocess.Popen[bytes] | None = None
+        started = time.monotonic()
+        limited = False
+        timed_out = False
+        warnings: list[str] = []
+        state: dict[str, object] = {}
+        try:
+            container_id = self._create(
+                invocation,
+                input_path,
+                tool_work_dir,
+                limits,
+                container_name,
+            )
+            with stdout_path.open("wb") as stdout_handle, stderr_path.open("wb") as stderr_handle:
+                process = subprocess.Popen(
+                    [str(self.docker), "container", "start", "--attach", container_id],
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    close_fds=True,
+                    start_new_session=True,
+                )
+                while process.poll() is None:
+                    if time.monotonic() - started > limits.wall_seconds:
+                        timed_out = True
+                        warnings.append("wall-clock limit exceeded")
+                        self._kill(container_id)
+                        break
+                    entries, byte_length = _tree_usage(
+                        work_dir,
+                        stop_after_bytes=limits.max_output_bytes + 1,
+                        stop_after_entries=limits.max_files + 1,
+                    )
+                    if entries > limits.max_files or byte_length > limits.max_output_bytes:
+                        limited = True
+                        warnings.append("workspace file or byte limit exceeded")
+                        self._kill(container_id)
+                        break
+                    time.sleep(0.1)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self._kill(container_id)
+                    _kill_process_group(process)
+                    process.wait(timeout=5)
+                state = self._state(container_id)
+        finally:
+            if process is not None and process.poll() is None:
+                if container_id is not None:
+                    self._kill(container_id)
+                _kill_process_group(process)
+                with suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=5)
+            if container_id is not None:
+                self._remove(container_id)
+
+        entries, byte_length = _tree_usage(
+            work_dir,
+            stop_after_bytes=limits.max_output_bytes + 1,
+            stop_after_entries=limits.max_files + 1,
+        )
+        output_complete = (
+            not limited and entries <= limits.max_files and byte_length <= limits.max_output_bytes
+        )
+        if not output_complete and not limited:
+            limited = True
+            warnings.append("workspace exceeded output limits at process exit")
+        exit_code = state.get("ExitCode")
+        return_code = exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else None
+        oom_killed = state.get("OOMKilled") is True
+        if timed_out:
+            outcome = AdapterExecutionOutcome.TIMED_OUT
+        elif limited or oom_killed or return_code in {137, 152, 153}:
+            outcome = AdapterExecutionOutcome.RESOURCE_LIMITED
+            if oom_killed:
+                warnings.append("container memory limit exceeded")
+        elif return_code != 0:
+            outcome = AdapterExecutionOutcome.TOOL_FAILED
+        else:
+            outcome = AdapterExecutionOutcome.SUCCEEDED
+        signal_number = return_code - 128 if return_code is not None and 128 < return_code < 160 else None
+        result_path = (
+            tool_work_dir / invocation.result_relative_path if invocation.result_relative_path else None
+        )
+        return SupervisedProcessResult(
+            outcome=outcome,
+            return_code=return_code,
+            signal_number=signal_number,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            result_path=result_path,
+            output_complete=output_complete,
+            warnings=tuple(dict.fromkeys(warnings)),
+        )
+
+    def _validate_invocation(self, invocation: OciTrustedInvocation) -> None:
+        if (
+            re.fullmatch(
+                r"ghcr\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+"
+                r"@sha256:[0-9a-f]{64}",
+                invocation.image_reference,
+            )
+            is None
+        ):
+            raise AdapterExecutionError("OCI invocation requires an exact GHCR manifest digest")
+        if (
+            not invocation.argv
+            or len(invocation.argv) > 64
+            or any(
+                not value or len(value) > 4_096 or "\x00" in value or "\r" in value or "\n" in value
+                for value in invocation.argv
+            )
+        ):
+            raise AdapterExecutionError("OCI invocation arguments are missing or unbounded")
+        if invocation.result_relative_path is not None:
+            result = PurePosixPath(invocation.result_relative_path)
+            if result.is_absolute() or ".." in result.parts:
+                raise AdapterExecutionError("OCI result path must remain in the output mount")
+
+    def _create(
+        self,
+        invocation: OciTrustedInvocation,
+        input_path: Path,
+        tool_work_dir: Path,
+        limits: OperationResourceLimits,
+        container_name: str,
+    ) -> str:
+        tmpfs_mib = max(16, min(512, limits.memory_mib // 4))
+        command = [
+            str(self.docker),
+            "container",
+            "create",
+            "--name",
+            container_name,
+            "--pull=never",
+            "--platform",
+            invocation.platform,
+            "--network",
+            "none",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges=true",
+            "--pids-limit",
+            str(limits.max_processes),
+            "--memory",
+            f"{limits.memory_mib}m",
+            "--memory-swap",
+            f"{limits.memory_mib}m",
+            "--cpus",
+            "1.0",
+            "--ulimit",
+            f"cpu={limits.cpu_seconds}:{limits.cpu_seconds}",
+            "--ulimit",
+            "nofile=1024:1024",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "--workdir",
+            "/data/output",
+            "--env",
+            "HOME=/tmp",
+            "--env",
+            "LANG=C.UTF-8",
+            "--env",
+            "LC_ALL=C.UTF-8",
+            "--tmpfs",
+            f"/tmp:rw,noexec,nosuid,nodev,size={tmpfs_mib}m",
+            "--tmpfs",
+            f"/home:rw,noexec,nosuid,nodev,size={tmpfs_mib}m",
+            "--mount",
+            f"type=bind,src={input_path},dst=/data/input/artifact,readonly",
+            "--mount",
+            f"type=bind,src={tool_work_dir},dst=/data/output",
+            "--stop-timeout",
+            "2",
+            invocation.image_reference,
+            *invocation.argv,
+        ]
+        result = self._control(command, timeout=60)
+        container_id = result.strip()
+        if re.fullmatch(r"[0-9a-f]{12,64}", container_id) is None:
+            raise AdapterExecutionError("Docker create returned an invalid container identity")
+        return container_id
+
+    def _state(self, container_id: str) -> dict[str, object]:
+        payload = self._control(
+            [
+                str(self.docker),
+                "container",
+                "inspect",
+                "--format",
+                "{{json .State}}",
+                container_id,
+            ],
+            timeout=15,
+        )
+        try:
+            state = json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise AdapterExecutionError("Docker returned invalid container state") from exc
+        if not isinstance(state, dict):
+            raise AdapterExecutionError("Docker container state must be an object")
+        return state
+
+    def _kill(self, container_id: str) -> None:
+        self._control(
+            [str(self.docker), "container", "kill", container_id],
+            timeout=15,
+            allow_failure=True,
+        )
+
+    def _remove(self, container_id: str) -> None:
+        self._control(
+            [str(self.docker), "container", "rm", "--force", container_id],
+            timeout=15,
+            allow_failure=True,
+        )
+
+    @staticmethod
+    def _control(command: list[str], *, timeout: int, allow_failure: bool = False) -> str:
+        try:
+            result = subprocess.run(
+                command,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            if allow_failure:
+                return ""
+            raise AdapterExecutionError(f"Docker control command failed: {type(exc).__name__}") from exc
+        output = result.stdout.strip()
+        if len(output.encode()) > 65_536:
+            raise AdapterExecutionError("Docker control output exceeds its metadata limit")
+        if result.returncode != 0 and not allow_failure:
+            detail = " ".join((result.stderr or result.stdout).split())[:1_024]
+            raise AdapterExecutionError(
+                f"Docker control command failed with exit {result.returncode}: {detail}"
+            )
+        return output
+
+
+class AdapterSandboxSupervisor:
+    def __init__(self, offline: OfflineSandboxSupervisor | None = None) -> None:
+        self.offline = offline or OfflineSandboxSupervisor()
+        self._oci: OciSandboxSupervisor | None = None
+
+    def run(
+        self,
+        invocation: AdapterInvocation,
+        input_path: Path,
+        work_dir: Path,
+        limits: OperationResourceLimits,
+    ) -> SupervisedProcessResult:
+        if isinstance(invocation, OciTrustedInvocation):
+            if self._oci is None:
+                self._oci = OciSandboxSupervisor()
+            return self._oci.run(invocation, input_path, work_dir, limits)
+        return self.offline.run(invocation, input_path, work_dir, limits)
+
+
 class LlvmObjectInspectDriver:
     adapter_id = "llvm"
     operation_id = "llvm.object-inspect"
@@ -1011,6 +1350,302 @@ class GoReSymSymbolMapDriver:
                     for item in file_items
                 ),
                 detail=f"returned_files={len(file_items)}",
+            ),
+        ]
+
+
+class UnblobExtractionMapDriver:
+    adapter_id = "unblob"
+    operation_id = "unblob.extraction-map"
+    driver_id = "whitehat.unblob-extraction-map"
+    driver_version = UNBLOB_DRIVER_VERSION
+    descriptor_name = "unblob-image.env"
+
+    def _descriptor(self, entrypoints: list[str]) -> tuple[Path, dict[str, str]]:
+        candidates = [
+            Path(value).resolve()
+            for value in entrypoints
+            if Path(value).name == self.descriptor_name and Path(value).is_file()
+        ]
+        if len(candidates) != 1:
+            raise AdapterExecutionError("unblob operation requires one managed OCI descriptor")
+        path = candidates[0]
+        if path.is_symlink() or path.stat().st_size > 4_096:
+            raise AdapterExecutionError("unblob OCI descriptor is not a bounded regular file")
+        values: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if not separator or key in values:
+                raise AdapterExecutionError("unblob OCI descriptor is malformed")
+            values[key] = value
+        expected = {
+            "schema_version",
+            "version",
+            "image",
+            "platform",
+            "index_sha256",
+            "manifest_sha256",
+            "config_sha256",
+            "source_revision",
+            "compressed_bytes",
+            "entrypoint_json",
+        }
+        try:
+            entrypoint = json.loads(values.get("entrypoint_json", ""))
+            compressed_bytes = int(values.get("compressed_bytes", "0"))
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise AdapterExecutionError("unblob OCI descriptor has invalid typed fields") from exc
+        if (
+            set(values) != expected
+            or values["schema_version"] != "1.0"
+            or values["image"] != "ghcr.io/onekey-sec/unblob"
+            or values["platform"] not in {"linux/amd64", "linux/arm64"}
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", values["version"]) is None
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", values[key]) is None
+                for key in ("index_sha256", "manifest_sha256", "config_sha256")
+            )
+            or re.fullmatch(r"[0-9a-f]{40}", values["source_revision"]) is None
+            or not 1 <= compressed_bytes <= 2_147_483_648
+            or entrypoint != ["unblob"]
+        ):
+            raise AdapterExecutionError("unblob OCI descriptor violates its fixed image contract")
+        return path, values
+
+    def tool_payload_digest(self, entrypoints: list[str]) -> str:
+        descriptor, values = self._descriptor(entrypoints)
+        try:
+            from .adapter_provisioning import _trusted_docker_executable
+
+            docker = _trusted_docker_executable()
+        except RuntimeError as exc:
+            raise AdapterExecutionError("unblob operation requires the trusted Docker CLI") from exc
+        return stable_digest(
+            {
+                "descriptor_sha256": _hash_file(descriptor),
+                "manifest_sha256": values["manifest_sha256"],
+                "docker_cli_sha256": _hash_file(docker),
+                "sandbox_profile_sha256": OCI_SANDBOX_PROFILE_SHA256,
+                "command_contract": "unblob-fixed-recursive-extraction-v1",
+            }
+        )
+
+    def prepare(
+        self,
+        status: AdapterStatus,
+        operation: AdapterOperationPayload,
+        limits: OperationResourceLimits,
+        assets: dict[str, Path],
+    ) -> OciTrustedInvocation:
+        del assets
+        if not isinstance(operation, UnblobExtractionMapPayload):
+            raise AdapterExecutionError("unblob driver received a different operation payload")
+        if limits.max_processes < 16:
+            raise AdapterExecutionError("unblob extraction requires a process limit of at least 16")
+        _, descriptor = self._descriptor(status.entrypoints)
+        return OciTrustedInvocation(
+            image_reference=(f"{descriptor['image']}@sha256:{descriptor['manifest_sha256']}"),
+            platform=descriptor["platform"],  # type: ignore[arg-type]
+            argv=(
+                "--report",
+                "/data/output/report.json",
+                "--log",
+                "/data/output/unblob.log",
+                "--extract-dir",
+                "/data/output/extracted",
+                "--process-num",
+                "1",
+                "--depth",
+                "3",
+                "--randomness-depth",
+                "0",
+                "/data/input/artifact",
+            ),
+            result_relative_path="report.json",
+        )
+
+    def normalize(
+        self,
+        process: SupervisedProcessResult,
+        artifact_sha256: str,
+        limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
+    ) -> AdapterNormalizedResult:
+        if operation is not None and not isinstance(operation, UnblobExtractionMapPayload):
+            raise AdapterExecutionError("unblob normalization requires its exact operation payload")
+        if process.result_path is None:
+            raise AdapterExecutionError("unblob execution did not expose its fixed report path")
+        payload = _read_json(process.result_path, limits.max_output_bytes)
+        if not isinstance(payload, list) or len(payload) > limits.max_files + 1:
+            raise AdapterExecutionError("unblob report must be a bounded task list")
+        extracted_root = process.result_path.parent / "extracted"
+        actual_entries = _unblob_output_entries(extracted_root, limits)
+        report_types: dict[str, int] = {}
+        files: list[dict[str, JsonValue]] = []
+        directories: list[dict[str, JsonValue]] = []
+        links: list[dict[str, JsonValue]] = []
+        chunks: list[dict[str, JsonValue]] = []
+        errors: list[dict[str, JsonValue]] = []
+        reported_paths: set[str] = set()
+        input_identity: dict[str, JsonValue] | None = None
+        max_depth = 0
+        for raw_task in payload:
+            if not isinstance(raw_task, dict) or set(raw_task) != {"task", "reports", "subtasks"}:
+                raise AdapterExecutionError("unblob task has an unexpected shape")
+            task = raw_task["task"]
+            reports = raw_task["reports"]
+            subtasks = raw_task["subtasks"]
+            if (
+                not isinstance(task, dict)
+                or not isinstance(reports, list)
+                or len(reports) > 64
+                or not isinstance(subtasks, list)
+                or len(subtasks) > limits.max_files
+            ):
+                raise AdapterExecutionError("unblob task fields are missing or unbounded")
+            task_path = _unblob_task_path(task.get("path"))
+            depth = task.get("depth")
+            if isinstance(depth, bool) or not isinstance(depth, int) or not 0 <= depth <= 3:
+                raise AdapterExecutionError("unblob task depth violates the fixed recursion bound")
+            max_depth = max(max_depth, depth)
+            typed: dict[str, list[dict[str, object]]] = {}
+            for report in reports:
+                if not isinstance(report, dict):
+                    raise AdapterExecutionError("unblob report entry must be an object")
+                report_type = report.get("__typename__")
+                if not isinstance(report_type, str) or not 1 <= len(report_type) <= 128:
+                    raise AdapterExecutionError("unblob report entry has no bounded type")
+                report_types[report_type] = report_types.get(report_type, 0) + 1
+                typed.setdefault(report_type, []).append(report)
+            for singleton in ("StatReport", "FileMagicReport", "HashReport"):
+                if len(typed.get(singleton, [])) > 1:
+                    raise AdapterExecutionError(f"unblob task contains duplicate {singleton}")
+            stat_report = next(iter(typed.get("StatReport", [])), None)
+            hash_report = next(iter(typed.get("HashReport", [])), None)
+            magic_report = next(iter(typed.get("FileMagicReport", [])), None)
+            if stat_report is None:
+                raise AdapterExecutionError("unblob task has no StatReport")
+            stat_path = _unblob_task_path(stat_report.get("path"))
+            if stat_path != task_path:
+                raise AdapterExecutionError("unblob task and StatReport paths differ")
+            record = _unblob_stat_record(stat_report, hash_report, magic_report, depth)
+            if task_path == "input":
+                if input_identity is not None:
+                    raise AdapterExecutionError("unblob report contains multiple input tasks")
+                if record.get("sha256") != artifact_sha256:
+                    raise AdapterExecutionError("unblob input digest differs from the evidence artifact")
+                input_identity = record
+            else:
+                if task_path in reported_paths:
+                    raise AdapterExecutionError("unblob report contains duplicate extracted paths")
+                reported_paths.add(task_path)
+                actual = actual_entries.get(task_path)
+                if actual is None or not _unblob_records_match(record, actual):
+                    raise AdapterExecutionError("unblob report differs from the extracted output tree")
+                kind = record["kind"]
+                if kind == "file":
+                    files.append(record)
+                elif kind == "directory":
+                    directories.append(record)
+                else:
+                    links.append(record)
+            for chunk_report in typed.get("ChunkReport", []):
+                chunks.append(_unblob_chunk_record(chunk_report, task_path))
+            for report_type, items in typed.items():
+                if "error" in report_type.casefold():
+                    errors.extend({"path": task_path, "type": report_type} for _ in items)
+        if input_identity is None:
+            raise AdapterExecutionError("unblob report does not identify the input artifact")
+        if reported_paths != set(actual_entries):
+            raise AdapterExecutionError("unblob report does not cover the complete extracted output tree")
+        files.sort(key=lambda item: str(item["path"]))
+        directories.sort(key=lambda item: str(item["path"]))
+        links.sort(key=lambda item: str(item["path"]))
+        chunks.sort(key=lambda item: (str(item["path"]), int(item["start_offset"])))
+        errors.sort(key=lambda item: (str(item["path"]), str(item["type"])))
+        total_records = len(files) + len(directories) + len(links) + len(chunks) + len(errors)
+        remaining = limits.max_records
+        returned: list[list[dict[str, JsonValue]]] = []
+        for records in (files, directories, links, chunks, errors):
+            selected = records[:remaining]
+            returned.append(selected)
+            remaining -= len(selected)
+        returned_files, returned_directories, returned_links, returned_chunks, returned_errors = returned
+        handlers: dict[str, int] = {}
+        for chunk in chunks:
+            handler = str(chunk["handler"])
+            handlers[handler] = handlers.get(handler, 0) + 1
+        data: dict[str, JsonValue] = {
+            "engine": "unblob",
+            "input": input_identity,
+            "summary": {
+                "files": len(files),
+                "directories": len(directories),
+                "links": len(links),
+                "chunks": len(chunks),
+                "errors": len(errors),
+                "extracted_bytes": sum(int(item["size"]) for item in files),
+                "max_depth": max_depth,
+                "handlers": dict(sorted(handlers.items())),
+                "report_types": dict(sorted(report_types.items())),
+            },
+            "files": returned_files,
+            "directories": returned_directories,
+            "links": returned_links,
+            "chunks": returned_chunks,
+            "errors": returned_errors,
+        }
+        return AdapterNormalizedResult(
+            operation_id=self.operation_id,
+            artifact_sha256=artifact_sha256,
+            records_returned=sum(len(records) for records in returned),
+            truncated=total_records > limits.max_records,
+            data=data,
+        )
+
+    def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]:
+        files = normalized.data.get("files")
+        chunks = normalized.data.get("chunks")
+        marker = (
+            next(
+                (
+                    item
+                    for item in files
+                    if isinstance(item, dict) and str(item.get("path", "")).endswith("wha-unblob-marker.txt")
+                ),
+                None,
+            )
+            if isinstance(files, list)
+            else None
+        )
+        zip_chunk = (
+            next(
+                (item for item in chunks if isinstance(item, dict) and item.get("handler") == "zip"),
+                None,
+            )
+            if isinstance(chunks, list)
+            else None
+        )
+        summary = normalized.data.get("summary")
+        return [
+            AdapterConformanceCheck(
+                name="fixture-zip-handler",
+                ok=isinstance(zip_chunk, dict) and zip_chunk.get("encrypted") is False,
+                detail=f"returned_chunks={len(chunks) if isinstance(chunks, list) else 0}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-extracted-marker",
+                ok=(
+                    isinstance(marker, dict)
+                    and marker.get("sha256")
+                    == "df5e84bcd760b28d68dff7ea622a65b3aa2178f9c23a46191d0b30ab65ee66cf"
+                ),
+                detail=f"returned_files={len(files) if isinstance(files, list) else 0}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-clean-extraction",
+                ok=isinstance(summary, dict) and summary.get("errors") == 0,
+                detail=f"errors={summary.get('errors') if isinstance(summary, dict) else 'missing'}",
             ),
         ]
 
@@ -2569,11 +3204,20 @@ DRIVERS: dict[tuple[str, str], ProviderDriver] = {
     ("capa", "capa.file-analyze"): CapaFileAnalyzeDriver(),
     ("llvm", "llvm.object-inspect"): LlvmObjectInspectDriver(),
     ("goresym", "goresym.symbol-map"): GoReSymSymbolMapDriver(),
+    ("unblob", "unblob.extraction-map"): UnblobExtractionMapDriver(),
     ("jadx", "jadx.android-static-map"): JadxAndroidStaticMapDriver(),
     ("frida", "frida.executable-runtime-map"): FridaExecutableRuntimeMapDriver(),
     ("tshark", "tshark.packet-capture-map"): TsharkPacketCaptureMapDriver(),
     ("yara-x", "yara-x.file-scan"): YaraXFileScanDriver(),
 }
+
+
+def _driver_sandbox_profile_sha256(driver: ProviderDriver) -> str:
+    return (
+        OCI_SANDBOX_PROFILE_SHA256
+        if isinstance(driver, UnblobExtractionMapDriver)
+        else SANDBOX_PROFILE_SHA256
+    )
 
 
 def conformance_report_is_current(
@@ -2592,7 +3236,7 @@ def conformance_report_is_current(
         report.adapter_id == driver.adapter_id
         and report.driver_id == driver.driver_id
         and report.driver_version == driver.driver_version
-        and report.sandbox_profile_sha256 == SANDBOX_PROFILE_SHA256
+        and report.sandbox_profile_sha256 == _driver_sandbox_profile_sha256(driver)
         and report.fixture_id == operation.conformance_suite_id == fixture.fixture_id
         and report.fixture_sha256 == fixture_sha256
         and report.tool_payload_sha256 == tool_payload_sha256
@@ -2606,12 +3250,12 @@ class AdapterExecutionBroker:
         fleet: FleetStore,
         evidence: EvidenceStore,
         *,
-        supervisor: OfflineSandboxSupervisor | None = None,
+        supervisor: AdapterSandboxSupervisor | OfflineSandboxSupervisor | None = None,
     ) -> None:
         self.manager = manager
         self.fleet = fleet
         self.evidence = evidence
-        self.supervisor = supervisor or OfflineSandboxSupervisor()
+        self.supervisor = supervisor or AdapterSandboxSupervisor()
 
     def conform(self, adapter_id: str, operation_id: str) -> AdapterConformanceReport:
         manifest = self.manager.registry.get(adapter_id)
@@ -2779,7 +3423,7 @@ class AdapterExecutionBroker:
             tool_version=tool_version,
             driver_id=driver.driver_id,
             driver_version=driver.driver_version,
-            sandbox_profile_sha256=SANDBOX_PROFILE_SHA256,
+            sandbox_profile_sha256=_driver_sandbox_profile_sha256(driver),
             fixture_id=fixture.fixture_id,
             fixture_sha256=fixture_digest,
             started_at=started_at,
@@ -2981,7 +3625,7 @@ class AdapterExecutionBroker:
                 "operation_contract_digest": operation.digest(),
                 "tool_payload_sha256": current_tool_digest,
                 "conformance_report_digest": report.digest(),
-                "sandbox_profile_sha256": SANDBOX_PROFILE_SHA256,
+                "sandbox_profile_sha256": _driver_sandbox_profile_sha256(driver),
                 "input_evidence_id": evidence_id,
                 "input_content_sha256": input_record.content_sha256,
                 "outcome": outcome.value,
@@ -2994,6 +3638,19 @@ class AdapterExecutionBroker:
                     path,
                     name=name,
                     media_type=media_type,
+                    evidence_type="adapter/execution-output",
+                    task=task,
+                    provenance=provenance,
+                    complete=process.output_complete,
+                )
+                captures.append(capture)
+                if registered:
+                    evidence_ids.append(registered.evidence_id)
+            if process.result_path is not None:
+                capture, registered = self._capture(
+                    process.result_path,
+                    name="provider-result",
+                    media_type="application/json",
                     evidence_type="adapter/execution-output",
                     task=task,
                     provenance=provenance,
@@ -3034,7 +3691,7 @@ class AdapterExecutionBroker:
                 observed_identity_sha256=status.observed_identity_sha256,
                 tool_payload_sha256=current_tool_digest,
                 conformance_report_digest=report.digest(),
-                sandbox_profile_sha256=SANDBOX_PROFILE_SHA256,
+                sandbox_profile_sha256=_driver_sandbox_profile_sha256(driver),
                 input_evidence_ids=request.input_evidence_ids,
                 input_content_sha256=[input_record.content_sha256],
                 effective_limits=effective_limits,
@@ -3229,6 +3886,8 @@ def _fixture_operation(operation_id: str) -> AdapterOperationPayload:
         return LlvmObjectInspectPayload(operation_id=operation_id)
     if operation_id == "goresym.symbol-map":
         return GoReSymSymbolMapPayload(operation_id=operation_id)
+    if operation_id == "unblob.extraction-map":
+        return UnblobExtractionMapPayload(operation_id=operation_id)
     if operation_id == "jadx.android-static-map":
         return JadxAndroidStaticMapPayload(operation_id=operation_id)
     if operation_id == "frida.executable-runtime-map":
@@ -3262,6 +3921,8 @@ def _conformance_fixture(operation_id: str) -> ConformanceFixture:
         return YARA_X_FIXTURE
     if operation_id == "goresym.symbol-map":
         return GORESYM_SELF_FIXTURE
+    if operation_id == "unblob.extraction-map":
+        return UNBLOB_FIXTURE
     raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
 
 
@@ -3325,6 +3986,10 @@ def _tshark_fixture_bytes() -> bytes:
 
 def _frida_fixture_bytes() -> bytes:
     return _fixture_payload(FRIDA_RUNTIME_MAP_FIXTURE)
+
+
+def _unblob_fixture_bytes() -> bytes:
+    return _fixture_payload(UNBLOB_FIXTURE)
 
 
 def _ghidra_script_bytes() -> bytes:
@@ -4467,6 +5132,177 @@ def _hash_file_set(root: Path, paths: list[Path]) -> str:
         digest.update(resolved.stat().st_size.to_bytes(8, "big"))
         digest.update(file_digest)
     return digest.hexdigest()
+
+
+def _unblob_task_path(value: object) -> str:
+    if value == "/data/input/artifact":
+        return "input"
+    if not isinstance(value, str) or not value.startswith("/data/output/extracted/"):
+        raise AdapterExecutionError("unblob reported a path outside its fixed mounts")
+    relative = value.removeprefix("/data/output/extracted/")
+    path = PurePosixPath(relative)
+    if (
+        not relative
+        or len(relative.encode("utf-8")) > 4_096
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise AdapterExecutionError("unblob reported an unsafe extracted path")
+    return path.as_posix()
+
+
+def _unblob_stat_record(
+    stat_report: dict[str, object],
+    hash_report: dict[str, object] | None,
+    magic_report: dict[str, object] | None,
+    depth: int,
+) -> dict[str, JsonValue]:
+    flags = {
+        "directory": stat_report.get("is_dir"),
+        "file": stat_report.get("is_file"),
+        "link": stat_report.get("is_link"),
+    }
+    if any(not isinstance(value, bool) for value in flags.values()) or sum(flags.values()) != 1:
+        raise AdapterExecutionError("unblob StatReport has an invalid file type")
+    kind = next(name for name, selected in flags.items() if selected)
+    size = stat_report.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or not 0 <= size <= 2_147_483_648:
+        raise AdapterExecutionError("unblob StatReport has an invalid size")
+    record: dict[str, JsonValue] = {
+        "path": _unblob_task_path(stat_report.get("path")),
+        "kind": kind,
+        "size": size,
+        "depth": depth,
+    }
+    if kind == "file":
+        sha256 = hash_report.get("sha256") if hash_report is not None else None
+        if not isinstance(sha256, str) or re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
+            raise AdapterExecutionError("unblob file task has no valid SHA-256 report")
+        record["sha256"] = sha256
+    if kind == "link":
+        target = stat_report.get("link_target")
+        if not isinstance(target, str) or len(target.encode("utf-8")) > 4_096 or "\x00" in target:
+            raise AdapterExecutionError("unblob link task has an invalid target")
+        record["link_target"] = target
+    if magic_report is not None:
+        magic = magic_report.get("magic")
+        mime_type = magic_report.get("mime_type")
+        if (
+            not isinstance(magic, str)
+            or len(magic.encode("utf-8")) > 2_048
+            or not isinstance(mime_type, str)
+            or len(mime_type.encode("utf-8")) > 256
+        ):
+            raise AdapterExecutionError("unblob magic report is invalid or unbounded")
+        record["magic"] = magic
+        record["mime_type"] = mime_type
+    return record
+
+
+def _unblob_output_entries(
+    root: Path,
+    limits: OperationResourceLimits,
+) -> dict[str, dict[str, JsonValue]]:
+    if not root.exists():
+        return {}
+    if root.is_symlink() or not root.is_dir():
+        raise AdapterExecutionError("unblob extraction root is not a regular directory")
+    entries: dict[str, dict[str, JsonValue]] = {}
+    for current, directories, names in os.walk(root, followlinks=False):
+        retained: list[str] = []
+        for name in directories:
+            path = Path(current) / name
+            relative = path.relative_to(root).as_posix()
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                target = os.readlink(path)
+                entries[relative] = {
+                    "path": relative,
+                    "kind": "link",
+                    "size": metadata.st_size,
+                    "link_target": target,
+                }
+            elif stat.S_ISDIR(metadata.st_mode):
+                entries[relative] = {
+                    "path": relative,
+                    "kind": "directory",
+                    "size": metadata.st_size,
+                }
+                retained.append(name)
+            else:
+                raise AdapterExecutionError("unblob output tree contains a special directory entry")
+        directories[:] = retained
+        for name in names:
+            path = Path(current) / name
+            relative = path.relative_to(root).as_posix()
+            metadata = path.lstat()
+            if stat.S_ISREG(metadata.st_mode):
+                entries[relative] = {
+                    "path": relative,
+                    "kind": "file",
+                    "size": metadata.st_size,
+                    "sha256": _hash_file(path),
+                }
+            elif stat.S_ISLNK(metadata.st_mode):
+                entries[relative] = {
+                    "path": relative,
+                    "kind": "link",
+                    "size": metadata.st_size,
+                    "link_target": os.readlink(path),
+                }
+            else:
+                raise AdapterExecutionError("unblob output tree contains a special file")
+        if len(entries) > limits.max_files:
+            raise AdapterExecutionError("unblob output tree exceeds the file contract")
+    if any(len(path.encode("utf-8")) > 4_096 for path in entries):
+        raise AdapterExecutionError("unblob output tree contains an unbounded path")
+    return entries
+
+
+def _unblob_records_match(
+    reported: dict[str, JsonValue],
+    actual: dict[str, JsonValue],
+) -> bool:
+    if reported.get("kind") != actual.get("kind"):
+        return False
+    if reported.get("kind") == "directory":
+        return True
+    if reported.get("size") != actual.get("size"):
+        return False
+    if reported.get("kind") == "file":
+        return reported.get("sha256") == actual.get("sha256")
+    return reported.get("link_target") == actual.get("link_target")
+
+
+def _unblob_chunk_record(report: dict[str, object], task_path: str) -> dict[str, JsonValue]:
+    handler = report.get("handler_name")
+    start_offset = report.get("start_offset")
+    end_offset = report.get("end_offset")
+    size = report.get("size")
+    encrypted = report.get("is_encrypted")
+    extraction_reports = report.get("extraction_reports")
+    if (
+        not isinstance(handler, str)
+        or re.fullmatch(r"[A-Za-z0-9_.+-]{1,128}", handler) is None
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2**63 - 1
+            for value in (start_offset, end_offset, size)
+        )
+        or end_offset - start_offset != size
+        or not isinstance(encrypted, bool)
+        or not isinstance(extraction_reports, list)
+        or len(extraction_reports) > 64
+    ):
+        raise AdapterExecutionError("unblob ChunkReport is invalid or unbounded")
+    return {
+        "path": task_path,
+        "handler": handler,
+        "start_offset": start_offset,
+        "end_offset": end_offset,
+        "size": size,
+        "encrypted": encrypted,
+        "extraction_reports": len(extraction_reports),
+    }
 
 
 def _llvm_records(value: object, wrapper: str, limit: int) -> tuple[list[JsonValue], bool]:

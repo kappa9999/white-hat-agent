@@ -18,6 +18,15 @@ capabilities:
     adapter_contract: [Report the exact artifact digest and every parser or tool version used.]
     status: stable
     updated_at: 2026-07-29T12:00:00Z
+  - capability_id: artifact.recursive-unpack
+    title: Recursively unpack artifact containers
+    description: Extract bounded nested archives, filesystems, firmware containers, and compressed streams into a verified file and chunk map.
+    execution_class: analysis
+    input_types: [artifact/file]
+    output_types: [surface/extracted-file-map]
+    adapter_contract: [Bind the release and platform image digests, run without network access, independently hash the extracted tree, preserve handler and error counts, and report every limit or truncation.]
+    status: experimental
+    updated_at: 2026-07-30T14:30:00Z
   - capability_id: artifact.signature-match
     title: Match artifact signatures
     description: Evaluate bounded revision-bound detection rules against one immutable artifact.

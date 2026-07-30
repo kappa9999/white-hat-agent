@@ -13,6 +13,7 @@ from white_hat_agent.adapter_execution import (
     GORESYM_SELF_FIXTURE,
     MINIMUM_EVIDENCE_IMPORT_BYTES,
     SANDBOX_PROFILE_SHA256,
+    UNBLOB_FIXTURE,
     YARA_X_CONFORMANCE_RULE_SHA256,
     AdapterExecutionBroker,
     AdapterExecutionError,
@@ -30,6 +31,8 @@ from white_hat_agent.adapter_execution import (
     JadxAndroidStaticMapPayload,
     LlvmObjectInspectDriver,
     LlvmObjectInspectPayload,
+    OciSandboxSupervisor,
+    OciTrustedInvocation,
     OfflineSandboxSupervisor,
     SandboxInlineFile,
     SandboxMount,
@@ -37,6 +40,8 @@ from white_hat_agent.adapter_execution import (
     TrustedInvocation,
     TsharkPacketCaptureMapDriver,
     TsharkPacketCaptureMapPayload,
+    UnblobExtractionMapDriver,
+    UnblobExtractionMapPayload,
     YaraXFileScanDriver,
     YaraXFileScanPayload,
     _effective_limits,
@@ -49,6 +54,7 @@ from white_hat_agent.adapter_execution import (
     _temporary_input_mode,
     _tree_usage,
     _tshark_fixture_bytes,
+    _unblob_fixture_bytes,
     _yara_x_conformance_rule,
     conformance_report_is_current,
 )
@@ -152,6 +158,134 @@ def _goresym_payload() -> dict[str, object]:
             {"Str": "second", "Start": 28680},
         ],
     }
+
+
+def _write_unblob_descriptor(path: Path) -> Path:
+    descriptor = path / "unblob-image.env"
+    descriptor.write_text(
+        """schema_version=1.0
+version=26.6.4
+image=ghcr.io/onekey-sec/unblob
+platform=linux/amd64
+index_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+manifest_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+config_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+source_revision=dddddddddddddddddddddddddddddddddddddddd
+compressed_bytes=123
+entrypoint_json=[\"unblob\"]
+""",
+        encoding="utf-8",
+    )
+    return descriptor
+
+
+def _unblob_process(tmp_path: Path) -> tuple[SupervisedProcessResult, str]:
+    tool_work = tmp_path / "tool-work"
+    extracted = tool_work / "extracted/artifact_extract"
+    extracted.mkdir(parents=True)
+    marker = b"WHITE_HAT_AGENT_UNBLOB_CONFORMANCE\n"
+    (extracted / "wha-unblob-marker.txt").write_bytes(marker)
+    artifact_sha256 = UNBLOB_FIXTURE.sha256 or ""
+    marker_sha256 = hashlib.sha256(marker).hexdigest()
+    report = [
+        {
+            "task": {
+                "path": "/data/output/extracted/artifact_extract/wha-unblob-marker.txt",
+                "depth": 1,
+                "blob_id": "1:1",
+                "is_multi_file": False,
+            },
+            "reports": [
+                {
+                    "path": "/data/output/extracted/artifact_extract/wha-unblob-marker.txt",
+                    "size": len(marker),
+                    "is_dir": False,
+                    "is_file": True,
+                    "is_link": False,
+                    "link_target": None,
+                    "__typename__": "StatReport",
+                },
+                {"magic": "ASCII text", "mime_type": "text/plain", "__typename__": "FileMagicReport"},
+                {"sha256": marker_sha256, "__typename__": "HashReport"},
+            ],
+            "subtasks": [],
+        },
+        {
+            "task": {
+                "path": "/data/input/artifact",
+                "depth": 0,
+                "blob_id": "",
+                "is_multi_file": False,
+            },
+            "reports": [
+                {
+                    "path": "/data/input/artifact",
+                    "size": 175,
+                    "is_dir": False,
+                    "is_file": True,
+                    "is_link": False,
+                    "link_target": None,
+                    "__typename__": "StatReport",
+                },
+                {
+                    "magic": "Zip archive data",
+                    "mime_type": "application/zip",
+                    "__typename__": "FileMagicReport",
+                },
+                {"sha256": artifact_sha256, "__typename__": "HashReport"},
+                {
+                    "id": "1:1",
+                    "handler_name": "zip",
+                    "start_offset": 0,
+                    "end_offset": 175,
+                    "size": 175,
+                    "is_encrypted": False,
+                    "extraction_reports": [],
+                    "__typename__": "ChunkReport",
+                },
+            ],
+            "subtasks": [],
+        },
+        {
+            "task": {
+                "path": "/data/output/extracted/artifact_extract",
+                "depth": 1,
+                "blob_id": "1:1",
+                "is_multi_file": True,
+            },
+            "reports": [
+                {
+                    "path": "/data/output/extracted/artifact_extract",
+                    "size": extracted.stat().st_size,
+                    "is_dir": True,
+                    "is_file": False,
+                    "is_link": False,
+                    "link_target": None,
+                    "__typename__": "StatReport",
+                }
+            ],
+            "subtasks": [],
+        },
+    ]
+    report_path = tool_work / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    stdout_path = tmp_path / "stdout.bin"
+    stderr_path = tmp_path / "stderr.bin"
+    stdout_path.write_bytes(b"")
+    stderr_path.write_bytes(b"")
+    return (
+        SupervisedProcessResult(
+            outcome=AdapterExecutionOutcome.SUCCEEDED,
+            return_code=0,
+            signal_number=None,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            result_path=report_path,
+            output_complete=True,
+            warnings=(),
+        ),
+        artifact_sha256,
+    )
 
 
 def _operation() -> AdapterOperationBinding:
@@ -326,6 +460,9 @@ def test_fixture_and_request_secret_contract() -> None:
     assert hashlib.sha256(fixture).hexdigest() == (
         "daf49381748b12d617a3c645f9932ade03d7c0cac6b804da1bd35ae80cf37cad"
     )
+    unblob_fixture = _unblob_fixture_bytes()
+    assert len(unblob_fixture) == 175
+    assert hashlib.sha256(unblob_fixture).hexdigest() == UNBLOB_FIXTURE.sha256
     request = AdapterExecutionRequest(
         agent_id="fixture-agent",
         task_id="task-fixture",
@@ -633,6 +770,206 @@ def test_goresym_normalization_rejects_schema_and_range_drift(tmp_path) -> None:
     stdout.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(AdapterExecutionError, match="inverted function range"):
         GoReSymSymbolMapDriver().normalize(process, "a" * 64, _limits())
+
+
+def test_unblob_invocation_is_digest_bound_and_argument_closed(tmp_path) -> None:
+    descriptor = _write_unblob_descriptor(tmp_path)
+    status = AdapterStatus(
+        adapter_id="unblob",
+        manifest_digest="a" * 64,
+        observed_at=utc_now(),
+        platform="linux-x86_64",
+        supported=True,
+        installed=True,
+        healthy=True,
+        source="managed",
+        version="26.6.4",
+        revision="26.6.4@sha256:" + "a" * 64 + "/sha256:" + "b" * 64,
+        entrypoints=[str(descriptor)],
+        observed_identity_sha256="c" * 64,
+    )
+
+    invocation = UnblobExtractionMapDriver().prepare(
+        status,
+        UnblobExtractionMapPayload(operation_id="unblob.extraction-map"),
+        _limits(),
+        {},
+    )
+
+    assert invocation == OciTrustedInvocation(
+        image_reference="ghcr.io/onekey-sec/unblob@sha256:" + "b" * 64,
+        platform="linux/amd64",
+        argv=(
+            "--report",
+            "/data/output/report.json",
+            "--log",
+            "/data/output/unblob.log",
+            "--extract-dir",
+            "/data/output/extracted",
+            "--process-num",
+            "1",
+            "--depth",
+            "3",
+            "--randomness-depth",
+            "0",
+            "/data/input/artifact",
+        ),
+        result_relative_path="report.json",
+    )
+
+
+def test_unblob_normalization_verifies_the_extracted_tree_and_fixture(tmp_path) -> None:
+    process, artifact_sha256 = _unblob_process(tmp_path)
+    driver = UnblobExtractionMapDriver()
+
+    normalized = driver.normalize(
+        process,
+        artifact_sha256,
+        _limits(),
+        UnblobExtractionMapPayload(operation_id="unblob.extraction-map"),
+    )
+
+    assert normalized.records_returned == 3
+    assert normalized.truncated is False
+    assert normalized.data["summary"] == {
+        "files": 1,
+        "directories": 1,
+        "links": 0,
+        "chunks": 1,
+        "errors": 0,
+        "extracted_bytes": 35,
+        "max_depth": 1,
+        "handlers": {"zip": 1},
+        "report_types": {
+            "ChunkReport": 1,
+            "FileMagicReport": 2,
+            "HashReport": 2,
+            "StatReport": 3,
+        },
+    }
+    assert all(check.ok for check in driver.fixture_checks(normalized))
+
+    marker = process.result_path.parent / "extracted/artifact_extract/wha-unblob-marker.txt"
+    marker.write_text("tampered", encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="output tree"):
+        driver.normalize(process, artifact_sha256, _limits())
+
+
+def test_oci_supervisor_builds_an_offline_bounded_create_contract(tmp_path, monkeypatch) -> None:
+    docker = tmp_path / "docker"
+    docker.write_text("fixture", encoding="utf-8")
+    docker.chmod(0o700)
+    supervisor = OciSandboxSupervisor(docker)
+    artifact = tmp_path / "artifact"
+    artifact.write_bytes(b"fixture")
+    output = tmp_path / "output"
+    output.mkdir()
+    invocation = OciTrustedInvocation(
+        image_reference="ghcr.io/example/tool@sha256:" + "a" * 64,
+        platform="linux/amd64",
+        argv=("--fixed", "/data/input/artifact"),
+        result_relative_path="report.json",
+    )
+    captured: list[str] = []
+
+    def control(command, *, timeout, allow_failure=False):
+        del timeout, allow_failure
+        captured.extend(command)
+        return "b" * 64
+
+    monkeypatch.setattr(supervisor, "_control", control)
+
+    container_id = supervisor._create(
+        invocation,
+        artifact,
+        output,
+        _limits(),
+        "wha-fixture",
+    )
+
+    assert container_id == "b" * 64
+    assert "--pull=never" in captured
+    assert captured[captured.index("--network") + 1] == "none"
+    assert "--read-only" in captured
+    assert captured[captured.index("--cap-drop") + 1] == "ALL"
+    assert captured[captured.index("--pids-limit") + 1] == "16"
+    assert captured[captured.index("--memory") + 1] == "512m"
+    assert invocation.image_reference in captured
+    assert any(value.endswith("dst=/data/input/artifact,readonly") for value in captured)
+
+    mutable = OciTrustedInvocation(
+        image_reference="ghcr.io/example/tool:latest",
+        platform="linux/amd64",
+        argv=("--fixed",),
+    )
+    with pytest.raises(AdapterExecutionError, match="exact GHCR manifest digest"):
+        supervisor._validate_invocation(mutable)
+
+
+def test_oci_supervisor_runs_through_the_fixed_docker_control_plane(tmp_path) -> None:
+    docker = tmp_path / "docker"
+    docker.write_text(
+        """#!/bin/sh
+if [ "$1" = "container" ] && [ "$2" = "create" ]; then
+  printf '%064d\\n' 0
+elif [ "$1" = "container" ] && [ "$2" = "start" ]; then
+  printf 'provider output\\n'
+elif [ "$1" = "container" ] && [ "$2" = "inspect" ]; then
+  printf '{"ExitCode":0,"OOMKilled":false}\\n'
+elif [ "$1" = "container" ] && { [ "$2" = "kill" ] || [ "$2" = "rm" ]; }; then
+  exit 0
+else
+  exit 2
+fi
+""",
+        encoding="utf-8",
+    )
+    docker.chmod(0o700)
+    artifact = tmp_path / "artifact"
+    artifact.write_bytes(b"fixture")
+    work = tmp_path / "work"
+    work.mkdir()
+    invocation = OciTrustedInvocation(
+        image_reference="ghcr.io/example/tool@sha256:" + "a" * 64,
+        platform="linux/amd64",
+        argv=("--fixed", "/data/input/artifact"),
+    )
+
+    result = OciSandboxSupervisor(docker).run(invocation, artifact, work, _limits())
+
+    assert result.outcome == AdapterExecutionOutcome.SUCCEEDED
+    assert result.return_code == 0
+    assert result.output_complete
+    assert result.stdout_path.read_text() == "provider output\n"
+    assert result.stderr_path.read_bytes() == b""
+    assert result.warnings == ()
+
+    comma_path = tmp_path / "artifact,unsafe"
+    comma_path.write_bytes(b"fixture")
+    rejected_work = tmp_path / "rejected"
+    rejected_work.mkdir()
+    with pytest.raises(AdapterExecutionError, match="mount delimiter"):
+        OciSandboxSupervisor(docker).run(invocation, comma_path, rejected_work, _limits())
+
+    with pytest.raises(AdapterExecutionError, match="result path"):
+        OciSandboxSupervisor(docker)._validate_invocation(
+            invocation.__class__(
+                image_reference=invocation.image_reference,
+                platform=invocation.platform,
+                argv=invocation.argv,
+                result_relative_path="../escape.json",
+            )
+        )
+    with pytest.raises(AdapterExecutionError, match="control command failed"):
+        OciSandboxSupervisor._control([str(docker), "unsupported"], timeout=5)
+    assert (
+        OciSandboxSupervisor._control(
+            [str(docker), "unsupported"],
+            timeout=5,
+            allow_failure=True,
+        )
+        == ""
+    )
 
 
 def test_yara_x_normalization_preserves_rule_identity_matches_and_limits(tmp_path) -> None:

@@ -1,0 +1,124 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: recursive-artifact-unpack
+  version: 1.0.0
+  title: Recursively unpack an artifact into a verified file map
+  summary: Run one immutable artifact through a digest-bound unblob image without network access, then independently verify and normalize the extracted files, directories, links, chunks, handlers, and errors.
+  domains: [artifact-analysis, firmware-security, reverse-engineering]
+  tags: [archive, extraction, filesystem, firmware, static-analysis]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-30T14:30:00Z
+  updated_at: 2026-07-30T14:30:00Z
+applicability:
+  target_kinds: [archive, binary, firmware]
+  platforms: [linux]
+  technologies: [unblob]
+  preconditions:
+    - The candidate container is available as one immutable local evidence artifact.
+    - Docker can execute the provisioned platform image by its exact manifest digest.
+  assumptions:
+    - Extracted contents and parser classifications are discovery evidence; they do not establish reachability, vulnerability, or impact.
+  exclusions:
+    - Caller-supplied plugins, extractor flags, paths, process counts, recursion depths, networks, mutable image tags, directories, devices, or live targets.
+scope:
+  minimum_execution_class: analysis
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 0
+  recommended_concurrency: 1
+  action_tags: [static-analysis]
+  data_classes: [artifact-content, file-metadata]
+taxonomies: []
+inputs:
+  - name: container-artifact
+    semantic_type: artifact/file
+    description: Exact immutable archive, firmware image, filesystem image, package, or compressed binary stream.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: extracted-file-map
+    semantic_type: surface/extracted-file-map
+    description: Bounded and independently verified map of extracted paths, types, sizes, hashes, magic, chunks, handlers, errors, and completeness state.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: map-extracted-surface
+    kind: analyze
+    title: Extract and verify the artifact surface
+    instruction: Run only the fixed recursive extraction operation against the exact evidence artifact. Preserve the release, platform-manifest, image-config, Docker CLI, operation, fixture, sandbox, and input identities. Re-hash the complete transient extraction tree independently, reject report-tree disagreement, and retain normalized handler, error, record, and truncation counts.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [artifact.recursive-unpack]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The conformance ZIP is identified and its marker is extracted with the expected SHA-256 before the operation becomes available.
+      - The normalized map covers every transient extracted path and is bound to the exact input and image identities.
+    failure_signals:
+      - Image, runtime, conformance, report schema, output tree, resource ceiling, or artifact identity validation fails.
+    evidence:
+      - evidence_type: surface/extracted-file-map
+        description: Exact normalized extraction map with independent file hashes and completeness state.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 1800
+    max_repetitions: 1
+composition:
+  consumes: [artifact/file]
+  provides: [surface/extracted-file-map]
+  compatible_after: []
+  compatible_before: [go-binary-symbol-recovery, native-binary-patch-diff-triage, causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: surface/extracted-file-map
+    description: Exact input and runtime identities plus verified extracted records and explicit limit state.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Treating a parser classification or extracted string as proof of a reachable security issue.
+  - Reporting a complete map after a resource limit, parser error, normalized-record truncation, or report-tree mismatch.
+  - Reusing extracted paths or hashes across a different artifact or image manifest digest.
+variations:
+  - Feed individual extracted-file hashes into compatible typed binary, mobile, signature, or code-analysis operations after importing those exact files as new evidence.
+sources:
+  - source_id: unblob
+    kind: code
+    title: unblob
+    url: https://github.com/onekey-sec/unblob
+    authors: [ONEKEY]
+    license: MIT
+    accessed_at: 2026-07-30T14:30:00Z
+    notes: Supported formats, report structure, and extractor behavior informed the fixed operation; playbook wording is original.
+  - source_id: unblob-installation
+    kind: publication
+    title: unblob installation documentation
+    url: https://unblob.org/installation/
+    authors: [ONEKEY]
+    license: MIT
+    accessed_at: 2026-07-30T14:30:00Z
+    notes: The official complete Docker distribution informed the exact OCI provisioner.
+  - source_id: unblob-26-6-4
+    kind: publication
+    title: unblob 26.6.4 release
+    url: https://github.com/onekey-sec/unblob/releases/tag/26.6.4
+    authors: [ONEKEY]
+    license: MIT
+    accessed_at: 2026-07-30T14:30:00Z
+    notes: Current stable release used for the live amd64 conformance and extraction proof.
+validation:
+  fixture_ids: [unblob-marker-zip-v1]
+  test_commands: ["pytest tests/test_adapter_execution.py tests/test_adapter_registry.py tests/test_corpus.py"]
+  known_limitations:
+    - The fixed recursion depth is three and the extraction process count is one.
+    - The transient extracted tree is verified and summarized but not retained as a bulk evidence archive.
+    - Encrypted containers may be identified but are not decrypted.
+  last_validated_at: 2026-07-30T14:30:00Z
+  validated_by: [white-hat-agent-test-suite]

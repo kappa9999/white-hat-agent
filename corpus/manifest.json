@@ -1,5 +1,5 @@
 {
-  "corpus_version": "sha256:c2f5c085fce6808d",
+  "corpus_version": "sha256:0714f21f45fbbb32",
   "entries": [
     {
       "capabilities": [
@@ -254,6 +254,36 @@
     },
     {
       "capabilities": [
+        "artifact.recursive-unpack"
+      ],
+      "consumes": [
+        "artifact/file"
+      ],
+      "digest": "1371e1bdf8b6596707f35ca1ba514acee9e1b8b7843169ffa4257c25f8f7e78a",
+      "domains": [
+        "artifact-analysis",
+        "firmware-security",
+        "reverse-engineering"
+      ],
+      "playbook_id": "recursive-artifact-unpack",
+      "provides": [
+        "surface/extracted-file-map"
+      ],
+      "relative_path": "artifact/recursive-unpack/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Run one immutable artifact through a digest-bound unblob image without network access, then independently verify and normalize the extracted files, directories, links, chunks, handlers, and errors.",
+      "tags": [
+        "archive",
+        "extraction",
+        "filesystem",
+        "firmware",
+        "static-analysis"
+      ],
+      "title": "Recursively unpack an artifact into a verified file map",
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
         "artifact.hash",
         "artifact.inspect",
         "code.search",
@@ -297,7 +327,7 @@
       "version": "1.0.0"
     }
   ],
-  "generated_at": "2026-07-30T13:20:00Z",
-  "manifest_digest": "d665c82e27ddc9488ca0e4c520c907db91871315255e2bf58317da6f9a81be43",
+  "generated_at": "2026-07-30T14:30:00Z",
+  "manifest_digest": "4acaefbd9a29bd3cbdf411f9605d3cbff3e543dad8ea4013e9467f9a833f4245",
   "schema_version": "1.0"
 }

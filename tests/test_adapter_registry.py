@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import lzma
@@ -19,6 +20,8 @@ from white_hat_agent.adapter_provisioning import (
     CweCatalogIdentity,
     ProvisionAction,
     ResolvedArtifact,
+    ResolvedOciImage,
+    ResolvedOciLayer,
     _adoptium_api_url,
     _materialize_assets,
     _validate_cwe_snapshot,
@@ -39,6 +42,7 @@ from white_hat_agent.adapter_registry import (
     GitHubReleaseProvisioner,
     InstalledAdapterRecord,
     MitreCweProvisioner,
+    OciImageProvisioner,
     OperationResourceLimits,
     ProbeDefinition,
     content_tree_digest,
@@ -111,6 +115,82 @@ def _tool_manifest(
         ],
         provisioner=provisioner,
         updated_at=utc_now(),
+    )
+
+
+def _oci_tool_manifest() -> AdapterManifest:
+    provisioner = OciImageProvisioner(
+        image="ghcr.io/example/tool",
+        release_repository="example/tool",
+        platform_map={"linux-x86_64": "linux/amd64"},
+        entrypoint=["tool"],
+        descriptor_name="oci-image.env",
+        max_download_bytes=2_000_000,
+        max_install_bytes=4_096,
+    )
+    return AdapterManifest(
+        adapter_id="fixture-oci-tool",
+        title="Fixture OCI tool",
+        description="Fixture digest-bound OCI tool",
+        kind=AdapterKind.TOOL,
+        provider="Fixture",
+        provider_url="https://github.com/example/tool",
+        license=_license(),
+        capabilities=["artifact.inspect"],
+        modes=[ExecutionMode.OFFLINE],
+        max_execution_class=ExecutionClass.ANALYSIS,
+        platforms=["linux-x86_64"],
+        probe=ProbeDefinition(
+            executable_names={"linux-x86_64": ["oci-image.env"]},
+            version_args=(),
+            version_file="oci-image.env",
+            version_property="version",
+        ),
+        operations=[
+            AdapterOperationBinding(
+                operation_id="inspect",
+                operation_version="1.0.0",
+                capabilities=["artifact.inspect"],
+                execution_class=ExecutionClass.ANALYSIS,
+                modes=[ExecutionMode.OFFLINE],
+                input_types=["artifact.file"],
+                output_types=["artifact.summary"],
+                conformance_suite_id="fixture-inspect",
+                limits=OperationResourceLimits(
+                    max_input_bytes=1_000_000,
+                    max_output_bytes=1_000_000,
+                    max_files=10,
+                    max_records=1_000,
+                    wall_seconds=30,
+                    cpu_seconds=30,
+                    memory_mib=512,
+                    max_processes=4,
+                ),
+            )
+        ],
+        provisioner=provisioner,
+        updated_at=utc_now(),
+    )
+
+
+def _resolved_oci_image() -> ResolvedOciImage:
+    return ResolvedOciImage(
+        image="ghcr.io/example/tool",
+        tag="v2.0.0",
+        platform="linux/amd64",
+        index_sha256="a" * 64,
+        manifest_sha256="b" * 64,
+        config_sha256="c" * 64,
+        source_revision="d" * 40,
+        compressed_bytes=123,
+        entrypoint=["tool"],
+        layers=[
+            ResolvedOciLayer(
+                media_type="application/vnd.oci.image.layer.v1.tar+gzip",
+                size=123,
+                sha256="e" * 64,
+            )
+        ],
     )
 
 
@@ -246,6 +326,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
         REPOSITORY_ROOT / "adapters/catalog.yaml",
         capability_execution_classes={
             "artifact.inspect": ExecutionClass.ANALYSIS,
+            "artifact.recursive-unpack": ExecutionClass.ANALYSIS,
             "artifact.signature-match": ExecutionClass.ANALYSIS,
             "binary.behavior-identify": ExecutionClass.ANALYSIS,
             "binary.diff": ExecutionClass.ANALYSIS,
@@ -270,7 +351,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     knowledge = registry.search("", kind=AdapterKind.KNOWLEDGE)
 
     assert report.valid
-    assert report.adapter_count == 13
+    assert report.adapter_count == 14
     assert reverse[0].adapter.adapter_id == "ghidra"
     assert {item.adapter.adapter_id for item in knowledge} == {
         "capa-rules",
@@ -308,6 +389,11 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     assert [operation.operation_id for operation in goresym.operations] == ["goresym.symbol-map"]
     assert goresym.operations[0].capabilities == ["binary.go-symbol-recover"]
     assert goresym.operations[0].output_types == ["surface/go-symbol-map"]
+    unblob = registry.get("unblob")
+    assert isinstance(unblob.provisioner, OciImageProvisioner)
+    assert unblob.platforms == ["linux-x86_64", "linux-arm64"]
+    assert [operation.operation_id for operation in unblob.operations] == ["unblob.extraction-map"]
+    assert unblob.operations[0].output_types == ["surface/extracted-file-map"]
 
 
 def test_status_defers_path_execution_and_uses_cached_conformance(tmp_path, monkeypatch) -> None:
@@ -852,6 +938,296 @@ def test_release_plan_resolves_one_versioned_entrypoint(tmp_path, monkeypatch) -
 
     assert plan.entrypoints == ["tool-2.3.4"]
     assert plan.target_version == "2.3.4"
+
+
+def test_oci_plan_binds_release_platform_and_registry_digests(tmp_path, monkeypatch) -> None:
+    manifest = _oci_tool_manifest()
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+    monkeypatch.setattr(adapter_provisioning, "current_platform", lambda: "linux-x86_64")
+    monkeypatch.setattr(
+        manager,
+        "status",
+        lambda _: AdapterStatus(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            observed_at=utc_now(),
+            platform="linux-x86_64",
+            supported=True,
+            installed=True,
+            healthy=True,
+            source="managed",
+            version="1.0.0",
+            revision="v1.0.0@sha256:" + "1" * 64 + "/sha256:" + "2" * 64,
+            available_capabilities=manifest.capabilities,
+        ),
+    )
+
+    def release_metadata(url: str) -> dict[str, object]:
+        if url.endswith("/releases/latest"):
+            return {"tag_name": "v2.0.0"}
+        return {"sha": "d" * 40}
+
+    image = _resolved_oci_image()
+    monkeypatch.setattr(adapter_provisioning, "_get_json", release_metadata)
+    monkeypatch.setattr(adapter_provisioning, "_resolve_oci_image", lambda *args, **kwargs: image)
+    monkeypatch.setattr(adapter_provisioning, "_oci_runtime_blockers", lambda: [])
+
+    plan = AdapterProvisioner(manager).plan(manifest.adapter_id)
+
+    assert plan.method == "oci-image"
+    assert plan.action == ProvisionAction.UPDATE
+    assert plan.current_version == "1.0.0"
+    assert plan.target_version == "2.0.0"
+    assert plan.revision == f"v2.0.0@sha256:{'a' * 64}/sha256:{'b' * 64}"
+    assert plan.oci_image == image
+    assert plan.source_urls[-1].endswith("/blobs/sha256:" + "c" * 64)
+
+    forged = plan.model_copy(update={"source_urls": plan.source_urls[:-1]})
+    with pytest.raises(AdapterRegistryError, match="sources"):
+        AdapterProvisioner(manager).provision(forged)
+
+
+def test_oci_provision_pulls_exact_manifest_and_writes_only_descriptor(tmp_path, monkeypatch) -> None:
+    manifest = _oci_tool_manifest()
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+    monkeypatch.setattr(adapter_provisioning, "current_platform", lambda: "linux-x86_64")
+    monkeypatch.setattr(
+        manager,
+        "status",
+        lambda _: AdapterStatus(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            observed_at=utc_now(),
+            platform="linux-x86_64",
+            supported=True,
+            installed=False,
+            healthy=False,
+        ),
+    )
+    image = _resolved_oci_image()
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_get_json",
+        lambda url: {"tag_name": image.tag} if url.endswith("/releases/latest") else {"sha": "d" * 40},
+    )
+    monkeypatch.setattr(adapter_provisioning, "_resolve_oci_image", lambda *args, **kwargs: image)
+    monkeypatch.setattr(adapter_provisioning, "_oci_runtime_blockers", lambda: [])
+    plan = AdapterProvisioner(manager).plan(manifest.adapter_id)
+    pulled: list[ResolvedOciImage] = []
+    verified: list[ResolvedOciImage] = []
+    monkeypatch.setattr(adapter_provisioning, "_trusted_docker_executable", lambda: Path("/usr/bin/docker"))
+    monkeypatch.setattr(adapter_provisioning, "_pull_oci_image", lambda _docker, value: pulled.append(value))
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_verify_local_oci_image",
+        lambda _docker, value: verified.append(value),
+    )
+
+    result = AdapterProvisioner(manager).provision(plan)
+
+    assert result.changed
+    assert pulled == [image]
+    assert verified == [image]
+    content = tmp_path / "managed/fixture-oci-tool/content"
+    assert [path.name for path in content.iterdir()] == ["oci-image.env"]
+    descriptor = (content / "oci-image.env").read_text()
+    assert "version=v2.0.0\n" in descriptor
+    assert f"manifest_sha256={'b' * 64}\n" in descriptor
+    installed = InstalledAdapterRecord.model_validate_json(
+        (tmp_path / "managed/fixture-oci-tool/installed.json").read_text()
+    )
+    assert installed.revision == plan.revision
+    assert installed.artifact_sha256 == ["a" * 64, "b" * 64, "c" * 64, "e" * 64]
+
+
+def test_oci_registry_resolution_and_local_identity_are_fully_bound(monkeypatch) -> None:
+    definition = _oci_tool_manifest().provisioner
+    assert isinstance(definition, OciImageProvisioner)
+    index_digest = "a" * 64
+    manifest_digest = "b" * 64
+    config_digest = "c" * 64
+    layer_digest = "e" * 64
+    source_revision = "d" * 40
+    manifest_size = 321
+
+    index = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "manifests": [
+            {
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": f"sha256:{manifest_digest}",
+                "size": manifest_size,
+                "platform": {"os": "linux", "architecture": "amd64"},
+            }
+        ],
+    }
+    manifest = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {
+            "mediaType": "application/vnd.oci.image.config.v1+json",
+            "digest": f"sha256:{config_digest}",
+            "size": 256,
+        },
+        "layers": [
+            {
+                "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                "digest": f"sha256:{layer_digest}",
+                "size": 123,
+            }
+        ],
+    }
+
+    def get_document(url, *, token, accepted_media_types, expected_sha256=None):
+        assert token == "registry-token"
+        assert accepted_media_types
+        if expected_sha256 is None:
+            return index, index_digest, 512
+        assert url.endswith(f"/manifests/sha256:{manifest_digest}")
+        assert expected_sha256 == manifest_digest
+        return manifest, manifest_digest, manifest_size
+
+    monkeypatch.setattr(adapter_provisioning, "_get_oci_token", lambda _image: "registry-token")
+    monkeypatch.setattr(adapter_provisioning, "_get_oci_document", get_document)
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_get_oci_blob_json",
+        lambda url, **kwargs: {
+            "os": "linux",
+            "architecture": "amd64",
+            "config": {
+                "Entrypoint": ["tool"],
+                "Labels": {
+                    "org.opencontainers.image.source": "https://github.com/example/tool",
+                    "org.opencontainers.image.version": "v2.0.0",
+                    "org.opencontainers.image.revision": source_revision,
+                },
+            },
+        },
+    )
+
+    image = adapter_provisioning._resolve_oci_image(
+        definition,
+        tag="v2.0.0",
+        platform="linux/amd64",
+        source_revision=source_revision,
+        provider_url="https://github.com/example/tool",
+    )
+
+    assert image.index_sha256 == index_digest
+    assert image.manifest_sha256 == manifest_digest
+    assert image.config_sha256 == config_digest
+    assert image.layers[0].sha256 == layer_digest
+    reference = f"{image.image}@sha256:{manifest_digest}"
+    inspection = {
+        "Id": f"sha256:{config_digest}",
+        "Os": "linux",
+        "Architecture": "amd64",
+        "RepoDigests": [reference],
+        "Descriptor": {"digest": f"sha256:{manifest_digest}"},
+        "Config": {
+            "Entrypoint": ["tool"],
+            "Labels": {
+                "org.opencontainers.image.version": "v2.0.0",
+                "org.opencontainers.image.revision": source_revision,
+            },
+        },
+    }
+    monkeypatch.setattr(adapter_provisioning, "_run_docker", lambda *_args, **_kwargs: json.dumps(inspection))
+    adapter_provisioning._verify_local_oci_image(Path("/usr/bin/docker"), image)
+
+    inspection["RepoDigests"] = []
+    with pytest.raises(AdapterRegistryError, match="resolved OCI identity"):
+        adapter_provisioning._verify_local_oci_image(Path("/usr/bin/docker"), image)
+
+
+def test_oci_http_metadata_helpers_verify_response_digests(monkeypatch) -> None:
+    class Headers(dict):
+        def get_content_type(self):
+            return self["Content-Type"]
+
+    class Response:
+        def __init__(self, body: bytes, headers: dict[str, str] | None = None) -> None:
+            self.body = body
+            self.headers = Headers(headers or {})
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, limit: int) -> bytes:
+            return self.body[:limit]
+
+    class Opener:
+        def __init__(self, response: Response) -> None:
+            self.response = response
+
+        def open(self, *_args, **_kwargs):
+            return self.response
+
+    responses: list[Response] = []
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "build_opener",
+        lambda *_args: Opener(responses.pop(0)),
+    )
+    responses.append(Response(b'{"token":"fixture-token"}'))
+    assert adapter_provisioning._get_oci_token("ghcr.io/example/tool") == "fixture-token"
+
+    document = b'{"schemaVersion":2}'
+    document_digest = hashlib.sha256(document).hexdigest()
+    responses.append(
+        Response(
+            document,
+            {
+                "Content-Type": "application/vnd.oci.image.manifest.v1+json",
+                "Docker-Content-Digest": f"sha256:{document_digest}",
+            },
+        )
+    )
+    payload, observed, size = adapter_provisioning._get_oci_document(
+        "https://ghcr.io/v2/example/tool/manifests/sha256:" + document_digest,
+        token="fixture-token",
+        accepted_media_types={"application/vnd.oci.image.manifest.v1+json"},
+        expected_sha256=document_digest,
+    )
+    assert payload == {"schemaVersion": 2}
+    assert observed == document_digest
+    assert size == len(document)
+
+    config = b'{"os":"linux"}'
+    config_digest = hashlib.sha256(config).hexdigest()
+    responses.append(Response(config))
+    assert adapter_provisioning._get_oci_blob_json(
+        "https://ghcr.io/v2/example/tool/blobs/sha256:" + config_digest,
+        token="fixture-token",
+        expected_sha256=config_digest,
+        expected_size=len(config),
+    ) == {"os": "linux"}
+
+
+def test_oci_runtime_probe_uses_a_trusted_cli(tmp_path, monkeypatch) -> None:
+    docker = tmp_path / "docker"
+    docker.write_text("#!/bin/sh\nprintf '28.3.3\\n'\n", encoding="utf-8")
+    docker.chmod(0o700)
+    monkeypatch.setattr(adapter_provisioning.shutil, "which", lambda _name: str(docker))
+
+    assert adapter_provisioning._trusted_docker_executable() == docker.resolve()
+    assert adapter_provisioning._oci_runtime_blockers() == []
+
+    docker.write_text("#!/bin/sh\nprintf 'invalid-version\\n'\n", encoding="utf-8")
+    assert adapter_provisioning._oci_runtime_blockers() == [
+        "Docker engine returned an invalid server version"
+    ]
+
+    def unavailable(*_args, **_kwargs):
+        raise AdapterRegistryError("unavailable")
+
+    monkeypatch.setattr(adapter_provisioning, "_run_docker", unavailable)
+    assert adapter_provisioning._oci_runtime_blockers() == ["Docker engine is unavailable"]
 
 
 def test_adoptium_plan_binds_platform_package_checksum_and_release(tmp_path, monkeypatch) -> None:

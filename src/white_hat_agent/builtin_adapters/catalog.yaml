@@ -280,6 +280,61 @@ adapters:
     updated_at: 2026-07-30T13:20:00Z
 
   - schema_version: "1.0"
+    adapter_id: unblob
+    adapter_version: "1.0.0"
+    title: unblob recursive artifact extraction
+    description: Recursively identify and extract archives, firmware containers, filesystems, and compressed streams into a normalized, independently verified file and chunk map.
+    kind: tool
+    provider: ONEKEY
+    provider_url: https://github.com/onekey-sec/unblob
+    license:
+      name: MIT
+      url: https://github.com/onekey-sec/unblob/blob/main/LICENSE
+      attribution: unblob by ONEKEY
+    capabilities: [artifact.recursive-unpack]
+    modes: [offline, sandbox]
+    max_execution_class: analysis
+    platforms: [linux-x86_64, linux-arm64]
+    priority: 6
+    probe:
+      executable_names:
+        linux: [unblob-image.env]
+      version_args: []
+      version_file: unblob-image.env
+      version_property: version
+      minimum_version: "26.6.4"
+    provisioner:
+      kind: oci-image
+      image: ghcr.io/onekey-sec/unblob
+      release_repository: onekey-sec/unblob
+      platform_map:
+        linux-x86_64: linux/amd64
+        linux-arm64: linux/arm64
+      entrypoint: [unblob]
+      descriptor_name: unblob-image.env
+      max_download_bytes: 536870912
+      max_install_bytes: 4096
+    operations:
+      - operation_id: unblob.extraction-map
+        operation_version: "1.0.0"
+        capabilities: [artifact.recursive-unpack]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/file]
+        output_types: [surface/extracted-file-map]
+        conformance_suite_id: unblob-marker-zip-v1
+        limits:
+          max_input_bytes: 1073741824
+          max_output_bytes: 1073741824
+          max_files: 100000
+          max_records: 100000
+          wall_seconds: 1800
+          cpu_seconds: 1200
+          memory_mib: 4096
+          max_processes: 32
+    updated_at: 2026-07-30T14:30:00Z
+
+  - schema_version: "1.0"
     adapter_id: yara-x
     adapter_version: "1.0.0"
     title: YARA-X artifact signature engine
