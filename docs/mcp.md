@@ -50,7 +50,7 @@ uv run --project /absolute/path/to/white-hat-agent \
 ## Surface design
 
 Mounted names become `knowledge_search`, `adapter_resolve`, `adapter_ensure`, `intelligence_sync`,
-`campaign_enqueue`, and so on.
+`intelligence_epss_history`, `campaign_enqueue`, and so on.
 Tools use strict structured input/output. Resources expose workspace health, the corpus manifest, playbooks, and the
 capability and concrete-adapter catalogs. Prompts help a host model compile submissions, normalize opportunities,
 and plan campaigns without requiring one provider's API.

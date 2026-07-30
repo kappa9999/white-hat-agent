@@ -66,7 +66,7 @@ flowchart LR
 | CISA Known Exploited Vulnerabilities | Confirmed exploitation | 6 hours | Snapshot and diff the complete catalog; `dateAdded` is not a cursor |
 | CVE List V5 | Canonical CNA/ADP records and CVE state | 6 hours | Checkpoint the captured upstream batch time with overlap; never equate rejection, withdrawal, and source deletion |
 | OSV | Package, version, and Git-range applicability | 6 hours | Read the reverse-chronological modified index with an overlap window, then snapshot selected records |
-| FIRST EPSS | Dated probability enrichment | With each selected CVE set | Preserve score date; never treat probability as proof of exploitation |
+| FIRST EPSS | Dated probability enrichment | With each selected CVE set | Preserve current plus bounded time-series observations; never treat probability as proof of exploitation |
 | NVD 2.0 | CVSS, SSVC, CWE, CPE/configuration, and reference enrichment | 6 hours; no more than every 2 hours | Closed overlapping last-modified windows, fail-closed pagination, and documented rate limits |
 
 OSV aggregates records with different upstream licenses. Every snapshot and normalized record therefore retains its
@@ -192,6 +192,10 @@ wha intelligence brief \
   --source osv --source cve-list-v5 --source nvd \
   --limit 25 \
   --out white-hat-workspace/.whitehat/intelligence/reports/brief.md
+wha intelligence epss-history CVE-2023-44487 \
+  --workspace white-hat-workspace \
+  --as-of 2026-07-01 \
+  --out white-hat-workspace/.whitehat/intelligence/reports/epss-history.json
 wha intelligence applicability \
   --request applicability-request.json \
   --out applicability-decision.json
@@ -207,5 +211,6 @@ for a complete production run. Use `--include-rejected` on `list` or `brief` onl
 of the analysis. Ecosystem filters narrow OSV acquisition and query views; canonical CVE records are always persisted
 unfiltered so a later query cannot inherit gaps from an earlier filtered checkpoint.
 
-If a run is interrupted, retain its snapshots but do not advance the source's successful-sync state. Re-run with an
-overlapping window; content addressing and idempotent upserts make replay safe.
+If a run is interrupted, it is explicitly recorded as `interrupted` and retains its snapshots. A source that completed
+before interruption keeps its own checkpoint; the active source does not receive a successful checkpoint. Re-run with
+an overlapping window; content addressing and idempotent upserts make replay safe.

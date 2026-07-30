@@ -104,6 +104,8 @@ def test_exported_episode_schema_validates_fixture(tmp_path) -> None:
     assert "adapter-ensure-result.schema.json" in names
     assert "adapter-provision-plan.schema.json" in names
     assert "intelligence-sync-report.schema.json" in names
+    assert "epss-history.schema.json" in names
+    assert "epss-observation.schema.json" in names
 
 
 def test_execution_request_schema_matches_runtime_discriminator_rules(tmp_path) -> None:
@@ -132,6 +134,7 @@ def test_intelligence_cli_status_and_empty_brief_are_local(tmp_path) -> None:
     Workspace.initialize(tmp_path)
     status_path = tmp_path / "status.json"
     brief_path = tmp_path / "brief.md"
+    history_path = tmp_path / "epss-history.json"
 
     status_result = main(
         [
@@ -153,11 +156,32 @@ def test_intelligence_cli_status_and_empty_brief_are_local(tmp_path) -> None:
             str(brief_path),
         ]
     )
+    history_result = main(
+        [
+            "intelligence",
+            "epss-history",
+            "CVE-2026-4242",
+            "--workspace",
+            str(tmp_path),
+            "--as-of",
+            "2026-07-29",
+            "--out",
+            str(history_path),
+        ]
+    )
 
     assert status_result == 0
     assert brief_result == 0
+    assert history_result == 0
     assert json.loads(status_path.read_text(encoding="utf-8"))["initialized"] is True
     assert "No advisories matched" in brief_path.read_text(encoding="utf-8")
+    assert json.loads(history_path.read_text(encoding="utf-8")) == {
+        "as_of": "2026-07-29",
+        "cve": "CVE-2026-4242",
+        "observations": [],
+        "schema_version": "1.0",
+        "total_observations": 0,
+    }
 
 
 def test_intelligence_sync_require_success_writes_failure_report(tmp_path, monkeypatch, capsys) -> None:

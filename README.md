@@ -154,11 +154,13 @@ wha intelligence sync \
   --source nvd \
   --since-hours 6 --limit-per-source 5000 --require-success
 wha intelligence brief --source osv --source cve-list-v5 --source nvd --limit 25
+wha intelligence epss-history CVE-2023-44487 --as-of 2026-07-01
 ```
 
 Every selected upstream record is backed by an immutable raw snapshot and transparent priority factors. Intelligence
 collection does not interact with affected targets; it produces evidence-backed leads for local or explicitly scoped
-investigation. See the [production loop](docs/production-loop.md).
+investigation. EPSS history is stored outside normalized advisories so date-aware queries do not inflate every CVE
+record. See the [production loop](docs/production-loop.md).
 
 ## How it works
 

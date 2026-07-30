@@ -5,7 +5,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,7 @@ from white_hat_agent.intelligence import (
     CVE_LIST_V5_ATTRIBUTION,
     CVE_LIST_V5_DELTA_URL,
     EPSS_API_URL,
+    EPSS_ATTRIBUTION,
     NVD_ATTRIBUTION,
     NVD_CVE_API_URL,
     OSV_API_BASE_URL,
@@ -1555,7 +1556,7 @@ def test_epss_enriches_only_locally_selected_cve_aliases_and_alias_graph(tmp_pat
         b"modified,id\n2026-07-29T11:00:00Z,npm/GHSA-epss.json\n2026-07-28T08:00:00Z,npm/GHSA-old.json\n"
     )
     record_url = OSV_API_BASE_URL + "GHSA-epss"
-    epss_url = f"{EPSS_API_URL}?cve=CVE-2026-1234"
+    epss_url = f"{EPSS_API_URL}?cve=CVE-2026-1234&scope=time-series"
     osv_record = {
         "id": "GHSA-epss",
         "aliases": ["CVE-2026-1234"],
@@ -1572,6 +1573,13 @@ def test_epss_enriches_only_locally_selected_cve_aliases_and_alias_graph(tmp_pat
                 "epss": "0.125",
                 "percentile": "0.75",
                 "date": "2026-07-29",
+                "time-series": [
+                    {
+                        "epss": "0.100",
+                        "percentile": "0.70",
+                        "date": "2026-07-28",
+                    }
+                ],
             }
         ],
     }
@@ -1596,12 +1604,16 @@ def test_epss_enriches_only_locally_selected_cve_aliases_and_alias_graph(tmp_pat
     assert any(
         signal.kind == SeverityKind.EPSS and signal.probability == 0.125 for signal in advisory.severity
     )
+    history = service.epss_history("CVE-2026-1234", as_of=date(2026, 7, 28))
+    assert history.total_observations == 2
+    assert history.latest.score_date == date(2026, 7, 29)
+    assert history.selected_at_or_before.signal.probability == 0.1
     assert [request[0] for request in transport.requests].count(epss_url) == 1
 
 
 def test_epss_candidate_ceiling_is_explicit_and_does_not_fail_primary_checkpoint(tmp_path) -> None:
     cves = ["CVE-2026-1001", "CVE-2026-1002", "CVE-2026-1003"]
-    epss_url = f"{EPSS_API_URL}?cve=CVE-2026-1001%2CCVE-2026-1002"
+    epss_url = f"{EPSS_API_URL}?cve=CVE-2026-1001%2CCVE-2026-1002&scope=time-series"
     epss = {
         "status": "OK",
         "data": [{"cve": cve, "epss": "0.01", "percentile": "0.5", "date": "2026-07-29"} for cve in cves[:2]],
@@ -1624,14 +1636,117 @@ def test_epss_candidate_ceiling_is_explicit_and_does_not_fail_primary_checkpoint
     assert enrichment.status == SyncStatus.PARTIAL
     assert enrichment.truncated
     assert enrichment.records_selected == 2
-    assert enrichment.metadata == {
-        "selection": "locally-selected-cve-aliases",
-        "candidate_count": 3,
-        "requested": 2,
-    }
+    assert enrichment.metadata["selection"] == "history-aware-priority-v1"
+    assert enrichment.metadata["candidate_count"] == 3
+    assert enrichment.metadata["requested"] == 2
+    assert enrichment.metadata["omitted"] == 1
+    assert enrichment.metadata["selected_by_reason"] == {"current-run-kev": 2}
+    assert enrichment.metadata["omitted_by_reason"] == {"current-run-kev": 1}
+    assert enrichment.metadata["request_count"] == 1
     assert enrichment.issues[0].code == "epss_candidate_limit"
     assert report.status == SyncStatus.PARTIAL
     assert report.successful
+
+
+def test_epss_selection_prioritizes_current_run_over_older_lexical_history(tmp_path) -> None:
+    store = _store(tmp_path)
+    old_cve = "CVE-2020-0001"
+    current_cve = "CVE-2026-9999"
+    old_snapshot = store.save_snapshot(
+        b'{"id":"CVE-2020-0001"}',
+        source=IntelligenceSource.OSV,
+        kind=SnapshotKind.SOURCE_RECORD,
+        source_url=OSV_API_BASE_URL + old_cve,
+        source_record_id=old_cve,
+        retrieved_at=NOW - timedelta(days=5),
+        media_type="application/json",
+        attribution=OSV_ATTRIBUTION,
+    )
+    store.upsert_source_record(
+        ParsedSourceRecord(
+            source=IntelligenceSource.OSV,
+            source_record_id=old_cve,
+            advisory=NormalizedAdvisory(
+                advisory_id=old_cve,
+                identifiers=[old_cve],
+                sources=[IntelligenceSource.OSV],
+                provenance=[old_snapshot],
+            ),
+            raw_record_sha256="a" * 64,
+        ),
+        snapshot_id=old_snapshot.snapshot_id,
+        seen_at=NOW - timedelta(days=5),
+    )
+    old_epss_snapshot = store.save_snapshot(
+        b'{"data":[]}',
+        source=IntelligenceSource.EPSS,
+        kind=SnapshotKind.ENRICHMENT,
+        source_url=EPSS_API_URL,
+        retrieved_at=NOW - timedelta(days=5),
+        media_type="application/json",
+        attribution=EPSS_ATTRIBUTION,
+    )
+    old_observed_at = NOW - timedelta(days=5)
+    store.upsert_epss_observations(
+        old_cve,
+        [
+            SeveritySignal(
+                kind=SeverityKind.EPSS,
+                source=IntelligenceSource.EPSS,
+                probability=0.25,
+                observed_at=old_observed_at,
+                source_url=EPSS_API_URL,
+                metadata={"score_date": old_observed_at.date().isoformat()},
+            )
+        ],
+        snapshot_id=old_epss_snapshot.snapshot_id,
+    )
+    epss_url = f"{EPSS_API_URL}?cve={current_cve}&scope=time-series"
+    transport = FakeTransport(
+        {
+            CISA_KEV_URL: _json_response(CISA_KEV_URL, _cisa_feed(_cisa_item(current_cve))),
+            epss_url: _json_response(
+                epss_url,
+                {
+                    "status": "OK",
+                    "data": [
+                        {
+                            "cve": current_cve,
+                            "epss": "0.5",
+                            "percentile": "0.9",
+                            "date": "2026-07-29",
+                        }
+                    ],
+                },
+            ),
+        }
+    )
+    service = IntelligenceService(store, transport=transport, clock=lambda: NOW)
+
+    enrichment = service.sync(sources=["cisa-kev"], limit_per_source=1, enrich_epss=True).results[1]
+
+    assert transport.requests[-1][0] == epss_url
+    assert enrichment.metadata["selected_by_reason"] == {"current-run-kev": 1}
+    assert enrichment.metadata["omitted_by_reason"] == {"stale-observation-refresh": 1}
+
+
+def test_interrupted_sync_is_not_left_running(tmp_path) -> None:
+    class InterruptingTransport:
+        def get(self, *_args, **_kwargs):
+            raise KeyboardInterrupt
+
+    store = _store(tmp_path)
+    service = IntelligenceService(store, transport=InterruptingTransport(), clock=lambda: NOW)
+
+    with pytest.raises(KeyboardInterrupt):
+        service.sync(sources=["cisa-kev"])
+
+    with sqlite3.connect(store.database) as connection:
+        row = connection.execute("SELECT status, finished_at FROM intelligence_sync_runs").fetchone()
+    assert row == ("interrupted", NOW.isoformat())
+    status = service.status()
+    assert status.running_sync_count == 0
+    assert status.interrupted_sync_count == 1
 
 
 def test_osv_request_ceiling_counts_failed_record_fetches(tmp_path) -> None:
@@ -1796,8 +1911,39 @@ def test_kev_priority_dominates_low_epss_and_factors_are_transparent() -> None:
 
     assert kev_rank.total_score > speculative_rank.total_score
     assert kev_rank.kev_component == 1000.0
-    assert kev_rank.algorithm_version == "kev-epss-recency-severity-evidence-v1"
+    assert kev_rank.algorithm_version == "kev-epss-recency-severity-evidence-v2"
     assert any("confirmed CISA KEV" in reason for reason in kev_rank.reasons)
+
+
+def test_ranking_uses_latest_dated_epss_observation_instead_of_historical_maximum() -> None:
+    older = NOW - timedelta(days=2)
+    latest = NOW - timedelta(days=1)
+    advisory = NormalizedAdvisory(
+        advisory_id="CVE-2026-8888",
+        identifiers=["CVE-2026-8888"],
+        sources=[IntelligenceSource.EPSS],
+        severity=[
+            SeveritySignal(
+                kind=SeverityKind.EPSS,
+                source=IntelligenceSource.EPSS,
+                probability=0.99,
+                observed_at=older,
+            ),
+            SeveritySignal(
+                kind=SeverityKind.EPSS,
+                source=IntelligenceSource.EPSS,
+                probability=0.10,
+                observed_at=latest,
+            ),
+        ],
+    )
+
+    factors = rank_advisory(advisory, as_of=NOW)
+
+    assert factors.epss_probability == 0.10
+    assert factors.epss_provider == "FIRST EPSS"
+    assert factors.epss_observed_at == latest
+    assert latest.date().isoformat() in factors.reasons[1]
 
 
 def test_persistence_alias_lookup_list_status_and_deterministic_brief(tmp_path) -> None:
@@ -1843,7 +1989,7 @@ def test_persistence_alias_lookup_list_status_and_deterministic_brief(tmp_path) 
     second = service.brief(ecosystems=["PyPI"], as_of=NOW)
     assert first == second
     assert "Persistent fixture" in first
-    assert "kev-epss-recency-severity-evidence-v1" in first
+    assert "kev-epss-recency-severity-evidence-v2" in first
     with pytest.raises(AdvisoryNotFoundError):
         service.get("CVE-0000-0000")
 

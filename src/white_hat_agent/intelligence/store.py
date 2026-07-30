@@ -3,22 +3,27 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from ..models import stable_id
 from .errors import AdvisoryNotFoundError, IntelligenceLimitError, IntelligenceStoreError
 from .models import (
     CveRecordState,
+    EpssHistory,
+    EpssObservation,
     IntelligenceSource,
     IntelligenceStatus,
     IntelligenceSyncReport,
     NormalizedAdvisory,
     RawSnapshotProvenance,
+    SeverityKind,
+    SeveritySignal,
     SnapshotKind,
     SourceAttribution,
     SourceState,
@@ -34,6 +39,17 @@ class SourceRecordState:
     raw_record_sha256: str
     advisory_id: str
     tombstoned: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EpssCandidateState:
+    cve: str
+    current_run: bool
+    known_exploited: bool
+    latest_score_date: date | None
+
+
+_CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
 
 
 class IntelligenceStore:
@@ -136,6 +152,15 @@ class IntelligenceStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_intelligence_sync_runs_started
                     ON intelligence_sync_runs(started_at DESC, run_id DESC);
+                CREATE TABLE IF NOT EXISTS intelligence_epss_observations (
+                    cve TEXT NOT NULL,
+                    score_date TEXT NOT NULL,
+                    snapshot_id TEXT NOT NULL,
+                    signal_json TEXT NOT NULL,
+                    PRIMARY KEY(cve, score_date)
+                );
+                CREATE INDEX IF NOT EXISTS idx_intelligence_epss_observations_date
+                    ON intelligence_epss_observations(score_date DESC, cve);
                 """
             )
             columns = {
@@ -149,6 +174,7 @@ class IntelligenceStore:
                 "CREATE INDEX IF NOT EXISTS idx_intelligence_advisories_cve_rejected "
                 "ON intelligence_advisories(cve_rejected, advisory_id)"
             )
+            self._backfill_epss_observations(connection)
 
     def save_snapshot(
         self,
@@ -294,90 +320,191 @@ class IntelligenceStore:
     def upsert_source_record(
         self, record: ParsedSourceRecord, *, snapshot_id: str, seen_at: datetime
     ) -> UpsertState:
-        if record.source not in record.advisory.sources:
-            raise IntelligenceStoreError("source record advisory is missing its source")
-        if len(record.raw_record_sha256) != 64 or any(
-            character not in "0123456789abcdef" for character in record.raw_record_sha256
-        ):
-            raise IntelligenceStoreError("source record digest is invalid")
+        return self.upsert_source_records(
+            [record],
+            snapshot_id=snapshot_id,
+            seen_at=seen_at,
+        )[0]
+
+    def upsert_source_records(
+        self,
+        records: Iterable[ParsedSourceRecord],
+        *,
+        snapshot_id: str,
+        seen_at: datetime,
+    ) -> list[UpsertState]:
+        batch = list(records)
+        if not batch:
+            return []
+        if len(batch) > 10_000:
+            raise IntelligenceLimitError("source record batch exceeds 10000 records")
+        for record in batch:
+            _validate_source_record(record)
+        source = batch[0].source
+        if any(record.source != source for record in batch):
+            raise IntelligenceStoreError("source record batch must use one source")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            self._assert_snapshot(connection, snapshot_id, record.source)
-            previous = connection.execute(
-                """
-                SELECT advisory_id, raw_record_sha256, tombstoned
-                FROM intelligence_source_records
-                WHERE source = ? AND source_record_id = ?
-                """,
-                (record.source.value, record.source_record_id),
-            ).fetchone()
-            linked = self._linked_advisory_ids(connection, record.advisory.identifiers)
-            if previous:
-                linked.add(previous["advisory_id"])
-            target_id = (
-                previous["advisory_id"]
-                if previous
-                else _choose_advisory_id(linked, record.advisory.advisory_id)
+            self._assert_snapshot(connection, snapshot_id, source)
+            return [
+                self._upsert_source_record(
+                    connection,
+                    record,
+                    snapshot_id=snapshot_id,
+                    seen_at=seen_at,
+                )
+                for record in batch
+            ]
+
+    def upsert_epss_observations(
+        self,
+        cve: str,
+        signals: Iterable[SeveritySignal],
+        *,
+        snapshot_id: str,
+    ) -> int:
+        return self.upsert_epss_observation_batches(
+            [(cve, signals)],
+            snapshot_id=snapshot_id,
+        )
+
+    def upsert_epss_observation_batches(
+        self,
+        batches: Iterable[tuple[str, Iterable[SeveritySignal]]],
+        *,
+        snapshot_id: str,
+    ) -> int:
+        normalized_batches = [(_normalize_cve(cve), list(signals)) for cve, signals in batches]
+        observation_count = sum(len(signals) for _, signals in normalized_batches)
+        if observation_count > 10_000:
+            raise IntelligenceLimitError("EPSS observation batch exceeds 10000 records")
+        changed = 0
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._assert_snapshot(connection, snapshot_id, IntelligenceSource.EPSS)
+            for normalized_cve, observations in normalized_batches:
+                for signal in observations:
+                    if signal.kind != SeverityKind.EPSS or signal.source != IntelligenceSource.EPSS:
+                        raise IntelligenceStoreError("EPSS history requires EPSS severity signals")
+                    score_date = _epss_score_date(signal)
+                    payload = _model_json(signal)
+                    changed += connection.execute(
+                        """
+                        INSERT INTO intelligence_epss_observations(
+                            cve, score_date, snapshot_id, signal_json
+                        ) VALUES (?, ?, ?, ?)
+                        ON CONFLICT(cve, score_date) DO UPDATE SET
+                            snapshot_id = excluded.snapshot_id,
+                            signal_json = excluded.signal_json
+                        WHERE intelligence_epss_observations.snapshot_id != excluded.snapshot_id
+                           OR intelligence_epss_observations.signal_json != excluded.signal_json
+                        """,
+                        (normalized_cve, score_date.isoformat(), snapshot_id, payload),
+                    ).rowcount
+        return changed
+
+    def epss_history(
+        self,
+        cve: str,
+        *,
+        as_of: date | None = None,
+        limit: int = 31,
+    ) -> EpssHistory:
+        normalized_cve = _normalize_cve(cve)
+        if limit < 1 or limit > 366:
+            raise IntelligenceLimitError("EPSS history limit must be between 1 and 366")
+        with self._connect() as connection:
+            total = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM intelligence_epss_observations WHERE cve = ?",
+                    (normalized_cve,),
+                ).fetchone()["count"]
             )
-            for other_id in sorted(linked - {target_id}):
-                self._merge_identity(connection, target_id=target_id, other_id=other_id)
-            for identifier in record.advisory.identifiers:
-                connection.execute(
+            rows = connection.execute(
+                """
+                SELECT cve, score_date, snapshot_id, signal_json
+                FROM intelligence_epss_observations
+                WHERE cve = ? ORDER BY score_date DESC LIMIT ?
+                """,
+                (normalized_cve, limit),
+            ).fetchall()
+            selected_row = None
+            if as_of is not None:
+                selected_row = connection.execute(
                     """
-                    INSERT INTO intelligence_identifiers(identifier_key, identifier, advisory_id)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(identifier_key) DO UPDATE SET advisory_id = excluded.advisory_id
+                    SELECT cve, score_date, snapshot_id, signal_json
+                    FROM intelligence_epss_observations
+                    WHERE cve = ? AND score_date <= ?
+                    ORDER BY score_date DESC LIMIT 1
                     """,
-                    (_identifier_key(identifier), identifier, target_id),
-                )
-            payload = _model_json(record.advisory)
-            if previous:
-                unchanged = previous["raw_record_sha256"] == record.raw_record_sha256 and not bool(
-                    previous["tombstoned"]
-                )
-                connection.execute(
-                    """
-                    UPDATE intelligence_source_records SET
-                        advisory_id = ?, snapshot_id = ?, last_seen_at = ?,
-                        tombstoned = 0, tombstoned_at = NULL,
-                        raw_record_sha256 = ?, record_json = ?
-                    WHERE source = ? AND source_record_id = ?
-                    """,
-                    (
-                        target_id,
-                        snapshot_id,
-                        seen_at.isoformat(),
-                        record.raw_record_sha256,
-                        payload,
-                        record.source.value,
-                        record.source_record_id,
-                    ),
-                )
-                state = UpsertState.UNCHANGED if unchanged else UpsertState.UPDATED
-            else:
-                connection.execute(
-                    """
-                    INSERT INTO intelligence_source_records(
-                        source, source_record_id, advisory_id, raw_record_sha256,
-                        snapshot_id, record_json, tombstoned, tombstoned_at,
-                        first_seen_at, last_seen_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
-                    """,
-                    (
-                        record.source.value,
-                        record.source_record_id,
-                        target_id,
-                        record.raw_record_sha256,
-                        snapshot_id,
-                        payload,
-                        seen_at.isoformat(),
-                        seen_at.isoformat(),
-                    ),
-                )
-                state = UpsertState.INSERTED
-            if state != UpsertState.UNCHANGED or linked - {target_id}:
-                self._rebuild_advisory(connection, target_id, updated_at=seen_at)
-            return state
+                    (normalized_cve, as_of.isoformat()),
+                ).fetchone()
+        observations = [_epss_observation_from_row(row) for row in rows]
+        return EpssHistory(
+            cve=normalized_cve,
+            total_observations=total,
+            observations=observations,
+            latest=observations[0] if observations else None,
+            as_of=as_of,
+            selected_at_or_before=(
+                _epss_observation_from_row(selected_row) if selected_row is not None else None
+            ),
+        )
+
+    def epss_candidate_states(self, current_advisory_ids: Iterable[str]) -> list[EpssCandidateState]:
+        requested = list(dict.fromkeys(item.strip() for item in current_advisory_ids if item.strip()))
+        if len(requested) > 10_000:
+            raise IntelligenceLimitError("EPSS current-run candidate input exceeds 10000 records")
+        requested_keys = {item.casefold() for item in requested}
+        with self._connect() as connection:
+            identifier_rows = connection.execute(
+                """
+                SELECT i.identifier, i.advisory_id, a.known_exploited
+                FROM intelligence_identifiers AS i
+                JOIN intelligence_advisories AS a ON a.advisory_id = i.advisory_id
+                """
+            ).fetchall()
+            latest_rows = connection.execute(
+                """
+                SELECT cve, MAX(score_date) AS latest_score_date
+                FROM intelligence_epss_observations GROUP BY cve
+                """
+            ).fetchall()
+        current_canonical_ids = {
+            row["advisory_id"]
+            for row in identifier_rows
+            if row["advisory_id"].casefold() in requested_keys
+            or row["identifier"].casefold() in requested_keys
+        }
+        latest_dates = {row["cve"]: date.fromisoformat(row["latest_score_date"]) for row in latest_rows}
+        candidates: dict[str, EpssCandidateState] = {}
+        for row in identifier_rows:
+            identifier = row["identifier"].upper()
+            if _CVE_RE.fullmatch(identifier) is None:
+                continue
+            current_run = row["advisory_id"] in current_canonical_ids
+            known_exploited = bool(row["known_exploited"])
+            latest_score_date = latest_dates.get(identifier)
+            if not (current_run or known_exploited or latest_score_date is not None):
+                continue
+            previous = candidates.get(identifier)
+            candidates[identifier] = EpssCandidateState(
+                cve=identifier,
+                current_run=current_run or bool(previous and previous.current_run),
+                known_exploited=known_exploited or bool(previous and previous.known_exploited),
+                latest_score_date=latest_score_date,
+            )
+        for cve, latest_score_date in latest_dates.items():
+            candidates.setdefault(
+                cve,
+                EpssCandidateState(
+                    cve=cve,
+                    current_run=False,
+                    known_exploited=False,
+                    latest_score_date=latest_score_date,
+                ),
+            )
+        return [candidates[cve] for cve in sorted(candidates)]
 
     def tombstone_source_record(
         self,
@@ -559,6 +686,18 @@ class IntelligenceStore:
         if changed != 1:
             raise IntelligenceStoreError(f"unknown intelligence sync run: {report.run_id}")
 
+    def interrupt_sync(self, run_id: str, *, finished_at: datetime) -> None:
+        with self._connect() as connection:
+            changed = connection.execute(
+                """
+                UPDATE intelligence_sync_runs SET status = 'interrupted', finished_at = ?
+                WHERE run_id = ? AND status = 'running'
+                """,
+                (finished_at.isoformat(), run_id),
+            ).rowcount
+        if changed != 1:
+            raise IntelligenceStoreError(f"unknown running intelligence sync: {run_id}")
+
     def status(self) -> IntelligenceStatus:
         if not self.database.exists():
             return IntelligenceStatus(initialized=False)
@@ -579,6 +718,7 @@ class IntelligenceStore:
                     "intelligence_advisory_ecosystems",
                     "intelligence_source_state",
                     "intelligence_sync_runs",
+                    "intelligence_epss_observations",
                 }
                 if not required.issubset(tables):
                     return IntelligenceStatus(initialized=False)
@@ -592,9 +732,14 @@ class IntelligenceStore:
                 snapshot_count = connection.execute(
                     "SELECT COUNT(*) AS count FROM intelligence_snapshots"
                 ).fetchone()["count"]
-                sync_count = connection.execute(
-                    "SELECT COUNT(*) AS count FROM intelligence_sync_runs"
-                ).fetchone()["count"]
+                sync_counts = connection.execute(
+                    """
+                    SELECT COUNT(*) AS total,
+                           SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
+                           SUM(CASE WHEN status = 'interrupted' THEN 1 ELSE 0 END) AS interrupted
+                    FROM intelligence_sync_runs
+                    """
+                ).fetchone()
                 source_rows = connection.execute(
                     """
                     SELECT source,
@@ -637,7 +782,9 @@ class IntelligenceStore:
             withdrawn_count=int(advisory_row["withdrawn"] or 0),
             rejected_cve_count=int(advisory_row["cve_rejected"] or 0),
             snapshot_count=int(snapshot_count),
-            sync_run_count=int(sync_count),
+            sync_run_count=int(sync_counts["total"] or 0),
+            running_sync_count=int(sync_counts["running"] or 0),
+            interrupted_sync_count=int(sync_counts["interrupted"] or 0),
             sources=source_statuses,
             latest_sync=(
                 IntelligenceSyncReport.model_validate_json(latest["report_json"]) if latest else None
@@ -649,6 +796,122 @@ class IntelligenceStore:
             return int(
                 connection.execute("SELECT COUNT(*) AS count FROM intelligence_snapshots").fetchone()["count"]
             )
+
+    def _upsert_source_record(
+        self,
+        connection: sqlite3.Connection,
+        record: ParsedSourceRecord,
+        *,
+        snapshot_id: str,
+        seen_at: datetime,
+    ) -> UpsertState:
+        previous = connection.execute(
+            """
+            SELECT advisory_id, raw_record_sha256, tombstoned
+            FROM intelligence_source_records
+            WHERE source = ? AND source_record_id = ?
+            """,
+            (record.source.value, record.source_record_id),
+        ).fetchone()
+        linked = self._linked_advisory_ids(connection, record.advisory.identifiers)
+        if previous:
+            linked.add(previous["advisory_id"])
+        target_id = (
+            previous["advisory_id"] if previous else _choose_advisory_id(linked, record.advisory.advisory_id)
+        )
+        for other_id in sorted(linked - {target_id}):
+            self._merge_identity(connection, target_id=target_id, other_id=other_id)
+        for identifier in record.advisory.identifiers:
+            connection.execute(
+                """
+                INSERT INTO intelligence_identifiers(identifier_key, identifier, advisory_id)
+                VALUES (?, ?, ?)
+                ON CONFLICT(identifier_key) DO UPDATE SET advisory_id = excluded.advisory_id
+                """,
+                (_identifier_key(identifier), identifier, target_id),
+            )
+        payload = _model_json(record.advisory)
+        if previous:
+            unchanged = previous["raw_record_sha256"] == record.raw_record_sha256 and not bool(
+                previous["tombstoned"]
+            )
+            connection.execute(
+                """
+                UPDATE intelligence_source_records SET
+                    advisory_id = ?, snapshot_id = ?, last_seen_at = ?,
+                    tombstoned = 0, tombstoned_at = NULL,
+                    raw_record_sha256 = ?, record_json = ?
+                WHERE source = ? AND source_record_id = ?
+                """,
+                (
+                    target_id,
+                    snapshot_id,
+                    seen_at.isoformat(),
+                    record.raw_record_sha256,
+                    payload,
+                    record.source.value,
+                    record.source_record_id,
+                ),
+            )
+            state = UpsertState.UNCHANGED if unchanged else UpsertState.UPDATED
+        else:
+            connection.execute(
+                """
+                INSERT INTO intelligence_source_records(
+                    source, source_record_id, advisory_id, raw_record_sha256,
+                    snapshot_id, record_json, tombstoned, tombstoned_at,
+                    first_seen_at, last_seen_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+                """,
+                (
+                    record.source.value,
+                    record.source_record_id,
+                    target_id,
+                    record.raw_record_sha256,
+                    snapshot_id,
+                    payload,
+                    seen_at.isoformat(),
+                    seen_at.isoformat(),
+                ),
+            )
+            state = UpsertState.INSERTED
+        if state != UpsertState.UNCHANGED or linked - {target_id}:
+            self._rebuild_advisory(connection, target_id, updated_at=seen_at)
+        return state
+
+    @staticmethod
+    def _backfill_epss_observations(connection: sqlite3.Connection) -> None:
+        rows = connection.execute(
+            """
+            SELECT r.source_record_id, r.snapshot_id, r.record_json
+            FROM intelligence_source_records AS r
+            WHERE r.source = 'epss' AND NOT EXISTS (
+                SELECT 1 FROM intelligence_epss_observations AS o
+                WHERE o.cve = UPPER(r.source_record_id)
+            )
+            """
+        ).fetchall()
+        for row in rows:
+            try:
+                cve = _normalize_cve(row["source_record_id"])
+                advisory = NormalizedAdvisory.model_validate_json(row["record_json"])
+            except (ValueError, IntelligenceStoreError):
+                continue
+            for signal in advisory.severity:
+                if signal.kind != SeverityKind.EPSS or signal.source != IntelligenceSource.EPSS:
+                    continue
+                try:
+                    score_date = _epss_score_date(signal)
+                except IntelligenceStoreError:
+                    continue
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO intelligence_epss_observations(
+                        cve, score_date, snapshot_id, signal_json
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (cve, score_date.isoformat(), row["snapshot_id"], _model_json(signal)),
+                )
 
     @staticmethod
     def _assert_snapshot(
@@ -913,6 +1176,43 @@ def _identifier_key(value: str) -> str:
     if not normalized:
         raise ValueError("identifier cannot be empty")
     return normalized
+
+
+def _normalize_cve(value: str) -> str:
+    normalized = value.strip().upper()
+    if _CVE_RE.fullmatch(normalized) is None:
+        raise IntelligenceStoreError(f"invalid CVE identifier: {value}")
+    return normalized
+
+
+def _validate_source_record(record: ParsedSourceRecord) -> None:
+    if record.source not in record.advisory.sources:
+        raise IntelligenceStoreError("source record advisory is missing its source")
+    if len(record.raw_record_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in record.raw_record_sha256
+    ):
+        raise IntelligenceStoreError("source record digest is invalid")
+
+
+def _epss_score_date(signal: SeveritySignal) -> date:
+    raw = signal.metadata.get("score_date")
+    if isinstance(raw, str):
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            pass
+    if signal.observed_at is not None:
+        return signal.observed_at.date()
+    raise IntelligenceStoreError("EPSS observation is missing a valid score date")
+
+
+def _epss_observation_from_row(row: sqlite3.Row) -> EpssObservation:
+    return EpssObservation(
+        cve=row["cve"],
+        score_date=date.fromisoformat(row["score_date"]),
+        signal=SeveritySignal.model_validate_json(row["signal_json"]),
+        snapshot_id=row["snapshot_id"],
+    )
 
 
 def _validate_limit(limit: int) -> None:

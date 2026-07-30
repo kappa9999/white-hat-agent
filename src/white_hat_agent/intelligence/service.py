@@ -4,12 +4,12 @@ import csv
 import hashlib
 import io
 import json
-import re
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from urllib.parse import quote, unquote, urlencode
 
 from pydantic import ValidationError
@@ -22,6 +22,7 @@ from .errors import (
     IntelligenceTransportError,
 )
 from .models import (
+    EpssHistory,
     IntelligenceLimits,
     IntelligenceSource,
     IntelligenceStatus,
@@ -54,7 +55,7 @@ from .sources import (
     parse_osv_modified_index,
     parse_osv_record,
 )
-from .store import IntelligenceStore
+from .store import EpssCandidateState, IntelligenceStore
 from .transport import (
     CISA_KEV_URL,
     CVE_LIST_V5_DELTA_URL,
@@ -69,13 +70,18 @@ from .transport import (
     nvd_cve_api_url,
 )
 
-_CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
-
 
 @dataclass(frozen=True, slots=True)
 class _SourceOutcome:
     result: SourceSyncResult
     advisory_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _EpssCandidate:
+    state: EpssCandidateState
+    reason: str
+    priority: int
 
 
 class IntelligenceService:
@@ -122,88 +128,109 @@ class IntelligenceService:
             "enrich_epss": enrich_epss,
         }
         self.store.begin_sync(run_id, started_at=started_at, request=request)
-        outcomes: list[_SourceOutcome] = []
-        for source in requested_sources:
-            try:
-                if source == IntelligenceSource.CISA_KEV:
-                    outcome = self._sync_cisa(started_at, limit_per_source)
-                elif source == IntelligenceSource.CVE_LIST_V5:
-                    outcome = self._sync_cve_list_v5(
-                        started_at,
-                        since_hours=since_hours,
-                        limit_per_source=limit_per_source,
+        try:
+            outcomes: list[_SourceOutcome] = []
+            for source in requested_sources:
+                try:
+                    if source == IntelligenceSource.CISA_KEV:
+                        outcome = self._sync_cisa(started_at, limit_per_source)
+                    elif source == IntelligenceSource.CVE_LIST_V5:
+                        outcome = self._sync_cve_list_v5(
+                            started_at,
+                            since_hours=since_hours,
+                            limit_per_source=limit_per_source,
+                        )
+                    elif source == IntelligenceSource.NVD:
+                        outcome = self._sync_nvd(
+                            started_at,
+                            since_hours=since_hours,
+                            limit_per_source=limit_per_source,
+                        )
+                    elif source == IntelligenceSource.OSV:
+                        outcome = self._sync_osv(
+                            started_at,
+                            since_hours=since_hours,
+                            ecosystems=normalized_ecosystems,
+                            limit_per_source=limit_per_source,
+                        )
+                    else:  # pragma: no cover - guarded by normalization
+                        raise IntelligenceParseError(f"unsupported primary source: {source.value}")
+                except IntelligenceError as exc:
+                    outcome = _SourceOutcome(self._failed_source_result(source, started_at, exc))
+                except ValidationError:
+                    failure = IntelligenceParseError(
+                        "normalized public source record failed validation", source=source
                     )
-                elif source == IntelligenceSource.NVD:
-                    outcome = self._sync_nvd(
-                        started_at,
-                        since_hours=since_hours,
-                        limit_per_source=limit_per_source,
-                    )
-                elif source == IntelligenceSource.OSV:
-                    outcome = self._sync_osv(
-                        started_at,
-                        since_hours=since_hours,
-                        ecosystems=normalized_ecosystems,
-                        limit_per_source=limit_per_source,
-                    )
-                else:  # pragma: no cover - guarded by normalization
-                    raise IntelligenceParseError(f"unsupported primary source: {source.value}")
-            except IntelligenceError as exc:
-                outcome = _SourceOutcome(self._failed_source_result(source, started_at, exc))
-            except ValidationError:
-                failure = IntelligenceParseError(
-                    "normalized public source record failed validation", source=source
-                )
-                outcome = _SourceOutcome(self._failed_source_result(source, started_at, failure))
-            except Exception as exc:  # pragma: no cover - defensive public boundary
-                failure = IntelligenceError(f"unexpected {type(exc).__name__}", source=source)
-                outcome = _SourceOutcome(self._failed_source_result(source, started_at, failure))
-            outcomes.append(outcome)
+                    outcome = _SourceOutcome(self._failed_source_result(source, started_at, failure))
+                except Exception as exc:  # pragma: no cover - defensive public boundary
+                    failure = IntelligenceError(f"unexpected {type(exc).__name__}", source=source)
+                    outcome = _SourceOutcome(self._failed_source_result(source, started_at, failure))
+                outcomes.append(outcome)
 
-        if enrich_epss:
-            selected_ids = _unique_strings(
-                [advisory_id for outcome in outcomes for advisory_id in outcome.advisory_ids]
+            if enrich_epss:
+                selected_ids = _unique_strings(
+                    [advisory_id for outcome in outcomes for advisory_id in outcome.advisory_ids]
+                )
+                try:
+                    outcomes.append(self._sync_epss(started_at, selected_ids, limit_per_source))
+                except IntelligenceError as exc:
+                    outcomes.append(
+                        _SourceOutcome(self._failed_source_result(IntelligenceSource.EPSS, started_at, exc))
+                    )
+                except ValidationError:
+                    failure = IntelligenceParseError(
+                        "normalized EPSS record failed validation", source=IntelligenceSource.EPSS
+                    )
+                    outcomes.append(
+                        _SourceOutcome(
+                            self._failed_source_result(IntelligenceSource.EPSS, started_at, failure)
+                        )
+                    )
+                except Exception as exc:  # pragma: no cover - defensive public boundary
+                    failure = IntelligenceError(
+                        f"unexpected {type(exc).__name__}", source=IntelligenceSource.EPSS
+                    )
+                    outcomes.append(
+                        _SourceOutcome(
+                            self._failed_source_result(IntelligenceSource.EPSS, started_at, failure)
+                        )
+                    )
+
+            finished_at = _not_before(_aware_utc(self.clock()), started_at)
+            result_models = [outcome.result for outcome in outcomes]
+            report = IntelligenceSyncReport(
+                run_id=run_id,
+                status=_combined_status(result_models),
+                started_at=started_at,
+                finished_at=finished_at,
+                requested_sources=requested_sources,
+                since_hours=since_hours,
+                ecosystems=normalized_ecosystems,
+                limit_per_source=limit_per_source,
+                enrich_epss=enrich_epss,
+                results=result_models,
             )
-            try:
-                outcomes.append(self._sync_epss(started_at, selected_ids, limit_per_source))
-            except IntelligenceError as exc:
-                outcomes.append(
-                    _SourceOutcome(self._failed_source_result(IntelligenceSource.EPSS, started_at, exc))
+            self.store.finish_sync(report)
+            return report
+        except BaseException:
+            with suppress(Exception):
+                self.store.interrupt_sync(
+                    run_id,
+                    finished_at=_not_before(_aware_utc(self.clock()), started_at),
                 )
-            except ValidationError:
-                failure = IntelligenceParseError(
-                    "normalized EPSS record failed validation", source=IntelligenceSource.EPSS
-                )
-                outcomes.append(
-                    _SourceOutcome(self._failed_source_result(IntelligenceSource.EPSS, started_at, failure))
-                )
-            except Exception as exc:  # pragma: no cover - defensive public boundary
-                failure = IntelligenceError(
-                    f"unexpected {type(exc).__name__}", source=IntelligenceSource.EPSS
-                )
-                outcomes.append(
-                    _SourceOutcome(self._failed_source_result(IntelligenceSource.EPSS, started_at, failure))
-                )
-
-        finished_at = _not_before(_aware_utc(self.clock()), started_at)
-        result_models = [outcome.result for outcome in outcomes]
-        report = IntelligenceSyncReport(
-            run_id=run_id,
-            status=_combined_status(result_models),
-            started_at=started_at,
-            finished_at=finished_at,
-            requested_sources=requested_sources,
-            since_hours=since_hours,
-            ecosystems=normalized_ecosystems,
-            limit_per_source=limit_per_source,
-            enrich_epss=enrich_epss,
-            results=result_models,
-        )
-        self.store.finish_sync(report)
-        return report
+            raise
 
     def get(self, advisory_id: str) -> NormalizedAdvisory:
         return self.store.get_advisory(advisory_id)
+
+    def epss_history(
+        self,
+        cve: str,
+        *,
+        as_of: date | None = None,
+        limit: int = 31,
+    ) -> EpssHistory:
+        return self.store.epss_history(cve, as_of=as_of, limit=limit)
 
     def list(
         self,
@@ -1280,15 +1307,24 @@ class IntelligenceService:
         self, started_at: datetime, advisory_ids: list[str], limit_per_source: int
     ) -> _SourceOutcome:
         source = IntelligenceSource.EPSS
-        cves: list[str] = []
-        for advisory_id in advisory_ids:
-            advisory = self.store.get_advisory(advisory_id)
-            for identifier in advisory.identifiers:
-                if _CVE_RE.fullmatch(identifier):
-                    cves.append(identifier.upper())
-        candidate_cves = sorted(set(cves))
-        candidate_count = len(candidate_cves)
-        cves = candidate_cves[:limit_per_source]
+        expected_score_date = started_at.date() - timedelta(days=1)
+        candidates = _select_epss_candidates(
+            self.store.epss_candidate_states(advisory_ids),
+            expected_score_date=expected_score_date,
+        )
+        candidate_count = len(candidates)
+        selected = candidates[:limit_per_source]
+        omitted = candidates[limit_per_source:]
+        cves = [candidate.state.cve for candidate in selected]
+        selection_metadata = {
+            "selection": "history-aware-priority-v1",
+            "candidate_count": candidate_count,
+            "requested": len(cves),
+            "omitted": len(omitted),
+            "expected_score_date": expected_score_date.isoformat(),
+            "selected_by_reason": _reason_counts(selected),
+            "omitted_by_reason": _reason_counts(omitted),
+        }
         if not cves:
             now = _not_before(_aware_utc(self.clock()), started_at)
             return _SourceOutcome(
@@ -1297,7 +1333,7 @@ class IntelligenceService:
                     status=SyncStatus.SKIPPED,
                     started_at=started_at,
                     finished_at=now,
-                    metadata={"reason": "no locally selected CVE aliases"},
+                    metadata={**selection_metadata, "reason": "no eligible CVE aliases"},
                 )
             )
         previous_state = self.store.get_source_state(source)
@@ -1318,9 +1354,11 @@ class IntelligenceService:
         enriched_ids: list[str] = []
         seen_cves: set[str] = set()
         last_snapshot_id: str | None = None
-        for offset in range(0, len(cves), self.limits.max_epss_cves_per_request):
-            chunk = cves[offset : offset + self.limits.max_epss_cves_per_request]
-            url = f"{EPSS_API_URL}?{urlencode({'cve': ','.join(chunk)})}"
+        history_observations_seen = 0
+        history_observations_written = 0
+        chunks = _epss_chunks(cves, max_items=self.limits.max_epss_cves_per_request)
+        for chunk in chunks:
+            url = f"{EPSS_API_URL}?{urlencode({'cve': ','.join(chunk), 'scope': 'time-series'})}"
             response = self._get(url, max_bytes=self.limits.max_epss_bytes, accept="application/json")
             _require_success(response, source)
             document = decode_json_object(response.body, source=source)
@@ -1340,29 +1378,42 @@ class IntelligenceService:
             )
             last_snapshot_id = snapshot.snapshot_id
             parsed = parse_epss(document, snapshot)
+            chunk_records: list[ParsedSourceRecord] = []
+            history_batches = []
             for item in parsed:
                 cve = item.cve.upper()
                 if cve not in chunk:
                     continue
                 seen_cves.add(cve)
-                record = ParsedSourceRecord(
-                    source=source,
-                    source_record_id=cve,
-                    advisory=NormalizedAdvisory(
-                        advisory_id=cve,
-                        identifiers=[cve],
-                        sources=[source],
-                        severity=[item.signal],
-                        provenance=[snapshot],
-                        source_metadata={source.value: item.metadata},
-                    ),
-                    raw_record_sha256=item.raw_record_sha256,
+                history_observations_seen += len(item.history)
+                history_batches.append((cve, item.history))
+                chunk_records.append(
+                    ParsedSourceRecord(
+                        source=source,
+                        source_record_id=cve,
+                        advisory=NormalizedAdvisory(
+                            advisory_id=cve,
+                            identifiers=[cve],
+                            sources=[source],
+                            severity=[item.signal],
+                            provenance=[snapshot],
+                            source_metadata={source.value: item.metadata},
+                        ),
+                        raw_record_sha256=item.raw_record_sha256,
+                    )
                 )
-                state = self.store.upsert_source_record(
-                    record, snapshot_id=snapshot.snapshot_id, seen_at=started_at
-                )
+                enriched_ids.append(cve)
+            history_observations_written += self.store.upsert_epss_observation_batches(
+                history_batches,
+                snapshot_id=snapshot.snapshot_id,
+            )
+            states = self.store.upsert_source_records(
+                chunk_records,
+                snapshot_id=snapshot.snapshot_id,
+                seen_at=started_at,
+            )
+            for state in states:
                 _increment_count(counts, state)
-                enriched_ids.append(self.store.get_advisory(cve).advisory_id)
         missing = sorted(set(cves) - seen_cves)
         if missing:
             issues.append(
@@ -1374,6 +1425,13 @@ class IntelligenceService:
             )
         finished_at = _not_before(_aware_utc(self.clock()), started_at)
         status = SyncStatus.PARTIAL if issues else SyncStatus.SUCCESS
+        selection_metadata.update(
+            {
+                "request_count": len(chunks),
+                "history_observations_seen": history_observations_seen,
+                "history_observations_written": history_observations_written,
+            }
+        )
         state = SourceState(
             source=source,
             last_attempt_at=finished_at,
@@ -1389,11 +1447,7 @@ class IntelligenceService:
             last_modified=None,
             last_snapshot_id=last_snapshot_id,
             last_status=status,
-            metadata={
-                "selection": "locally-selected-cve-aliases",
-                "candidate_count": candidate_count,
-                "requested": len(cves),
-            },
+            metadata=selection_metadata,
         )
         self.store.set_source_state(state)
         return _SourceOutcome(
@@ -1412,11 +1466,7 @@ class IntelligenceService:
                 cursor_before=previous_state.cursor_at if previous_state else None,
                 cursor_after=state.cursor_at,
                 issues=issues,
-                metadata={
-                    "selection": "locally-selected-cve-aliases",
-                    "candidate_count": candidate_count,
-                    "requested": len(cves),
-                },
+                metadata=selection_metadata,
             ),
             tuple(_unique_strings(enriched_ids)),
         )
@@ -1583,6 +1633,65 @@ def _require_success(
             source=source,
             retriable=response.status >= 500 or response.status == 429,
         )
+
+
+def _select_epss_candidates(
+    states: list[EpssCandidateState],
+    *,
+    expected_score_date: date,
+) -> list[_EpssCandidate]:
+    candidates: list[_EpssCandidate] = []
+    for state in states:
+        if state.current_run and state.known_exploited:
+            reason, priority = "current-run-kev", 0
+        elif state.current_run and state.latest_score_date is None:
+            reason, priority = "current-run-unscored", 1
+        elif state.known_exploited and state.latest_score_date is None:
+            reason, priority = "kev-unscored-backfill", 2
+        elif state.current_run:
+            reason, priority = "current-run-refresh", 3
+        elif state.known_exploited and state.latest_score_date < expected_score_date:
+            reason, priority = "stale-kev-refresh", 4
+        elif state.latest_score_date is not None and state.latest_score_date < expected_score_date:
+            reason, priority = "stale-observation-refresh", 5
+        else:
+            continue
+        candidates.append(_EpssCandidate(state=state, reason=reason, priority=priority))
+    return sorted(
+        candidates,
+        key=lambda item: (
+            item.priority,
+            item.state.latest_score_date or date.min,
+            item.state.cve,
+        ),
+    )
+
+
+def _reason_counts(candidates: list[_EpssCandidate]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for candidate in candidates:
+        counts[candidate.reason] = counts.get(candidate.reason, 0) + 1
+    return {reason: counts[reason] for reason in sorted(counts)}
+
+
+def _epss_chunks(cves: list[str], *, max_items: int) -> list[list[str]]:
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    current_length = 0
+    for cve in cves:
+        if len(cve) > 2_000:
+            raise IntelligenceLimitError("EPSS CVE query value exceeds FIRST's 2000 character limit")
+        added_length = len(cve) + (1 if current else 0)
+        if current and (len(current) >= max_items or current_length + added_length > 2_000):
+            chunks.append(current)
+            current = []
+            current_length = 0
+            added_length = len(cve)
+        current.append(cve)
+        current_length += added_length
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _empty_counts() -> dict[UpsertState, int]:

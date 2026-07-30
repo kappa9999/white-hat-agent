@@ -417,6 +417,12 @@
       "title": "Initialized",
       "type": "boolean"
     },
+    "interrupted_sync_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Interrupted Sync Count",
+      "type": "integer"
+    },
     "latest_sync": {
       "anyOf": [
         {
@@ -432,6 +438,12 @@
       "default": 0,
       "minimum": 0,
       "title": "Rejected Cve Count",
+      "type": "integer"
+    },
+    "running_sync_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Running Sync Count",
       "type": "integer"
     },
     "snapshot_count": {

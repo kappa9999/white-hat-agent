@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from enum import StrEnum
 from typing import Literal, Self
 
@@ -204,6 +205,47 @@ class SeveritySignal(StrictModel):
         return self
 
 
+class EpssObservation(StrictModel):
+    """One dated FIRST EPSS observation backed by an immutable snapshot."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    cve: str = Field(pattern=r"^CVE-\d{4}-\d{4,}$")
+    score_date: date
+    signal: SeveritySignal
+    snapshot_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def epss_signal_only(self) -> Self:
+        if self.signal.kind != SeverityKind.EPSS or self.signal.source != IntelligenceSource.EPSS:
+            raise ValueError("EPSS observations require a FIRST EPSS severity signal")
+        return self
+
+
+class EpssHistory(StrictModel):
+    """Bounded newest-first EPSS history with explicit point-in-time selection."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    cve: str = Field(pattern=r"^CVE-\d{4}-\d{4,}$")
+    total_observations: int = Field(ge=0)
+    observations: list[EpssObservation] = Field(default_factory=list)
+    latest: EpssObservation | None = None
+    as_of: date | None = None
+    selected_at_or_before: EpssObservation | None = None
+
+    @model_validator(mode="after")
+    def consistent_history(self) -> Self:
+        if self.total_observations < len(self.observations):
+            raise ValueError("EPSS total_observations cannot be smaller than the returned history")
+        if any(item.cve != self.cve for item in self.observations):
+            raise ValueError("EPSS history observations must use the requested CVE")
+        dates = [item.score_date for item in self.observations]
+        if dates != sorted(dates, reverse=True) or len(dates) != len(set(dates)):
+            raise ValueError("EPSS history observations must be unique and newest-first")
+        if self.selected_at_or_before is not None and self.as_of is None:
+            raise ValueError("EPSS point-in-time selection requires as_of")
+        return self
+
+
 class NormalizedAdvisory(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     advisory_id: str = Field(min_length=1)
@@ -257,14 +299,16 @@ class NormalizedAdvisory(StrictModel):
 class PriorityFactors(StrictModel):
     """Fully disclosed inputs for deterministic KEV-first priority ranking."""
 
-    algorithm_version: Literal["kev-epss-recency-severity-evidence-v1"] = (
-        "kev-epss-recency-severity-evidence-v1"
+    algorithm_version: Literal["kev-epss-recency-severity-evidence-v2"] = (
+        "kev-epss-recency-severity-evidence-v2"
     )
     as_of: AwareDatetime
     confirmed_kev: bool
     kev_weight: float = 1000.0
     kev_component: float = Field(ge=0.0)
     epss_probability: UnitScore | None = None
+    epss_provider: str | None = None
+    epss_observed_at: AwareDatetime | None = None
     epss_weight: float = 100.0
     epss_component: float = Field(ge=0.0)
     recency_age_days: float | None = Field(default=None, ge=0.0)
@@ -372,6 +416,8 @@ class IntelligenceStatus(StrictModel):
     rejected_cve_count: int = Field(default=0, ge=0)
     snapshot_count: int = Field(default=0, ge=0)
     sync_run_count: int = Field(default=0, ge=0)
+    running_sync_count: int = Field(default=0, ge=0)
+    interrupted_sync_count: int = Field(default=0, ge=0)
     sources: list[SourceStatus] = Field(default_factory=list)
     latest_sync: IntelligenceSyncReport | None = None
 

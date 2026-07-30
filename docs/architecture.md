@@ -86,10 +86,11 @@ applicability.
 Explicit CVE rejection, provider withdrawal, and local source tombstoning are separate states. A rejected CVE alias
 does not invalidate an otherwise active ecosystem advisory.
 
-Ranking is deterministic and inspectable. Confirmed KEV exploitation dominates probabilistic EPSS, while recency,
-severity, applicability, and evidence completeness refine the queue. Collection never converts an advisory into an
-executable target. The ordinary scope and campaign gates still apply before an adapter can interact with anything
-beyond the public feed itself. See [production-loop.md](production-loop.md).
+Ranking is deterministic and inspectable. Confirmed KEV exploitation dominates probabilistic EPSS; the latest dated
+FIRST observation is used for current priority, while a separate compact index supports historical point-in-time
+queries. Recency, severity, applicability, and evidence completeness refine the queue. Collection never converts an
+advisory into an executable target. The ordinary scope and campaign gates still apply before an adapter can interact
+with anything beyond the public feed itself. See [production-loop.md](production-loop.md).
 
 ### Knowledge and composition
 

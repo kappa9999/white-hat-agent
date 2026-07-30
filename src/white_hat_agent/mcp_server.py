@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
@@ -56,6 +57,7 @@ from .evidence.models import EvidenceDescriptor, EvidenceRecord, FindingRecord
 from .intelligence import (
     AdvisoryApplicabilityDecision,
     AdvisoryApplicabilityRequest,
+    EpssHistory,
     IntelligenceService,
     IntelligenceSource,
     IntelligenceStatus,
@@ -164,14 +166,14 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
         version="1.0",
         description=(
             "Synchronize fixed official public advisory sources into immutable local snapshots. "
-            "This contacts the CVE Program, CISA, OSV, and optionally FIRST EPSS; "
+            "This contacts the CVE Program, CISA, NVD, OSV, and optionally FIRST EPSS; "
             "it never contacts affected targets or advisory reference URLs."
         ),
         annotations={"readOnlyHint": False, "idempotentHint": False, "openWorldHint": True},
         tags={"intelligence", "network", "write"},
     )
     def sync(
-        sources: list[Literal["cisa-kev", "cve-list-v5", "osv"]] | None = None,
+        sources: list[Literal["cisa-kev", "cve-list-v5", "nvd", "osv"]] | None = None,
         since_hours: float = 24.0,
         ecosystems: list[str] | None = None,
         limit_per_source: int = 1000,
@@ -244,6 +246,19 @@ def _intelligence_server(workspace: Workspace) -> FastMCP:
     )
     def status() -> IntelligenceStatus:
         return service.status()
+
+    @server.tool(
+        name="epss_history",
+        version="1.0",
+        description=(
+            "Return bounded local FIRST EPSS observations, the latest score, and an optional "
+            "score at or before a calendar date. No network request is made."
+        ),
+        annotations={"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False},
+        tags={"intelligence", "epss", "read"},
+    )
+    def epss_history(cve: str, as_of: date | None = None, limit: int = 31) -> EpssHistory:
+        return service.epss_history(cve, as_of=as_of, limit=limit)
 
     @server.tool(
         name="brief",
