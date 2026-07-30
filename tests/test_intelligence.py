@@ -670,6 +670,54 @@ def test_nvd_enriches_canonical_cve_without_replacing_its_semantics(tmp_path) ->
     assert merged.affected and all(item.ecosystem != "NVD" for item in merged.affected)
 
 
+def test_case_variant_ecosystems_merge_without_unique_index_collision(tmp_path) -> None:
+    cve = "CVE-2026-54885"
+    store = _store(tmp_path)
+    osv_snapshot = store.save_snapshot(
+        b'{"id":"EEF-CVE-2026-54885"}',
+        source=IntelligenceSource.OSV,
+        kind=SnapshotKind.SOURCE_RECORD,
+        source_url=OSV_API_BASE_URL + "EEF-CVE-2026-54885",
+        source_record_id="EEF-CVE-2026-54885",
+        retrieved_at=NOW,
+        media_type="application/json",
+        attribution=OSV_ATTRIBUTION,
+    )
+    cve_snapshot = _cve_snapshot(store, cve)
+    for source, source_record_id, snapshot, ecosystem in (
+        (IntelligenceSource.OSV, "EEF-CVE-2026-54885", osv_snapshot, "Hex"),
+        (IntelligenceSource.CVE_LIST_V5, cve, cve_snapshot, "hex"),
+    ):
+        store.upsert_source_record(
+            ParsedSourceRecord(
+                source=source,
+                source_record_id=source_record_id,
+                advisory=NormalizedAdvisory(
+                    advisory_id=cve,
+                    identifiers=list(dict.fromkeys((source_record_id, cve))),
+                    sources=[source],
+                    affected=[AffectedPackage(ecosystem=ecosystem, name="boruta")],
+                    provenance=[snapshot],
+                ),
+                raw_record_sha256=snapshot.content_sha256,
+            ),
+            snapshot_id=snapshot.snapshot_id,
+            seen_at=NOW,
+        )
+
+    listed = IntelligenceService(store, transport=FakeTransport({}), clock=lambda: NOW).list(
+        ecosystems=["HEX"], limit=10, as_of=NOW
+    )
+    with sqlite3.connect(store.database) as connection:
+        indexed = connection.execute(
+            "SELECT ecosystem_key, ecosystem FROM intelligence_advisory_ecosystems WHERE advisory_id = ?",
+            (cve,),
+        ).fetchall()
+
+    assert [item.advisory.advisory_id for item in listed] == [cve]
+    assert indexed == [("hex", "Hex")]
+
+
 def test_cve_list_v5_delta_deduplicates_and_proves_closed_window() -> None:
     document = _cve_delta(
         ("new", "CVE-2026-1234", "2026-07-29T10:00:00Z"),
