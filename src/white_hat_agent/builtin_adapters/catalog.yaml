@@ -289,7 +289,25 @@ adapters:
       strip_single_directory: true
       max_download_bytes: 268435456
       max_install_bytes: 536870912
-    updated_at: 2026-07-29T21:00:00Z
+    operations:
+      - operation_id: jadx.android-static-map
+        operation_version: "1.0.0"
+        capabilities: [mobile.static-inspect]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/mobile-build]
+        output_types: [surface/static-map]
+        conformance_suite_id: minimal-dex35-v1
+        limits:
+          max_input_bytes: 536870912
+          max_output_bytes: 104857600
+          max_files: 25000
+          max_records: 25000
+          wall_seconds: 900
+          cpu_seconds: 600
+          memory_mib: 8192
+          max_processes: 64
+    updated_at: 2026-07-30T01:26:00Z
 
   - schema_version: "1.0"
     adapter_id: mitre-attack

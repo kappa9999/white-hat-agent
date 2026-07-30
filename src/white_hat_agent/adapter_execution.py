@@ -16,7 +16,7 @@ import time
 from contextlib import ExitStack, suppress
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal, Protocol, Self
 
 from pydantic import AwareDatetime, Field, JsonValue, SecretStr, model_validator
@@ -64,8 +64,15 @@ class LlvmObjectInspectPayload(StrictModel):
     operation_id: Literal["llvm.object-inspect"]
 
 
+class JadxAndroidStaticMapPayload(StrictModel):
+    operation_id: Literal["jadx.android-static-map"]
+
+
 AdapterOperationPayload = Annotated[
-    GhidraBinarySummaryPayload | CapaFileAnalyzePayload | LlvmObjectInspectPayload,
+    GhidraBinarySummaryPayload
+    | CapaFileAnalyzePayload
+    | LlvmObjectInspectPayload
+    | JadxAndroidStaticMapPayload,
     Field(discriminator="operation_id"),
 ]
 
@@ -284,10 +291,34 @@ SANDBOX_PROFILE: dict[str, JsonValue] = {
     "stdin": "null",
 }
 SANDBOX_PROFILE_SHA256 = stable_digest(SANDBOX_PROFILE)
-FIXTURE_ID = "minimal-elf64-x86-64-v1"
-FIXTURE_SHA256 = "daf49381748b12d617a3c645f9932ade03d7c0cac6b804da1bd35ae80cf37cad"
+
+
+@dataclass(frozen=True)
+class ConformanceFixture:
+    fixture_id: str
+    filename: str
+    resource_name: str
+    sha256: str
+
+
+ELF_FIXTURE = ConformanceFixture(
+    fixture_id="minimal-elf64-x86-64-v1",
+    filename="fixture.elf",
+    resource_name="minimal_elf64.b64",
+    sha256="daf49381748b12d617a3c645f9932ade03d7c0cac6b804da1bd35ae80cf37cad",
+)
+JADX_FIXTURE = ConformanceFixture(
+    fixture_id="minimal-dex35-v1",
+    filename="fixture.dex",
+    resource_name="minimal_android_dex.b64",
+    sha256="865d09fc9bc4a407c2bab2516dd2576a63d410d036f30c21b6a28b8b875ec847",
+)
+# Backward-compatible public constants for the original shared ELF fixture.
+FIXTURE_ID = ELF_FIXTURE.fixture_id
+FIXTURE_SHA256 = ELF_FIXTURE.sha256
 GHIDRA_SCRIPT_SHA256 = "87e15c8b2368cc739e4cca74ca306c1cbbddef9cc673626737de7dbc6317a5a9"
 DRIVER_VERSION = "1.2.0"
+JADX_DRIVER_VERSION = "1.0.0"
 MINIMUM_EVIDENCE_IMPORT_BYTES = 65_536
 
 
@@ -295,6 +326,7 @@ class ProviderDriver(Protocol):
     adapter_id: str
     operation_id: str
     driver_id: str
+    driver_version: str
 
     def tool_payload_digest(self, entrypoints: list[str]) -> str: ...
 
@@ -529,6 +561,7 @@ class LlvmObjectInspectDriver:
     adapter_id = "llvm"
     operation_id = "llvm.object-inspect"
     driver_id = "whitehat.llvm-readobj"
+    driver_version = DRIVER_VERSION
 
     def _executable(self, entrypoints: list[str]) -> Path:
         candidates = [Path(path) for path in entrypoints]
@@ -630,6 +663,7 @@ class CapaFileAnalyzeDriver:
     adapter_id = "capa"
     operation_id = "capa.file-analyze"
     driver_id = "whitehat.capa-json"
+    driver_version = DRIVER_VERSION
 
     def _executable(self, entrypoints: list[str]) -> Path:
         executable = next(
@@ -736,6 +770,7 @@ class GhidraBinarySummaryDriver:
     adapter_id = "ghidra"
     operation_id = "ghidra.binary-summary"
     driver_id = "whitehat.ghidra-headless-summary"
+    driver_version = DRIVER_VERSION
 
     def _entrypoint(self, entrypoints: list[str]) -> Path:
         entrypoint = next(
@@ -748,21 +783,6 @@ class GhidraBinarySummaryDriver:
 
     def _root(self, entrypoints: list[str]) -> Path:
         return self._entrypoint(entrypoints).parent.parent
-
-    def _java_home(self) -> Path:
-        java = Path("/usr/bin/java")
-        if not java.exists():
-            raise AdapterExecutionError("Ghidra operation requires system Java")
-        java_home = java.resolve(strict=True).parent.parent
-        if not java_home.is_dir():
-            raise AdapterExecutionError("Ghidra Java home is unavailable")
-        return java_home
-
-    def _java_config(self) -> Path:
-        config = Path("/etc/java-21-openjdk")
-        if not config.is_dir() or config.is_symlink():
-            raise AdapterExecutionError("Ghidra Java configuration is unavailable")
-        return config.resolve(strict=True)
 
     def tool_payload_digest(self, entrypoints: list[str]) -> str:
         root = self._root(entrypoints)
@@ -779,23 +799,7 @@ class GhidraBinarySummaryDriver:
             root / "Ghidra/Processors/x86/data/languages/x86.ldefs",
         ]
         provider_digest = _hash_file_set(root, operation_files)
-        java_home = self._java_home()
-        java_digest = _hash_file_set(
-            java_home,
-            [
-                java_home / "release",
-                java_home / "bin/java",
-                java_home / "lib/modules",
-                java_home / "lib/libjava.so",
-                java_home / "lib/libjli.so",
-                java_home / "lib/server/libjvm.so",
-            ],
-        )
-        java_config = self._java_config()
-        java_config_digest = _hash_file_set(
-            java_config,
-            sorted(path for path in java_config.rglob("*") if path.is_file()),
-        )
+        java_digest, java_config_digest = _system_java_payload_digests()
         script_digest = hashlib.sha256(_ghidra_script_bytes()).hexdigest()
         return stable_digest(
             {
@@ -839,8 +843,7 @@ class GhidraBinarySummaryDriver:
             ),
             mounts=(
                 SandboxMount(self._root(status.entrypoints), "/opt/tool"),
-                SandboxMount(self._java_home(), "/opt/java"),
-                SandboxMount(self._java_config(), "/etc/java-21-openjdk"),
+                *_system_java_mounts(),
                 SandboxMount(script, "/opt/wha-assets/WhaBinarySummary.java"),
             ),
             result_relative_path="summary.json",
@@ -910,10 +913,313 @@ class GhidraBinarySummaryDriver:
         ]
 
 
+class JadxAndroidStaticMapDriver:
+    adapter_id = "jadx"
+    operation_id = "jadx.android-static-map"
+    driver_id = "whitehat.jadx-json-static-map"
+    driver_version = JADX_DRIVER_VERSION
+
+    def _entrypoint(self, entrypoints: list[str]) -> Path:
+        entrypoint = next(
+            (Path(path).resolve() for path in entrypoints if Path(path).name == "jadx"),
+            None,
+        )
+        if entrypoint is None or not entrypoint.is_file():
+            raise AdapterExecutionError("JADX operation requires an observed jadx entrypoint")
+        return entrypoint
+
+    def _root(self, entrypoints: list[str]) -> Path:
+        root = self._entrypoint(entrypoints).parent.parent
+        if not root.is_dir():
+            raise AdapterExecutionError("JADX installation root is unavailable")
+        return root
+
+    def _payload_jar(self, root: Path) -> Path:
+        matches = sorted(root.glob("lib/jadx-*-all.jar"))
+        if len(matches) != 1:
+            raise AdapterExecutionError("JADX operation requires exactly one CLI payload JAR")
+        return matches[0]
+
+    def tool_payload_digest(self, entrypoints: list[str]) -> str:
+        root = self._root(entrypoints)
+        provider_digest = _hash_file_set(
+            root,
+            [self._entrypoint(entrypoints), self._payload_jar(root)],
+        )
+        java_digest, java_config_digest = _system_java_payload_digests()
+        return stable_digest(
+            {
+                "provider_payload_sha256": provider_digest,
+                "java_payload_sha256": java_digest,
+                "java_config_sha256": java_config_digest,
+            }
+        )
+
+    def _mounts(self, entrypoints: list[str]) -> tuple[SandboxMount, ...]:
+        return (
+            SandboxMount(self._root(entrypoints), "/opt/tool"),
+            *_system_java_mounts(),
+        )
+
+    def version_invocation(self, status: AdapterStatus) -> TrustedInvocation:
+        return TrustedInvocation(
+            argv=("/opt/tool/bin/jadx", "--version"),
+            mounts=self._mounts(status.entrypoints),
+        )
+
+    def prepare(
+        self,
+        status: AdapterStatus,
+        operation: AdapterOperationPayload,
+        limits: OperationResourceLimits,
+        assets: dict[str, Path],
+    ) -> TrustedInvocation:
+        del limits, assets
+        if not isinstance(operation, JadxAndroidStaticMapPayload):
+            raise AdapterExecutionError("JADX driver received a different operation payload")
+        return TrustedInvocation(
+            argv=(
+                "/usr/bin/env",
+                "JADX_CONFIG_DIR=/work/jadx-state/config",
+                "JADX_CACHE_DIR=/work/jadx-state/cache",
+                "JADX_TMP_DIR=/work/jadx-state/tmp",
+                "/opt/tool/bin/jadx",
+                "--config",
+                "none",
+                "--mappings-mode",
+                "ignore",
+                "--deobf-cfg-file-mode",
+                "ignore",
+                "--output-format",
+                "json",
+                "--call-graph",
+                "json",
+                "--threads-count",
+                "1",
+                "--log-level",
+                "error",
+                "-d",
+                "/work/jadx-output",
+                "/input/artifact",
+            ),
+            mounts=self._mounts(status.entrypoints),
+            result_relative_path="jadx-output",
+        )
+
+    def normalize(
+        self,
+        process: SupervisedProcessResult,
+        artifact_sha256: str,
+        limits: OperationResourceLimits,
+    ) -> AdapterNormalizedResult:
+        if process.result_path is None:
+            raise AdapterExecutionError("JADX output directory is missing")
+        files = _regular_output_tree(
+            process.result_path,
+            max_files=limits.max_files,
+            max_bytes=limits.max_output_bytes,
+        )
+        file_index = {relative: (path, byte_length) for relative, path, byte_length in files}
+        mapping_path, _ = _required_output_file(file_index, "sources/mapping.json")
+        graph_path, _ = _required_output_file(file_index, "callgraph.json")
+        mapping = _read_json(mapping_path, limits.max_output_bytes)
+        graph = _read_json(graph_path, limits.max_output_bytes)
+        if not isinstance(mapping, dict) or not isinstance(mapping.get("classes"), list):
+            raise AdapterExecutionError("JADX mapping output has an unexpected schema")
+        if not isinstance(graph, dict):
+            raise AdapterExecutionError("JADX call graph has an unexpected schema")
+        nodes = graph.get("nodes")
+        edges = graph.get("edges")
+        if not isinstance(nodes, list) or not isinstance(edges, list):
+            raise AdapterExecutionError("JADX call graph has no node and edge lists")
+        if not all(isinstance(item, dict) for item in nodes) or not all(
+            isinstance(item, dict) for item in edges
+        ):
+            raise AdapterExecutionError("JADX call graph contains a non-object record")
+
+        remaining_records = limits.max_records
+        byte_budget = max(0, limits.max_output_bytes * 7 // 10 - 4096)
+        class_record_limit = max(1, limits.max_records * 2 // 3)
+        class_byte_limit = byte_budget * 3 // 4
+        used_bytes = 0
+        class_items: list[JsonValue] = []
+        referenced = {"sources/mapping.json", "callgraph.json"}
+        class_mappings = mapping["classes"]
+        for raw_mapping in class_mappings:
+            if not isinstance(raw_mapping, dict):
+                raise AdapterExecutionError("JADX mapping contains a non-object class record")
+            relative = _jadx_class_output_path(raw_mapping.get("json"))
+            if relative in referenced:
+                raise AdapterExecutionError("JADX mapping contains a duplicate class output path")
+            referenced.add(relative)
+            class_path, class_bytes = _required_output_file(file_index, relative)
+            document = _read_json(class_path, limits.max_output_bytes)
+            if not isinstance(document, dict):
+                raise AdapterExecutionError("JADX class output is not a JSON object")
+            record: JsonValue = {
+                "name": str(raw_mapping.get("name", "")),
+                "path": relative,
+                "sha256": _hash_file(class_path),
+                "byte_length": class_bytes,
+                "document": _json_value(document),
+            }
+            record_bytes = _json_record_cost(record)
+            if (
+                len(class_items) >= class_record_limit
+                or remaining_records <= 0
+                or used_bytes + record_bytes > class_byte_limit
+            ):
+                continue
+            class_items.append(record)
+            remaining_records -= 1
+            used_bytes += record_bytes
+
+        unexpected_sources = sorted(
+            relative
+            for relative in file_index
+            if relative.startswith("sources/") and relative not in referenced
+        )
+        if unexpected_sources:
+            raise AdapterExecutionError("JADX emitted an unindexed source JSON file")
+
+        node_items, node_bytes = _bounded_json_records(
+            nodes,
+            max_records=remaining_records,
+            max_bytes=max(0, byte_budget - used_bytes),
+        )
+        remaining_records -= len(node_items)
+        used_bytes += node_bytes
+        edge_items, edge_bytes = _bounded_json_records(
+            edges,
+            max_records=remaining_records,
+            max_bytes=max(0, byte_budget - used_bytes),
+        )
+        remaining_records -= len(edge_items)
+        used_bytes += edge_bytes
+
+        resources: list[JsonValue] = []
+        manifest_text_omitted = False
+        resource_paths = [relative for relative in file_index if relative not in referenced]
+        for relative in resource_paths:
+            if remaining_records <= 0:
+                break
+            path, byte_length = file_index[relative]
+            record = {
+                "path": relative,
+                "sha256": _hash_file(path),
+                "byte_length": byte_length,
+            }
+            if relative.endswith("AndroidManifest.xml"):
+                record["text_included"] = byte_length <= 1_048_576
+                if byte_length <= 1_048_576:
+                    record["text"] = path.read_text(encoding="utf-8")
+                else:
+                    manifest_text_omitted = True
+            record_bytes = _json_record_cost(record)
+            if used_bytes + record_bytes > byte_budget:
+                continue
+            resources.append(record)
+            remaining_records -= 1
+            used_bytes += record_bytes
+
+        returned = len(class_items) + len(node_items) + len(edge_items) + len(resources)
+        truncated = (
+            len(class_items) < len(class_mappings)
+            or len(node_items) < len(nodes)
+            or len(edge_items) < len(edges)
+            or len(resources) < len(resource_paths)
+            or manifest_text_omitted
+        )
+        data: dict[str, JsonValue] = {
+            "format": "jadx-json",
+            "classes": {
+                "total": len(class_mappings),
+                "returned": len(class_items),
+                "items": class_items,
+            },
+            "call_graph": {
+                "nodes_total": len(nodes),
+                "nodes": node_items,
+                "edges_total": len(edges),
+                "edges": edge_items,
+            },
+            "resources": {
+                "total": len(resource_paths),
+                "returned": len(resources),
+                "items": resources,
+            },
+        }
+        return AdapterNormalizedResult(
+            operation_id=self.operation_id,
+            artifact_sha256=artifact_sha256,
+            records_returned=returned,
+            truncated=truncated,
+            data=data,
+        )
+
+    def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]:
+        classes = normalized.data.get("classes", {})
+        class_items = classes.get("items", []) if isinstance(classes, dict) else []
+        fixture_class = next(
+            (
+                item
+                for item in class_items
+                if isinstance(item, dict) and item.get("name") == "org.whitehat.fixture.MinimalAndroid"
+            ),
+            None,
+        )
+        document = fixture_class.get("document", {}) if isinstance(fixture_class, dict) else {}
+        methods = document.get("methods", []) if isinstance(document, dict) else []
+        marker_found = any(
+            isinstance(method, dict)
+            and method.get("name") == "marker"
+            and "WHA_ANDROID_FIXTURE" in json.dumps(method, sort_keys=True)
+            for method in methods
+        )
+        graph = normalized.data.get("call_graph", {})
+        nodes = graph.get("nodes", []) if isinstance(graph, dict) else []
+        edges = graph.get("edges", []) if isinstance(graph, dict) else []
+        marker_ids = {
+            item.get("id")
+            for item in nodes
+            if isinstance(item, dict) and ".marker()" in str(item.get("method", ""))
+        }
+        caller_ids = {
+            item.get("id")
+            for item in nodes
+            if isinstance(item, dict) and ".markerLength()" in str(item.get("method", ""))
+        }
+        edge_found = any(
+            isinstance(edge, dict)
+            and edge.get("from") in caller_ids
+            and edge.get("to") in marker_ids
+            and edge.get("resolved") is True
+            for edge in edges
+        )
+        return [
+            AdapterConformanceCheck(
+                name="fixture-class",
+                ok=fixture_class is not None,
+                detail=f"returned_classes={len(class_items)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-marker",
+                ok=marker_found,
+                detail="marker method contains the inert fixture constant",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-call-edge",
+                ok=edge_found,
+                detail="markerLength resolves to marker",
+            ),
+        ]
+
+
 DRIVERS: dict[tuple[str, str], ProviderDriver] = {
     ("ghidra", "ghidra.binary-summary"): GhidraBinarySummaryDriver(),
     ("capa", "capa.file-analyze"): CapaFileAnalyzeDriver(),
     ("llvm", "llvm.object-inspect"): LlvmObjectInspectDriver(),
+    ("jadx", "jadx.android-static-map"): JadxAndroidStaticMapDriver(),
 }
 
 
@@ -924,16 +1230,17 @@ def conformance_report_is_current(
 ) -> bool:
     try:
         driver = _driver_for_operation(operation.operation_id)
+        fixture = _conformance_fixture(operation.operation_id)
         tool_payload_sha256 = driver.tool_payload_digest(entrypoints)
     except (AdapterExecutionError, OSError, RuntimeError, ValueError):
         return False
     return (
         report.adapter_id == driver.adapter_id
         and report.driver_id == driver.driver_id
-        and report.driver_version == DRIVER_VERSION
+        and report.driver_version == driver.driver_version
         and report.sandbox_profile_sha256 == SANDBOX_PROFILE_SHA256
-        and report.fixture_id == operation.conformance_suite_id == FIXTURE_ID
-        and report.fixture_sha256 == FIXTURE_SHA256
+        and report.fixture_id == operation.conformance_suite_id == fixture.fixture_id
+        and report.fixture_sha256 == fixture.sha256
         and report.tool_payload_sha256 == tool_payload_sha256
     )
 
@@ -971,14 +1278,15 @@ class AdapterExecutionBroker:
         warnings: list[str] = []
         tool_digest = driver.tool_payload_digest(status.entrypoints)
         tool_version = "unobserved"
+        fixture = _conformance_fixture(operation_id)
         requirement_paths, requirement_identity_sha256 = _requirement_observations(
             manifest,
             status.platform,
         )
         with tempfile.TemporaryDirectory(prefix="wha-adapter-conformance-") as temporary:
             temp_root = Path(temporary)
-            fixture_path = temp_root / "fixture.elf"
-            fixture_path.write_bytes(_fixture_bytes())
+            fixture_path = temp_root / fixture.filename
+            fixture_path.write_bytes(_fixture_payload(fixture))
             fixture_digest = _hash_file(fixture_path)
             if manifest.probe.version_file:
                 version, check = _probe_file_version(
@@ -989,6 +1297,11 @@ class AdapterExecutionBroker:
                 tool_version = version or "unobserved"
                 checks.append(AdapterConformanceCheck(name=check.name, ok=check.ok, detail=check.detail))
             else:
+                version_invocation = (
+                    driver.version_invocation(status)
+                    if isinstance(driver, JadxAndroidStaticMapDriver)
+                    else None
+                )
                 tool_version, check, probe_warnings = self._contained_version_probe(
                     manifest.probe,
                     _probe_entrypoint(manifest.probe, status),
@@ -996,6 +1309,7 @@ class AdapterExecutionBroker:
                     temp_root / "tool-version",
                     operation.limits,
                     name="tool-version",
+                    invocation=version_invocation,
                 )
                 checks.append(check)
                 warnings.extend(probe_warnings)
@@ -1042,7 +1356,7 @@ class AdapterExecutionBroker:
             checks.append(
                 AdapterConformanceCheck(
                     name="fixture-digest",
-                    ok=fixture_digest == FIXTURE_SHA256,
+                    ok=fixture_digest == fixture.sha256,
                     detail=fixture_digest,
                 )
             )
@@ -1095,10 +1409,10 @@ class AdapterExecutionBroker:
             tool_payload_sha256=tool_digest,
             tool_version=tool_version,
             driver_id=driver.driver_id,
-            driver_version=DRIVER_VERSION,
+            driver_version=driver.driver_version,
             sandbox_profile_sha256=SANDBOX_PROFILE_SHA256,
-            fixture_id=FIXTURE_ID,
-            fixture_sha256=FIXTURE_SHA256,
+            fixture_id=fixture.fixture_id,
+            fixture_sha256=fixture.sha256,
             started_at=started_at,
             finished_at=utc_now(),
             passed=all(check.ok for check in checks),
@@ -1117,6 +1431,7 @@ class AdapterExecutionBroker:
         operation_limits: OperationResourceLimits,
         *,
         name: str,
+        invocation: TrustedInvocation | None = None,
     ) -> tuple[str, AdapterConformanceCheck, list[str]]:
         work_dir.mkdir(mode=0o700)
         limits = OperationResourceLimits(
@@ -1137,11 +1452,11 @@ class AdapterExecutionBroker:
         )
         system_visible = any(root == executable or root in executable.parents for root in system_roots)
         sandbox_executable = str(executable) if system_visible else "/opt/probe/executable"
-        invocation = TrustedInvocation(
+        selected_invocation = invocation or TrustedInvocation(
             argv=(sandbox_executable, *probe.version_args),
             mounts=(() if system_visible else (SandboxMount(executable, "/opt/probe/executable"),)),
         )
-        process = self.supervisor.run(invocation, fixture_path, work_dir, limits)
+        process = self.supervisor.run(selected_invocation, fixture_path, work_dir, limits)
         output = "\n".join(
             value
             for value in (
@@ -1507,18 +1822,40 @@ def _fixture_operation(operation_id: str) -> AdapterOperationPayload:
         return CapaFileAnalyzePayload(operation_id=operation_id, operating_system="linux")
     if operation_id == "llvm.object-inspect":
         return LlvmObjectInspectPayload(operation_id=operation_id)
+    if operation_id == "jadx.android-static-map":
+        return JadxAndroidStaticMapPayload(operation_id=operation_id)
     raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
 
 
-def _fixture_bytes() -> bytes:
+def _conformance_fixture(operation_id: str) -> ConformanceFixture:
+    if operation_id in {
+        "ghidra.binary-summary",
+        "capa.file-analyze",
+        "llvm.object-inspect",
+    }:
+        return ELF_FIXTURE
+    if operation_id == "jadx.android-static-map":
+        return JADX_FIXTURE
+    raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
+
+
+def _fixture_payload(fixture: ConformanceFixture) -> bytes:
     resource = importlib.resources.files("white_hat_agent").joinpath(
-        "builtin_adapter_fixtures/minimal_elf64.b64"
+        f"builtin_adapter_fixtures/{fixture.resource_name}"
     )
     encoded = b"".join(resource.read_bytes().split())
     payload = base64.b64decode(encoded, validate=True)
-    if hashlib.sha256(payload).hexdigest() != FIXTURE_SHA256:
+    if hashlib.sha256(payload).hexdigest() != fixture.sha256:
         raise AdapterExecutionError("bundled adapter fixture digest mismatch")
     return payload
+
+
+def _fixture_bytes() -> bytes:
+    return _fixture_payload(ELF_FIXTURE)
+
+
+def _jadx_fixture_bytes() -> bytes:
+    return _fixture_payload(JADX_FIXTURE)
 
 
 def _ghidra_script_bytes() -> bytes:
@@ -1629,6 +1966,158 @@ def _read_json(path: Path, max_bytes: int) -> JsonValue:
     if path.stat().st_size > max_bytes:
         raise AdapterExecutionError("adapter JSON output exceeds the byte limit")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _regular_output_tree(
+    root: Path,
+    *,
+    max_files: int,
+    max_bytes: int,
+) -> list[tuple[str, Path, int]]:
+    if root.is_symlink() or not root.is_dir():
+        raise AdapterExecutionError("adapter output is not a regular directory")
+    resolved_root = root.resolve(strict=True)
+    pending = [resolved_root]
+    entries = 0
+    byte_length = 0
+    files: list[tuple[str, Path, int]] = []
+    while pending:
+        current = pending.pop()
+        with os.scandir(current) as directory:
+            children = sorted(directory, key=lambda entry: entry.name, reverse=True)
+        for entry in children:
+            entries += 1
+            if entries > max_files:
+                raise AdapterExecutionError("adapter output exceeds the file limit")
+            path = Path(entry.path)
+            metadata = entry.stat(follow_symlinks=False)
+            if stat.S_ISLNK(metadata.st_mode):
+                raise AdapterExecutionError("adapter output contains a symbolic link")
+            if stat.S_ISDIR(metadata.st_mode):
+                pending.append(path)
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                raise AdapterExecutionError("adapter output contains a special file")
+            resolved = path.resolve(strict=True)
+            if resolved_root not in resolved.parents:
+                raise AdapterExecutionError("adapter output escaped its result directory")
+            byte_length += metadata.st_size
+            if byte_length > max_bytes:
+                raise AdapterExecutionError("adapter output exceeds the byte limit")
+            files.append((resolved.relative_to(resolved_root).as_posix(), resolved, metadata.st_size))
+    return sorted(files, key=lambda item: item[0])
+
+
+def _required_output_file(
+    files: dict[str, tuple[Path, int]],
+    relative: str,
+) -> tuple[Path, int]:
+    try:
+        return files[relative]
+    except KeyError as exc:
+        raise AdapterExecutionError(f"adapter output is missing required file: {relative}") from exc
+
+
+def _jadx_class_output_path(value: object) -> str:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise AdapterExecutionError("JADX class mapping has an invalid JSON path")
+    path = PurePosixPath(value)
+    if path.is_absolute() or ".." in path.parts or path.suffix != ".json":
+        raise AdapterExecutionError("JADX class mapping has an unsafe JSON path")
+    if path.as_posix() != value:
+        raise AdapterExecutionError("JADX class mapping path is not canonical")
+    return f"sources/{path.as_posix()}"
+
+
+def _json_record_cost(value: JsonValue) -> int:
+    return len(json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode()) + 256
+
+
+def _bounded_json_records(
+    values: list[object],
+    *,
+    max_records: int,
+    max_bytes: int,
+) -> tuple[list[JsonValue], int]:
+    records: list[JsonValue] = []
+    used_bytes = 0
+    for value in values:
+        record = _json_value(value)
+        record_bytes = _json_record_cost(record)
+        if len(records) >= max_records or used_bytes + record_bytes > max_bytes:
+            continue
+        records.append(record)
+        used_bytes += record_bytes
+    return records, used_bytes
+
+
+def _system_java_home() -> Path:
+    java = Path("/usr/bin/java")
+    if not java.exists():
+        raise AdapterExecutionError("typed Java operation requires system Java")
+    java_home = java.resolve(strict=True).parent.parent
+    if not java_home.is_dir():
+        raise AdapterExecutionError("system Java home is unavailable")
+    return java_home
+
+
+def _system_java_config_roots(java_home: Path) -> tuple[Path, ...]:
+    config = java_home / "conf"
+    candidates = [config] if config.is_symlink() else list(config.rglob("*"))
+    roots: set[Path] = set()
+    for candidate in candidates:
+        if not candidate.is_symlink():
+            continue
+        target = candidate.resolve(strict=True)
+        try:
+            relative = target.relative_to("/etc")
+        except ValueError:
+            continue
+        if not relative.parts:
+            raise AdapterExecutionError("system Java configuration resolves to an unsafe root")
+        root = Path("/etc") / relative.parts[0]
+        if root.is_symlink() or not root.is_dir():
+            raise AdapterExecutionError("system Java configuration is unavailable")
+        roots.add(root.resolve(strict=True))
+    return tuple(sorted(roots))
+
+
+def _system_java_mounts() -> tuple[SandboxMount, ...]:
+    java_home = _system_java_home()
+    return (
+        SandboxMount(java_home, "/opt/java"),
+        *(SandboxMount(root, root.as_posix()) for root in _system_java_config_roots(java_home)),
+    )
+
+
+def _system_java_payload_digests() -> tuple[str, str]:
+    java_home = _system_java_home()
+    java_digest = _hash_file_set(
+        java_home,
+        [
+            java_home / "release",
+            java_home / "bin/java",
+            java_home / "lib/modules",
+            java_home / "lib/libjava.so",
+            java_home / "lib/libjli.so",
+            java_home / "lib/server/libjvm.so",
+        ],
+    )
+    config_roots = _system_java_config_roots(java_home)
+    config_payloads = [
+        {
+            "destination": root.as_posix(),
+            "sha256": _hash_file_set(
+                root,
+                sorted(path for path in root.rglob("*") if path.is_file()),
+            ),
+        }
+        for root in config_roots
+    ]
+    config_digest = (
+        str(config_payloads[0]["sha256"]) if len(config_payloads) == 1 else stable_digest(config_payloads)
+    )
+    return java_digest, config_digest
 
 
 def _hash_file(path: Path) -> str:

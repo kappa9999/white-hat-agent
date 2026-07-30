@@ -17,14 +17,16 @@
 
 - concrete manifest, observed status, deterministic resolver, official release/Git provisioning, and bounded local
   knowledge search (initial built-in implementation complete);
-- typed execution handshake and exact-identity conformance kit (Ghidra, capa, and LLVM implemented on Linux/WSL);
+- typed execution handshake and exact-identity conformance kit (Ghidra, capa, LLVM, and JADX implemented on
+  Linux/WSL);
 - Bubblewrap offline subprocess supervisor with fixed drivers, no network, bounded resources, and evidence-only input
   (initial implementation complete);
 - sealed content-addressed runtime roots with cgroup-v2 aggregate CPU, memory, PID, disk-byte, and inode enforcement
   before treating the local supervisor as a hostile-artifact detonation boundary;
 - bounded HTTP observation adapter for owned labs and exact program scopes;
 - repository/patch-diff adapter using local source artifacts;
-- expand typed binary/mobile operations beyond the current Ghidra summary, capa analysis, and LLVM object inspection;
+- expand typed operations beyond the current Ghidra summary, capa analysis, LLVM object inspection, and JADX Android
+  static map;
 - browser and cloud adapters only after transport, credential, and tenant controls are defined; and
 - evidence signing and adapter output truncation manifests.
 

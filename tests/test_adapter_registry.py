@@ -219,6 +219,10 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
         "capa-rules",
         "mitre-attack",
     }
+    jadx = registry.get("jadx")
+    assert [operation.operation_id for operation in jadx.operations] == ["jadx.android-static-map"]
+    assert jadx.operations[0].input_types == ["artifact/mobile-build"]
+    assert jadx.operations[0].output_types == ["surface/static-map"]
 
 
 def test_status_defers_path_execution_and_uses_cached_conformance(tmp_path, monkeypatch) -> None:

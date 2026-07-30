@@ -3,6 +3,24 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.8.0] - 2026-07-29
+
+### Added
+
+- a reviewed `jadx.android-static-map` operation for DEX/APK-family evidence, exposing structured decompiled classes,
+  method signatures and code lines, a resolved call graph, decoded manifest text, and a bounded resource inventory;
+- a deterministic 904-byte DEX 035 conformance fixture with source provenance and call-edge checks; and
+- exact JADX launcher/JAR and Java runtime identity binding, fixed offline execution, CLI/MCP/schema exposure, and a
+  production campaign run on JADX 1.5.6 with content-addressed static-map evidence.
+
+### Security
+
+- callers cannot supply JADX commands, flags, paths, environment, plugins, mappings, or output locations;
+- normalization rejects links, special files, path escapes, duplicate or unsafe class mappings, unindexed source
+  output, schema drift, and aggregate file, byte, and record overruns; and
+- the output budget is reserved below the evidence ceiling, deterministic truncation is explicit, and tool or Java
+  payload drift invalidates cached conformance before another fleet execution.
+
 ## [0.7.0] - 2026-07-29
 
 ### Added
@@ -161,6 +179,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.8.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.1...v0.5.0
