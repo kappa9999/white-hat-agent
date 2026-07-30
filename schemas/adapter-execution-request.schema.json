@@ -182,6 +182,21 @@
       "title": "GhidraNativeCodeMapPayload",
       "type": "object"
     },
+    "GoReSymSymbolMapPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "goresym.symbol-map",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "GoReSymSymbolMapPayload",
+      "type": "object"
+    },
     "JadxAndroidStaticMapPayload": {
       "additionalProperties": false,
       "properties": {
@@ -282,6 +297,7 @@
           "frida.executable-runtime-map": "#/$defs/FridaExecutableRuntimeMapPayload",
           "ghidra.binary-summary": "#/$defs/GhidraBinarySummaryPayload",
           "ghidra.native-code-map": "#/$defs/GhidraNativeCodeMapPayload",
+          "goresym.symbol-map": "#/$defs/GoReSymSymbolMapPayload",
           "jadx.android-static-map": "#/$defs/JadxAndroidStaticMapPayload",
           "llvm.object-inspect": "#/$defs/LlvmObjectInspectPayload",
           "tshark.packet-capture-map": "#/$defs/TsharkPacketCaptureMapPayload",
@@ -301,6 +317,9 @@
         },
         {
           "$ref": "#/$defs/LlvmObjectInspectPayload"
+        },
+        {
+          "$ref": "#/$defs/GoReSymSymbolMapPayload"
         },
         {
           "$ref": "#/$defs/JadxAndroidStaticMapPayload"

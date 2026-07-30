@@ -69,6 +69,17 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
         assert not adapter_search.is_error
         assert adapter_search.structured_content["result"][0]["adapter"]["adapter_id"] == "ghidra"
 
+        go_adapter = await client.call_tool("adapter_search", {"query": "Go symbol recovery"})
+        assert not go_adapter.is_error
+        assert go_adapter.structured_content["result"][0]["adapter"]["adapter_id"] == "goresym"
+
+        go_capability = await client.call_tool("capability_search", {"query": "Go runtime metadata"})
+        assert not go_capability.is_error
+        assert (
+            go_capability.structured_content["result"][0]["capability"]["capability_id"]
+            == "binary.go-symbol-recover"
+        )
+
         intelligence_status = await client.call_tool("intelligence_status", {})
         assert not intelligence_status.is_error
         assert intelligence_status.structured_content["initialized"] is True

@@ -79,6 +79,7 @@ content-digested into the report, so dependency drift invalidates cached health 
 |---|---|---|
 | Eclipse Temurin JDK 21 | Managed Java runtime closure for reviewed JVM-backed tools | Platform-specific Adoptium package |
 | Ghidra | Multi-ISA static analysis, decompilation, headless scripting, binary comparison | Official release asset |
+| GoReSym | Go build, function, source, type, interface, and embedded-string recovery | Official release asset |
 | Frida | Fixed load-time process, module, import, export, and dependency mapping | Exact standalone official release asset |
 | LLVM | LLDB, object/symbol tools, sanitizers, coverage, libFuzzer | Detect existing; OS channels vary |
 | YARA-X | Deterministic artifact and rule matching | Official release asset |
@@ -103,6 +104,7 @@ The first executable family is deliberately small:
 | `capa.file-analyze` | Bounded behavior-rule summaries and analysis identity | capa JSON with embedded reviewed rules |
 | `ghidra.binary-summary` | Program, memory-block, function, and external-symbol summary | bundled `WhaBinarySummary.java` only |
 | `ghidra.native-code-map` | Decompiled functions, exact callsites, defined strings, and anchored string xrefs | bundled `WhaNativeCodeMap.java` only |
+| `goresym.symbol-map` | Go build/module identity, functions, source paths, types, interfaces, strings, dependencies, and settings | fixed full JSON extraction against one artifact |
 | `frida.executable-runtime-map` | Pre-main process, module, import, export, and dependency map | standalone `frida-inject` plus bundled `WhaRuntimeModuleMap.js` only |
 | `yara-x.file-scan` | Rule identities, metadata, tags, string offsets, and bounded matched bytes | fixed YARA-X NDJSON mode against one artifact |
 | `jadx.android-static-map` | Decompiled class JSON, method code, call graph, manifest text, and resource inventory | fixed JADX JSON and JSON call-graph modes |
@@ -114,6 +116,14 @@ payloads. Record and character budgets are divided across functions, call edges,
 cannot consume the complete result. Every decompiler failure, per-function code truncation, section truncation, exact
 callsite, and xref anchor remains explicit. The request has no script, symbol, address, option, path, environment, or
 project field.
+
+The GoReSym driver accepts one `artifact/file` and emits one `surface/go-symbol-map`. The request exposes no manual
+address, compiler-version override, parser flag, path, command, or environment field. Its fixed offline invocation
+recovers both standard and user functions, runtime tables, source paths, reconstructed types and interfaces, embedded
+strings with virtual addresses, module dependencies, and build settings. A shared record and byte budget gives every
+collection initial capacity before redistributing unused space, retains exact raw JSON as evidence, and marks both
+collection and field truncation. Conformance analyzes the exact installed GoReSym payload itself, proving the parser
+without shipping a redundant megabyte-scale fixture.
 
 The Frida driver accepts one `artifact/executable` evidence object and emits one
 `surface/runtime-module-map`. Provisioning resolves the current platform-specific `frida-inject` asset from the

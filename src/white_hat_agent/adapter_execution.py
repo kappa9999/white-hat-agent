@@ -70,6 +70,10 @@ class LlvmObjectInspectPayload(StrictModel):
     operation_id: Literal["llvm.object-inspect"]
 
 
+class GoReSymSymbolMapPayload(StrictModel):
+    operation_id: Literal["goresym.symbol-map"]
+
+
 class JadxAndroidStaticMapPayload(StrictModel):
     operation_id: Literal["jadx.android-static-map"]
 
@@ -178,6 +182,7 @@ AdapterOperationPayload = Annotated[
     | GhidraNativeCodeMapPayload
     | CapaFileAnalyzePayload
     | LlvmObjectInspectPayload
+    | GoReSymSymbolMapPayload
     | JadxAndroidStaticMapPayload
     | TsharkPacketCaptureMapPayload
     | FridaExecutableRuntimeMapPayload
@@ -421,8 +426,9 @@ SANDBOX_PROFILE_SHA256 = stable_digest(SANDBOX_PROFILE)
 class ConformanceFixture:
     fixture_id: str
     filename: str
-    resource_name: str
-    sha256: str
+    resource_name: str | None
+    sha256: str | None
+    source: Literal["package", "tool-entrypoint"] = "package"
 
 
 ELF_FIXTURE = ConformanceFixture(
@@ -461,6 +467,13 @@ FRIDA_RUNTIME_MAP_FIXTURE = ConformanceFixture(
     resource_name="frida_runtime_elf64.b64",
     sha256="57312d10cbae62727393380a716ce7ef5a35502c54030bf3a3420696f85ede21",
 )
+GORESYM_SELF_FIXTURE = ConformanceFixture(
+    fixture_id="goresym-self-analysis-v1",
+    filename="GoReSym.fixture",
+    resource_name=None,
+    sha256=None,
+    source="tool-entrypoint",
+)
 # Backward-compatible public constants for the original shared ELF fixture.
 FIXTURE_ID = ELF_FIXTURE.fixture_id
 FIXTURE_SHA256 = ELF_FIXTURE.sha256
@@ -474,6 +487,7 @@ YARA_X_DRIVER_VERSION = "1.0.4"
 TSHARK_DRIVER_VERSION = "1.0.0"
 FRIDA_RUNTIME_MAP_SCRIPT_SHA256 = "810cc52ec4f789f01742f4d974419056923d07e66966f39e46c6df2a88b30ebf"
 FRIDA_DRIVER_VERSION = "1.0.0"
+GORESYM_DRIVER_VERSION = "1.0.0"
 MINIMUM_EVIDENCE_IMPORT_BYTES = 65_536
 
 
@@ -882,6 +896,121 @@ class LlvmObjectInspectDriver:
                 name="fixture-text-section",
                 ok=any(isinstance(item, dict) and _nested_name(item) == ".text" for item in sections),
                 detail=f"returned_sections={len(sections)}",
+            ),
+        ]
+
+
+class GoReSymSymbolMapDriver:
+    adapter_id = "goresym"
+    operation_id = "goresym.symbol-map"
+    driver_id = "whitehat.goresym-symbol-map"
+    driver_version = GORESYM_DRIVER_VERSION
+
+    def _executable(self, entrypoints: list[str]) -> Path:
+        executable = next(
+            (
+                Path(path).resolve()
+                for path in entrypoints
+                if Path(path).name.casefold() in {"goresym", "goresym.exe"} and Path(path).is_file()
+            ),
+            None,
+        )
+        if executable is None:
+            raise AdapterExecutionError("GoReSym operation requires an observed GoReSym entrypoint")
+        return executable
+
+    def tool_payload_digest(self, entrypoints: list[str]) -> str:
+        return _hash_file(self._executable(entrypoints))
+
+    def prepare(
+        self,
+        status: AdapterStatus,
+        operation: AdapterOperationPayload,
+        limits: OperationResourceLimits,
+        assets: dict[str, Path],
+    ) -> TrustedInvocation:
+        del limits, assets
+        if not isinstance(operation, GoReSymSymbolMapPayload):
+            raise AdapterExecutionError("GoReSym driver received a different operation payload")
+        executable = self._executable(status.entrypoints)
+        return TrustedInvocation(
+            argv=(
+                "/opt/tool/GoReSym",
+                "-t",
+                "-d",
+                "-p",
+                "-strings",
+                "/input/artifact",
+            ),
+            mounts=(SandboxMount(executable, "/opt/tool/GoReSym"),),
+        )
+
+    def normalize(
+        self,
+        process: SupervisedProcessResult,
+        artifact_sha256: str,
+        limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
+    ) -> AdapterNormalizedResult:
+        if operation is not None and not isinstance(operation, GoReSymSymbolMapPayload):
+            raise AdapterExecutionError("GoReSym driver received a different operation payload")
+        payload = _read_json(process.stdout_path, limits.max_output_bytes)
+        data, records_returned, truncated = _normalize_goresym_payload(payload, limits)
+        return AdapterNormalizedResult(
+            operation_id=self.operation_id,
+            artifact_sha256=artifact_sha256,
+            records_returned=records_returned,
+            truncated=truncated,
+            data=data,
+        )
+
+    def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]:
+        build = normalized.data.get("build", {})
+        functions = normalized.data.get("user_functions", {})
+        types = normalized.data.get("types", {})
+        files = normalized.data.get("files", {})
+        function_items = functions.get("items", []) if isinstance(functions, dict) else []
+        type_items = types.get("items", []) if isinstance(types, dict) else []
+        file_items = files.get("items", []) if isinstance(files, dict) else []
+        return [
+            AdapterConformanceCheck(
+                name="fixture-go-identity",
+                ok=(
+                    isinstance(build, dict)
+                    and bool(build.get("go_version"))
+                    and build.get("architecture") == "amd64"
+                    and build.get("operating_system") == "linux"
+                ),
+                detail=(
+                    f"go={build.get('go_version')}; arch={build.get('architecture')}; "
+                    f"os={build.get('operating_system')}"
+                    if isinstance(build, dict)
+                    else "missing"
+                ),
+            ),
+            AdapterConformanceCheck(
+                name="fixture-main-function",
+                ok=any(
+                    isinstance(item, dict) and item.get("full_name") == "main.main" for item in function_items
+                ),
+                detail=f"returned_user_functions={len(function_items)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-metadata-type",
+                ok=any(
+                    isinstance(item, dict) and str(item.get("name", "")).lstrip("*") == "main.ExtractMetadata"
+                    for item in type_items
+                ),
+                detail=f"returned_types={len(type_items)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-source-path",
+                ok=any(
+                    isinstance(item, dict)
+                    and str(item.get("path", "")).replace("\\", "/").endswith("/GoReSym/main.go")
+                    for item in file_items
+                ),
+                detail=f"returned_files={len(file_items)}",
             ),
         ]
 
@@ -2439,6 +2568,7 @@ DRIVERS: dict[tuple[str, str], ProviderDriver] = {
     ("ghidra", "ghidra.native-code-map"): GhidraNativeCodeMapDriver(),
     ("capa", "capa.file-analyze"): CapaFileAnalyzeDriver(),
     ("llvm", "llvm.object-inspect"): LlvmObjectInspectDriver(),
+    ("goresym", "goresym.symbol-map"): GoReSymSymbolMapDriver(),
     ("jadx", "jadx.android-static-map"): JadxAndroidStaticMapDriver(),
     ("frida", "frida.executable-runtime-map"): FridaExecutableRuntimeMapDriver(),
     ("tshark", "tshark.packet-capture-map"): TsharkPacketCaptureMapDriver(),
@@ -2455,6 +2585,7 @@ def conformance_report_is_current(
         driver = _driver_for_operation(operation.operation_id)
         fixture = _conformance_fixture(operation.operation_id)
         tool_payload_sha256 = driver.tool_payload_digest(entrypoints)
+        fixture_sha256 = _expected_conformance_fixture_sha256(fixture, driver, entrypoints)
     except (AdapterExecutionError, OSError, RuntimeError, ValueError):
         return False
     return (
@@ -2463,7 +2594,7 @@ def conformance_report_is_current(
         and report.driver_version == driver.driver_version
         and report.sandbox_profile_sha256 == SANDBOX_PROFILE_SHA256
         and report.fixture_id == operation.conformance_suite_id == fixture.fixture_id
-        and report.fixture_sha256 == fixture.sha256
+        and report.fixture_sha256 == fixture_sha256
         and report.tool_payload_sha256 == tool_payload_sha256
     )
 
@@ -2503,6 +2634,11 @@ class AdapterExecutionBroker:
         tool_digest = driver.tool_payload_digest(status.entrypoints)
         tool_version = "unobserved"
         fixture = _conformance_fixture(operation_id)
+        expected_fixture_digest = _expected_conformance_fixture_sha256(
+            fixture,
+            driver,
+            status.entrypoints,
+        )
         requirement_paths, requirement_identity_sha256 = self.manager._requirement_observations(
             manifest,
             status.platform,
@@ -2510,8 +2646,12 @@ class AdapterExecutionBroker:
         with tempfile.TemporaryDirectory(prefix="wha-adapter-conformance-") as temporary:
             temp_root = Path(temporary)
             fixture_path = temp_root / fixture.filename
-            fixture_path.write_bytes(_fixture_payload(fixture))
-            fixture_digest = _hash_file(fixture_path)
+            fixture_digest = _materialize_conformance_fixture(
+                fixture,
+                fixture_path,
+                driver,
+                status.entrypoints,
+            )
             if manifest.probe.version_file:
                 version, check = _probe_file_version(
                     _probe_entrypoint(manifest.probe, status),
@@ -2580,7 +2720,7 @@ class AdapterExecutionBroker:
             checks.append(
                 AdapterConformanceCheck(
                     name="fixture-digest",
-                    ok=fixture_digest == fixture.sha256,
+                    ok=fixture_digest == expected_fixture_digest,
                     detail=fixture_digest,
                 )
             )
@@ -2641,7 +2781,7 @@ class AdapterExecutionBroker:
             driver_version=driver.driver_version,
             sandbox_profile_sha256=SANDBOX_PROFILE_SHA256,
             fixture_id=fixture.fixture_id,
-            fixture_sha256=fixture.sha256,
+            fixture_sha256=fixture_digest,
             started_at=started_at,
             finished_at=started_at + timedelta(seconds=time.monotonic() - started_monotonic),
             passed=all(check.ok for check in checks),
@@ -3087,6 +3227,8 @@ def _fixture_operation(operation_id: str) -> AdapterOperationPayload:
         return CapaFileAnalyzePayload(operation_id=operation_id, operating_system="linux")
     if operation_id == "llvm.object-inspect":
         return LlvmObjectInspectPayload(operation_id=operation_id)
+    if operation_id == "goresym.symbol-map":
+        return GoReSymSymbolMapPayload(operation_id=operation_id)
     if operation_id == "jadx.android-static-map":
         return JadxAndroidStaticMapPayload(operation_id=operation_id)
     if operation_id == "frida.executable-runtime-map":
@@ -3118,10 +3260,14 @@ def _conformance_fixture(operation_id: str) -> ConformanceFixture:
         return TSHARK_FIXTURE
     if operation_id == "yara-x.file-scan":
         return YARA_X_FIXTURE
+    if operation_id == "goresym.symbol-map":
+        return GORESYM_SELF_FIXTURE
     raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
 
 
 def _fixture_payload(fixture: ConformanceFixture) -> bytes:
+    if fixture.source != "package" or fixture.resource_name is None or fixture.sha256 is None:
+        raise AdapterExecutionError("conformance fixture is not a packaged payload")
     resource = importlib.resources.files("white_hat_agent").joinpath(
         f"builtin_adapter_fixtures/{fixture.resource_name}"
     )
@@ -3130,6 +3276,35 @@ def _fixture_payload(fixture: ConformanceFixture) -> bytes:
     if hashlib.sha256(payload).hexdigest() != fixture.sha256:
         raise AdapterExecutionError("bundled adapter fixture digest mismatch")
     return payload
+
+
+def _expected_conformance_fixture_sha256(
+    fixture: ConformanceFixture,
+    driver: ProviderDriver,
+    entrypoints: list[str],
+) -> str:
+    if fixture.source == "package":
+        if fixture.sha256 is None:
+            raise AdapterExecutionError("packaged conformance fixture has no digest")
+        return fixture.sha256
+    if fixture.source == "tool-entrypoint" and isinstance(driver, GoReSymSymbolMapDriver):
+        return _hash_file(driver._executable(entrypoints))
+    raise AdapterExecutionError("driver does not support a tool-entrypoint conformance fixture")
+
+
+def _materialize_conformance_fixture(
+    fixture: ConformanceFixture,
+    destination: Path,
+    driver: ProviderDriver,
+    entrypoints: list[str],
+) -> str:
+    if fixture.source == "package":
+        destination.write_bytes(_fixture_payload(fixture))
+    elif fixture.source == "tool-entrypoint" and isinstance(driver, GoReSymSymbolMapDriver):
+        shutil.copyfile(driver._executable(entrypoints), destination)
+    else:
+        raise AdapterExecutionError("driver cannot materialize the conformance fixture")
+    return _hash_file(destination)
 
 
 def _fixture_bytes() -> bytes:
@@ -3816,6 +3991,345 @@ def _jadx_class_output_path(value: object) -> str:
 
 def _json_record_cost(value: JsonValue) -> int:
     return len(json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode()) + 256
+
+
+_GORESYM_TOP_LEVEL_FIELDS = {
+    "Version",
+    "BuildId",
+    "Arch",
+    "OS",
+    "TabMeta",
+    "ModuleMeta",
+    "Types",
+    "Interfaces",
+    "BuildInfo",
+    "Files",
+    "UserFunctions",
+    "StdFunctions",
+    "Strings",
+}
+
+
+def _goresym_text(
+    value: object,
+    field: str,
+    *,
+    max_length: int,
+    allow_empty: bool = False,
+    allow_newlines: bool = False,
+) -> str:
+    if (
+        not isinstance(value, str)
+        or (not value and not allow_empty)
+        or len(value) > max_length
+        or "\x00" in value
+        or (not allow_newlines and ("\r" in value or "\n" in value))
+    ):
+        raise AdapterExecutionError(f"GoReSym result has an invalid {field}")
+    return value
+
+
+def _goresym_uint(value: object, field: str, *, maximum: int = (1 << 64) - 1) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+        raise AdapterExecutionError(f"GoReSym result has an invalid {field}")
+    return value
+
+
+def _goresym_truncate(value: str, limit: int) -> tuple[str, bool]:
+    return value[:limit], len(value) > limit
+
+
+def _goresym_list(value: object, field: str) -> list[object]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise AdapterExecutionError(f"GoReSym result has an invalid {field} collection")
+    return value
+
+
+def _normalize_goresym_module(value: object, *, replacement_allowed: bool = True) -> dict[str, JsonValue]:
+    expected = {"Path", "Version", "Sum", "Replace"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise AdapterExecutionError("GoReSym result has an unexpected module schema")
+    replacement = value["Replace"]
+    if replacement is not None and not replacement_allowed:
+        raise AdapterExecutionError("GoReSym result has a nested module replacement")
+    normalized: dict[str, JsonValue] = {
+        "path": _goresym_text(value["Path"], "module path", max_length=4096, allow_empty=True),
+        "version": _goresym_text(value["Version"], "module version", max_length=4096, allow_empty=True),
+        "sum": _goresym_text(value["Sum"], "module sum", max_length=4096, allow_empty=True),
+        "replacement": None,
+    }
+    if replacement is not None:
+        normalized["replacement"] = _normalize_goresym_module(
+            replacement,
+            replacement_allowed=False,
+        )
+    return normalized
+
+
+def _normalize_goresym_slice(value: object, field: str) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or set(value) != {"Data", "Len", "Capacity"}:
+        raise AdapterExecutionError(f"GoReSym result has an unexpected {field} schema")
+    return {
+        "data": _goresym_uint(value["Data"], f"{field} data"),
+        "length": _goresym_uint(value["Len"], f"{field} length"),
+        "capacity": _goresym_uint(value["Capacity"], f"{field} capacity"),
+    }
+
+
+def _normalize_goresym_tab_metadata(value: object) -> dict[str, JsonValue]:
+    expected = {"VA", "Version", "Endianess", "CpuQuantum", "CpuQuantumStr", "PointerSize"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise AdapterExecutionError("GoReSym result has an unexpected pclntab schema")
+    endianness = _goresym_text(value["Endianess"], "pclntab endianness", max_length=32)
+    if endianness not in {"LittleEndian", "BigEndian"}:
+        raise AdapterExecutionError("GoReSym result has an unknown pclntab endianness")
+    pointer_size = _goresym_uint(value["PointerSize"], "pclntab pointer size", maximum=16)
+    if pointer_size not in {4, 8}:
+        raise AdapterExecutionError("GoReSym result has an unsupported pointer size")
+    return {
+        "address": _goresym_uint(value["VA"], "pclntab address"),
+        "version": _goresym_text(value["Version"], "pclntab version", max_length=64),
+        "endianness": endianness,
+        "cpu_quantum": _goresym_uint(value["CpuQuantum"], "pclntab CPU quantum", maximum=16),
+        "cpu_quantum_name": _goresym_text(value["CpuQuantumStr"], "pclntab CPU quantum name", max_length=128),
+        "pointer_size": pointer_size,
+    }
+
+
+def _normalize_goresym_module_metadata(value: object) -> dict[str, JsonValue]:
+    expected = {"VA", "TextVA", "Types", "ETypes", "Typelinks", "ITablinks", "LegacyTypes"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise AdapterExecutionError("GoReSym result has an unexpected moduledata schema")
+    return {
+        "address": _goresym_uint(value["VA"], "moduledata address"),
+        "text_address": _goresym_uint(value["TextVA"], "moduledata text address"),
+        "types_address": _goresym_uint(value["Types"], "moduledata types address"),
+        "types_end_address": _goresym_uint(value["ETypes"], "moduledata types end address"),
+        "type_links": _normalize_goresym_slice(value["Typelinks"], "type links"),
+        "interface_links": _normalize_goresym_slice(value["ITablinks"], "interface links"),
+        "legacy_types": _normalize_goresym_slice(value["LegacyTypes"], "legacy types"),
+    }
+
+
+def _normalize_goresym_type(value: object) -> tuple[JsonValue, bool]:
+    required = {"VA", "Str", "CStr", "Kind"}
+    allowed = required | {"Reconstructed", "CReconstructed"}
+    if not isinstance(value, dict) or not required.issubset(value) or not set(value).issubset(allowed):
+        raise AdapterExecutionError("GoReSym result has an unexpected type schema")
+    record: dict[str, JsonValue] = {
+        "address": _goresym_uint(value["VA"], "type address"),
+        "name": _goresym_text(value["Str"], "type name", max_length=65_536),
+        "c_name": _goresym_text(value["CStr"], "C type name", max_length=65_536, allow_empty=True),
+        "kind": _goresym_text(value["Kind"], "type kind", max_length=128),
+    }
+    truncated = False
+    for source, destination in (
+        ("Reconstructed", "definition"),
+        ("CReconstructed", "c_definition"),
+    ):
+        if source not in value:
+            continue
+        raw = _goresym_text(
+            value[source],
+            destination,
+            max_length=1_048_576,
+            allow_empty=True,
+            allow_newlines=True,
+        )
+        bounded, shortened = _goresym_truncate(raw, 16_384)
+        record[destination] = bounded
+        record[f"{destination}_truncated"] = shortened
+        truncated |= shortened
+    return record, truncated
+
+
+def _normalize_goresym_function(value: object) -> tuple[JsonValue, bool]:
+    if not isinstance(value, dict) or set(value) != {"Start", "End", "PackageName", "FullName"}:
+        raise AdapterExecutionError("GoReSym result has an unexpected function schema")
+    start = _goresym_uint(value["Start"], "function start")
+    end = _goresym_uint(value["End"], "function end")
+    if end < start:
+        raise AdapterExecutionError("GoReSym result has an inverted function range")
+    package = _goresym_text(value["PackageName"], "function package", max_length=65_536, allow_empty=True)
+    full_name = _goresym_text(value["FullName"], "function name", max_length=65_536)
+    bounded_package, package_truncated = _goresym_truncate(package, 4096)
+    bounded_name, name_truncated = _goresym_truncate(full_name, 4096)
+    return (
+        {
+            "start": start,
+            "end": end,
+            "package": bounded_package,
+            "package_truncated": package_truncated,
+            "full_name": bounded_name,
+            "full_name_truncated": name_truncated,
+        },
+        package_truncated or name_truncated,
+    )
+
+
+def _normalize_goresym_file(value: object) -> tuple[JsonValue, bool]:
+    path = _goresym_text(value, "source path", max_length=65_536)
+    bounded, truncated = _goresym_truncate(path, 8192)
+    return {"path": bounded, "path_truncated": truncated}, truncated
+
+
+def _normalize_goresym_string(value: object) -> tuple[JsonValue, bool]:
+    if not isinstance(value, dict) or set(value) != {"Str", "Start"}:
+        raise AdapterExecutionError("GoReSym result has an unexpected string schema")
+    raw = _goresym_text(
+        value["Str"],
+        "recovered string",
+        max_length=1_048_576,
+        allow_empty=True,
+        allow_newlines=True,
+    )
+    bounded, truncated = _goresym_truncate(raw, 4096)
+    return (
+        {
+            "start": _goresym_uint(value["Start"], "string start"),
+            "value": bounded,
+            "value_truncated": truncated,
+        },
+        truncated,
+    )
+
+
+def _normalize_goresym_dependency(value: object) -> tuple[JsonValue, bool]:
+    return _normalize_goresym_module(value), False
+
+
+def _normalize_goresym_setting(value: object) -> tuple[JsonValue, bool]:
+    if not isinstance(value, dict) or set(value) != {"Key", "Value"}:
+        raise AdapterExecutionError("GoReSym result has an unexpected build-setting schema")
+    key = _goresym_text(value["Key"], "build-setting key", max_length=4096)
+    raw = _goresym_text(
+        value["Value"],
+        "build-setting value",
+        max_length=1_048_576,
+        allow_empty=True,
+    )
+    bounded, truncated = _goresym_truncate(raw, 16_384)
+    return {"key": key, "value": bounded, "value_truncated": truncated}, truncated
+
+
+def _normalize_goresym_collections(
+    collections: list[tuple[str, list[object], Callable[[object], tuple[JsonValue, bool]]]],
+    limits: OperationResourceLimits,
+) -> tuple[dict[str, JsonValue], int, bool]:
+    sections: dict[str, dict[str, JsonValue]] = {
+        name: {"total": len(values), "returned": 0, "truncated": False, "items": []}
+        for name, values, _ in collections
+    }
+    record_budget = limits.max_records
+    reserved_bytes = min(262_144, max(4096, limits.max_output_bytes // 4))
+    byte_budget = max(0, limits.max_output_bytes - reserved_bytes)
+    used_bytes = 0
+    any_item_truncated = {name: False for name, _, _ in collections}
+    quota = record_budget // len(collections)
+
+    def retain(
+        name: str,
+        values: list[object],
+        normalizer: Callable[[object], tuple[JsonValue, bool]],
+        start: int,
+        stop: int,
+    ) -> None:
+        nonlocal record_budget, used_bytes
+        items = sections[name]["items"]
+        if not isinstance(items, list):
+            raise AdapterExecutionError("GoReSym normalization state is invalid")
+        for raw in values[start:stop]:
+            normalized, item_truncated = normalizer(raw)
+            any_item_truncated[name] |= item_truncated
+            cost = _json_record_cost(normalized)
+            if record_budget < 1 or used_bytes + cost > byte_budget:
+                continue
+            items.append(normalized)
+            record_budget -= 1
+            used_bytes += cost
+
+    for name, values, normalizer in collections:
+        retain(name, values, normalizer, 0, min(len(values), quota))
+    for name, values, normalizer in collections:
+        retain(name, values, normalizer, min(len(values), quota), len(values))
+
+    returned = 0
+    truncated = False
+    result: dict[str, JsonValue] = {}
+    for name, values, _ in collections:
+        section = sections[name]
+        items = section["items"]
+        if not isinstance(items, list):
+            raise AdapterExecutionError("GoReSym normalization state is invalid")
+        section_truncated = len(items) < len(values) or any_item_truncated[name]
+        section["returned"] = len(items)
+        section["truncated"] = section_truncated
+        returned += len(items)
+        truncated |= section_truncated
+        result[name] = section
+    return result, returned, truncated
+
+
+def _normalize_goresym_payload(
+    payload: JsonValue,
+    limits: OperationResourceLimits,
+) -> tuple[dict[str, JsonValue], int, bool]:
+    if not isinstance(payload, dict) or set(payload) != _GORESYM_TOP_LEVEL_FIELDS:
+        raise AdapterExecutionError("GoReSym emitted an unexpected JSON document")
+    build_info = payload["BuildInfo"]
+    if not isinstance(build_info, dict) or set(build_info) != {
+        "GoVersion",
+        "Path",
+        "Main",
+        "Deps",
+        "Settings",
+    }:
+        raise AdapterExecutionError("GoReSym result has an unexpected build-info schema")
+    build: dict[str, JsonValue] = {
+        "go_version": _goresym_text(payload["Version"], "Go version", max_length=128),
+        "build_id": _goresym_text(payload["BuildId"], "Go build ID", max_length=4096, allow_empty=True),
+        "architecture": _goresym_text(payload["Arch"], "architecture", max_length=64),
+        "operating_system": _goresym_text(payload["OS"], "operating system", max_length=64),
+        "pclntab": _normalize_goresym_tab_metadata(payload["TabMeta"]),
+        "moduledata": _normalize_goresym_module_metadata(payload["ModuleMeta"]),
+        "build_info": {
+            "go_version": _goresym_text(
+                build_info["GoVersion"], "build-info Go version", max_length=128, allow_empty=True
+            ),
+            "path": _goresym_text(build_info["Path"], "build-info path", max_length=4096, allow_empty=True),
+            "main": _normalize_goresym_module(build_info["Main"]),
+        },
+    }
+    raw_collections = [
+        (
+            "user_functions",
+            _goresym_list(payload["UserFunctions"], "user functions"),
+            _normalize_goresym_function,
+        ),
+        (
+            "standard_functions",
+            _goresym_list(payload["StdFunctions"], "standard functions"),
+            _normalize_goresym_function,
+        ),
+        ("types", _goresym_list(payload["Types"], "types"), _normalize_goresym_type),
+        ("interfaces", _goresym_list(payload["Interfaces"], "interfaces"), _normalize_goresym_type),
+        ("files", _goresym_list(payload["Files"], "files"), _normalize_goresym_file),
+        ("strings", _goresym_list(payload["Strings"], "strings"), _normalize_goresym_string),
+        (
+            "dependencies",
+            _goresym_list(build_info["Deps"], "dependencies"),
+            _normalize_goresym_dependency,
+        ),
+        (
+            "build_settings",
+            _goresym_list(build_info["Settings"], "build settings"),
+            _normalize_goresym_setting,
+        ),
+    ]
+    collections, returned, truncated = _normalize_goresym_collections(raw_collections, limits)
+    return {"build": build, **collections}, returned, truncated
 
 
 def _bounded_json_records(

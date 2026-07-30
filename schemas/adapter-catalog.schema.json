@@ -630,6 +630,17 @@
               "type": "array"
             },
             {
+              "maxItems": 1,
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "const": "-about",
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            {
               "maxItems": 0,
               "minItems": 0,
               "type": "array"

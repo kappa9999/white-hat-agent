@@ -1,5 +1,5 @@
 {
-  "corpus_version": "sha256:c89b63b514d3f4ea",
+  "corpus_version": "sha256:c2f5c085fce6808d",
   "entries": [
     {
       "capabilities": [
@@ -89,6 +89,34 @@
         "runtime-map"
       ],
       "title": "Map a local executable at load time with Frida",
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "binary.go-symbol-recover"
+      ],
+      "consumes": [
+        "artifact/file"
+      ],
+      "digest": "93b1ca673f1f16d2d40ee932af241ca8422a05a8c0ed2c74f7f731d5689faa05",
+      "domains": [
+        "binary-security",
+        "reverse-engineering",
+        "software-supply-chain"
+      ],
+      "playbook_id": "go-binary-symbol-recovery",
+      "provides": [
+        "surface/go-symbol-map"
+      ],
+      "relative_path": "binary/go-symbol-recovery/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Parse one immutable Go binary offline and recover bounded build, module, function, source-file, type, interface, and embedded-string metadata for downstream reversing.",
+      "tags": [
+        "golang",
+        "static-analysis",
+        "symbol-recovery"
+      ],
+      "title": "Recover Go symbols and runtime metadata from a binary",
       "version": "1.0.0"
     },
     {
@@ -269,7 +297,7 @@
       "version": "1.0.0"
     }
   ],
-  "generated_at": "2026-07-30T04:15:00Z",
-  "manifest_digest": "a94591b2d860b15ab097b647bb93f879812bb15487768d48e46a53196844c8e8",
+  "generated_at": "2026-07-30T13:20:00Z",
+  "manifest_digest": "d665c82e27ddc9488ca0e4c520c907db91871315255e2bf58317da6f9a81be43",
   "schema_version": "1.0"
 }

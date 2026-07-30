@@ -1,0 +1,114 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: go-binary-symbol-recovery
+  version: 1.0.0
+  title: Recover Go symbols and runtime metadata from a binary
+  summary: Parse one immutable Go binary offline and recover bounded build, module, function, source-file, type, interface, and embedded-string metadata for downstream reversing.
+  domains: [binary-security, reverse-engineering, software-supply-chain]
+  tags: [golang, static-analysis, symbol-recovery]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-30T13:20:00Z
+  updated_at: 2026-07-30T13:20:00Z
+applicability:
+  target_kinds: [binary]
+  platforms: []
+  technologies: [go]
+  preconditions:
+    - The candidate executable is available as one immutable local evidence artifact.
+  assumptions:
+    - Recovered names, types, paths, and strings are reverse-engineering leads and do not establish reachability, vulnerability, or impact.
+  exclusions:
+    - Manual virtual-address overrides, version overrides, human-formatted output, caller-selected parser flags, directories, processes, or live targets.
+scope:
+  minimum_execution_class: analysis
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 0
+  recommended_concurrency: 1
+  action_tags: [static-analysis]
+  data_classes: [binary-metadata]
+taxonomies: []
+inputs:
+  - name: go-binary
+    semantic_type: artifact/file
+    description: Exact immutable executable or library suspected to contain Go runtime metadata.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: go-symbol-map
+    semantic_type: surface/go-symbol-map
+    description: Bounded build identity, runtime tables, functions, source paths, types, interfaces, strings, dependencies, settings, and completeness state.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: recover-go-symbol-map
+    kind: analyze
+    title: Recover the Go symbol map
+    instruction: Parse only the exact evidence artifact with the revision-bound GoReSym operation; preserve artifact and parser identities, Go build and module metadata, function ranges, source paths, reconstructed types and interfaces, embedded strings, dependency and build settings, collection totals, and every truncation flag.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [binary.go-symbol-recover]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The normalized map is bound to the exact artifact, GoReSym payload, operation contract, fixture, and offline sandbox identities.
+      - Every returned collection reports total, returned, and truncation state.
+    failure_signals:
+      - The artifact is not parseable as Go, tool conformance drifted, output validation failed, or a resource ceiling prevented a trustworthy map.
+    evidence:
+      - evidence_type: surface/go-symbol-map
+        description: Evidence-bound normalized Go metadata plus retained raw parser output.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 600
+    max_repetitions: 1
+composition:
+  consumes: [artifact/file]
+  provides: [surface/go-symbol-map]
+  compatible_after: []
+  compatible_before: [native-binary-patch-diff-triage, causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: surface/go-symbol-map
+    description: Exact input and parser identities plus recovered records and explicit completeness state.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Treating a recovered function, string, dependency, or type as proof that a security-relevant path executes.
+  - Reporting a complete map when any collection or reconstructed field was truncated.
+  - Reusing virtual addresses across a different artifact digest or build.
+variations:
+  - Compare exact vulnerable and fixed Go builds in a separate differential campaign after recovering both symbol maps.
+sources:
+  - source_id: goresym
+    kind: code
+    title: GoReSym
+    url: https://github.com/mandiant/GoReSym
+    authors: [Google Mandiant FLARE]
+    license: MIT
+    accessed_at: 2026-07-30T13:20:00Z
+    notes: Supported formats, recovered metadata, and stripped-binary behavior informed the fixed operation contract; playbook wording is original.
+  - source_id: goresym-v3-4
+    kind: publication
+    title: GoReSym v3.4 release
+    url: https://github.com/mandiant/GoReSym/releases/tag/v3.4
+    authors: [Google Mandiant FLARE]
+    license: MIT
+    accessed_at: 2026-07-30T13:20:00Z
+    notes: The current release adds structure field tags and recovered string start addresses used by this result contract.
+validation:
+  fixture_ids: [goresym-self-analysis-v1]
+  test_commands: ["pytest tests/test_adapter_execution.py tests/test_adapter_registry.py tests/test_corpus.py"]
+  known_limitations:
+    - The current official host executables are x86-64 even though GoReSym parses several target architectures and binary formats.
+    - The fixed operation does not accept manual type addresses or compiler-version overrides for damaged edge cases.
+  last_validated_at: 2026-07-30T13:20:00Z
+  validated_by: [white-hat-agent-test-suite]

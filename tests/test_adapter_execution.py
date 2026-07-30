@@ -10,6 +10,7 @@ import pytest
 import white_hat_agent.adapter_execution as adapter_execution
 from white_hat_agent.adapter_execution import (
     DRIVER_VERSION,
+    GORESYM_SELF_FIXTURE,
     MINIMUM_EVIDENCE_IMPORT_BYTES,
     SANDBOX_PROFILE_SHA256,
     YARA_X_CONFORMANCE_RULE_SHA256,
@@ -23,6 +24,8 @@ from white_hat_agent.adapter_execution import (
     FridaExecutableRuntimeMapPayload,
     GhidraNativeCodeMapDriver,
     GhidraNativeCodeMapPayload,
+    GoReSymSymbolMapDriver,
+    GoReSymSymbolMapPayload,
     JadxAndroidStaticMapDriver,
     JadxAndroidStaticMapPayload,
     LlvmObjectInspectDriver,
@@ -42,6 +45,7 @@ from white_hat_agent.adapter_execution import (
     _frida_runtime_map_script_bytes,
     _ghidra_native_map_fixture_bytes,
     _jadx_fixture_bytes,
+    _materialize_conformance_fixture,
     _temporary_input_mode,
     _tree_usage,
     _tshark_fixture_bytes,
@@ -93,6 +97,61 @@ def _limits() -> OperationResourceLimits:
         memory_mib=512,
         max_processes=16,
     )
+
+
+def _goresym_payload() -> dict[str, object]:
+    module = {"Path": "example.test/module", "Version": "v1.2.3", "Sum": "h1:fixture", "Replace": None}
+    function = {"Start": 4096, "End": 4128, "PackageName": "main", "FullName": "main.main"}
+    recovered_type = {
+        "VA": 8192,
+        "Str": "main.Record",
+        "CStr": "main_Record",
+        "Kind": "Struct",
+        "Reconstructed": "type main.Record struct { Value string }",
+        "CReconstructed": "struct main_Record { string Value; };",
+    }
+    return {
+        "Version": "1.24.0",
+        "BuildId": "fixture-build-id",
+        "Arch": "amd64",
+        "OS": "linux",
+        "TabMeta": {
+            "VA": 12288,
+            "Version": "1.20",
+            "Endianess": "LittleEndian",
+            "CpuQuantum": 1,
+            "CpuQuantumStr": "x86/x64/wasm",
+            "PointerSize": 8,
+        },
+        "ModuleMeta": {
+            "VA": 16384,
+            "TextVA": 4096,
+            "Types": 8192,
+            "ETypes": 12288,
+            "Typelinks": {"Data": 20480, "Len": 1, "Capacity": 1},
+            "ITablinks": {"Data": 24576, "Len": 1, "Capacity": 1},
+            "LegacyTypes": {"Data": 0, "Len": 0, "Capacity": 0},
+        },
+        "Types": [recovered_type, recovered_type],
+        "Interfaces": [recovered_type, recovered_type],
+        "BuildInfo": {
+            "GoVersion": "go1.24.0",
+            "Path": "example.test/module",
+            "Main": module,
+            "Deps": [module, module],
+            "Settings": [
+                {"Key": "GOOS", "Value": "linux"},
+                {"Key": "GOARCH", "Value": "amd64"},
+            ],
+        },
+        "Files": ["/src/main.go", "/src/other.go"],
+        "UserFunctions": [function, {**function, "Start": 4128, "End": 4160, "FullName": "main.run"}],
+        "StdFunctions": [function, function],
+        "Strings": [
+            {"Str": "fixture", "Start": 28672},
+            {"Str": "second", "Start": 28680},
+        ],
+    }
 
 
 def _operation() -> AdapterOperationBinding:
@@ -447,6 +506,133 @@ def test_llvm_normalization_uses_one_shared_record_budget(tmp_path) -> None:
     assert len(normalized.data["sections"]) == 2
     assert normalized.data["symbols"] == []
     assert normalized.data["needed_libraries"] == []
+
+
+def test_goresym_invocation_and_self_fixture_are_fixed(tmp_path) -> None:
+    executable = tmp_path / "GoReSym"
+    executable.write_bytes(b"exact reviewed GoReSym payload")
+    status = AdapterStatus(
+        adapter_id="goresym",
+        manifest_digest="1" * 64,
+        observed_at=utc_now(),
+        platform="linux-x86_64",
+        supported=True,
+        installed=True,
+        healthy=True,
+        source="managed",
+        version="3.4",
+        entrypoints=[str(executable)],
+        observed_identity_sha256="2" * 64,
+    )
+    driver = GoReSymSymbolMapDriver()
+
+    invocation = driver.prepare(
+        status,
+        GoReSymSymbolMapPayload(operation_id="goresym.symbol-map"),
+        _limits(),
+        {},
+    )
+    fixture_path = tmp_path / GORESYM_SELF_FIXTURE.filename
+    fixture_digest = _materialize_conformance_fixture(
+        GORESYM_SELF_FIXTURE,
+        fixture_path,
+        driver,
+        status.entrypoints,
+    )
+
+    assert invocation.argv == (
+        "/opt/tool/GoReSym",
+        "-t",
+        "-d",
+        "-p",
+        "-strings",
+        "/input/artifact",
+    )
+    assert invocation.mounts == (SandboxMount(executable.resolve(), "/opt/tool/GoReSym"),)
+    assert fixture_path.read_bytes() == executable.read_bytes()
+    assert fixture_digest == driver.tool_payload_digest(status.entrypoints)
+    with pytest.raises(AdapterExecutionError, match="different operation"):
+        driver.prepare(
+            status,
+            LlvmObjectInspectPayload(operation_id="llvm.object-inspect"),
+            _limits(),
+            {},
+        )
+
+
+def test_goresym_normalization_is_typed_fair_and_bounded(tmp_path) -> None:
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stdout.write_text(json.dumps(_goresym_payload()), encoding="utf-8")
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    driver = GoReSymSymbolMapDriver()
+
+    normalized = driver.normalize(
+        process,
+        "a" * 64,
+        _limits().model_copy(update={"max_records": 8}),
+        GoReSymSymbolMapPayload(operation_id="goresym.symbol-map"),
+    )
+
+    assert normalized.records_returned == 8
+    assert normalized.truncated
+    assert normalized.data["build"]["go_version"] == "1.24.0"
+    assert normalized.data["build"]["pclntab"]["pointer_size"] == 8
+    for name in (
+        "user_functions",
+        "standard_functions",
+        "types",
+        "interfaces",
+        "files",
+        "strings",
+        "dependencies",
+        "build_settings",
+    ):
+        assert normalized.data[name]["total"] == 2
+        assert normalized.data[name]["returned"] == 1
+        assert normalized.data[name]["truncated"] is True
+
+    complete = driver.normalize(process, "a" * 64, _limits())
+    assert complete.records_returned == 16
+    assert not complete.truncated
+    assert complete.data["types"]["items"][0]["definition"].startswith("type main.Record")
+
+
+def test_goresym_normalization_rejects_schema_and_range_drift(tmp_path) -> None:
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    payload = _goresym_payload()
+    payload["Unexpected"] = True
+    stdout.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="unexpected JSON"):
+        GoReSymSymbolMapDriver().normalize(process, "a" * 64, _limits())
+
+    payload = _goresym_payload()
+    payload["UserFunctions"][0]["End"] = 1
+    stdout.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="inverted function range"):
+        GoReSymSymbolMapDriver().normalize(process, "a" * 64, _limits())
 
 
 def test_yara_x_normalization_preserves_rule_identity_matches_and_limits(tmp_path) -> None:

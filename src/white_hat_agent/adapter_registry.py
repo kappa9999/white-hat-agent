@@ -35,7 +35,9 @@ class AdapterKind(StrEnum):
     KNOWLEDGE = "knowledge"
 
 
-VersionArguments = tuple[Literal["--version"]] | tuple[Literal["-version"]] | tuple[()]
+VersionArguments = (
+    tuple[Literal["--version"]] | tuple[Literal["-version"]] | tuple[Literal["-about"]] | tuple[()]
+)
 
 
 class ProbeDefinition(StrictModel):

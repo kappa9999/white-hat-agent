@@ -249,6 +249,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
             "artifact.signature-match": ExecutionClass.ANALYSIS,
             "binary.behavior-identify": ExecutionClass.ANALYSIS,
             "binary.diff": ExecutionClass.ANALYSIS,
+            "binary.go-symbol-recover": ExecutionClass.ANALYSIS,
             "binary.runtime-inspect": ExecutionClass.ANALYSIS,
             "binary.static-inspect": ExecutionClass.ANALYSIS,
             "code.search": ExecutionClass.ANALYSIS,
@@ -269,7 +270,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     knowledge = registry.search("", kind=AdapterKind.KNOWLEDGE)
 
     assert report.valid
-    assert report.adapter_count == 12
+    assert report.adapter_count == 13
     assert reverse[0].adapter.adapter_id == "ghidra"
     assert {item.adapter.adapter_id for item in knowledge} == {
         "capa-rules",
@@ -301,6 +302,12 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     assert [operation.operation_id for operation in tshark.operations] == ["tshark.packet-capture-map"]
     assert tshark.operations[0].input_types == ["artifact/packet-capture"]
     assert tshark.operations[0].output_types == ["surface/network-protocol-map"]
+    goresym = registry.get("goresym")
+    assert goresym.platforms == ["linux-x86_64", "macos-x86_64", "windows-x86_64"]
+    assert goresym.probe and goresym.probe.version_args == ("-about",)
+    assert [operation.operation_id for operation in goresym.operations] == ["goresym.symbol-map"]
+    assert goresym.operations[0].capabilities == ["binary.go-symbol-recover"]
+    assert goresym.operations[0].output_types == ["surface/go-symbol-map"]
 
 
 def test_status_defers_path_execution_and_uses_cached_conformance(tmp_path, monkeypatch) -> None:
@@ -374,6 +381,11 @@ def test_status_never_executes_a_failing_path_version_probe(tmp_path, monkeypatc
 
 
 def test_probe_rejects_arbitrary_command_arguments() -> None:
+    assert ProbeDefinition(
+        executable_names={"any": ["GoReSym"]},
+        version_args=["-about"],
+        version_pattern=r"Version: v(?P<version>[0-9.]+)",
+    ).version_args == ("-about",)
     for arguments in (["-c", "print('executed')"], ["version"]):
         with pytest.raises(ValueError):
             ProbeDefinition(

@@ -104,6 +104,11 @@ wha adapter install jadx --yes
 wha adapter conform jadx
 wha adapter resolve --capability mobile.static-inspect
 
+# Recover Go build, function, type, source, and string metadata from local binaries.
+wha adapter ensure --yes --capability binary.go-symbol-recover
+wha adapter conform goresym
+wha adapter resolve --capability binary.go-symbol-recover
+
 # Evaluate a standalone signature against one immutable artifact.
 wha adapter install yara-x --yes
 wha adapter conform yara-x
@@ -127,21 +132,20 @@ wha adapter ensure --kind knowledge --capability experiment.design --yes
 wha adapter search owasp-wstg "Test Objectives"
 ```
 
-The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Ghidra and JADX reuse a
-valid host Java runtime when one passes conformance; otherwise the explicit `ensure` path installs a checksum-bound,
-workspace-local Eclipse Temurin JDK 21 and retries once. Reviewed typed drivers
-execute Ghidra summaries and native-code maps, a fixed Frida pre-main executable runtime map, YARA-X signature
-evaluation, capa behavior identification, LLVM object inspection, JADX Android mapping, and TShark packet-capture
-mapping on Linux/WSL. Frida is provisioned from the exact current standalone official release asset and exposes no
-remote target, process, script, argument, or environment field. The TShark result retains packet
-order, protocol chains, transport streams, selected DNS/HTTP/TLS/QUIC/WebSocket metadata, and explicit truncation
-without exposing live capture or caller-defined decoder settings. All typed drivers run without network access over
-immutable fleet-task evidence. Status and resolution never execute discovered binaries; fixed command-backed version
-checks run only during explicit sandboxed conformance, and a version result alone grants no executable capability.
-Knowledge adapters cover MITRE ATT&CK STIX, the canonical MITRE CWE catalog, capa rules, and the revision-bound OWASP
-Web Security Testing Guide; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
-remains in the intelligence layer. See
-[tools and knowledge adapters](docs/adapters.md).
+The initial nonredundant tool set covers Ghidra, GoReSym, Frida, LLVM, YARA-X, TShark, capa, and JADX. Ghidra and
+JADX reuse a valid host Java runtime when one passes conformance; otherwise the explicit `ensure` path installs a
+checksum-bound, workspace-local Eclipse Temurin JDK 21 and retries once. Reviewed typed drivers execute Ghidra
+summaries and native-code maps, Go-specific symbol and runtime metadata recovery, a fixed Frida pre-main executable
+runtime map, YARA-X signature evaluation, capa behavior identification, LLVM object inspection, JADX Android mapping,
+and TShark packet-capture mapping on Linux/WSL. Frida is provisioned from the exact current standalone official
+release asset and exposes no remote target, process, script, argument, or environment field. The TShark result retains
+packet order, protocol chains, transport streams, selected DNS/HTTP/TLS/QUIC/WebSocket metadata, and explicit
+truncation without exposing live capture or caller-defined decoder settings. All typed drivers run without network
+access over immutable fleet-task evidence. Status and resolution never execute discovered binaries; fixed
+command-backed version checks run only during explicit sandboxed conformance, and a version result alone grants no
+executable capability. Knowledge adapters cover MITRE ATT&CK STIX, the canonical MITRE CWE catalog, capa rules, and
+the revision-bound OWASP Web Security Testing Guide; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion remains
+in the intelligence layer. See [tools and knowledge adapters](docs/adapters.md).
 
 Start the production public-intelligence loop with bounded official sources:
 

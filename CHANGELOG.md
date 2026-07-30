@@ -3,6 +3,26 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.16.0] - 2026-07-30
+
+### Added
+
+- current official GoReSym provisioning for Linux, macOS, and Windows x86-64 with the provider-neutral
+  `binary.go-symbol-recover` capability and fixed `goresym.symbol-map` operation;
+- bounded recovery of Go build/module identity, user and standard functions, source paths, reconstructed types and
+  interfaces, embedded strings with virtual addresses, dependencies, and build settings; and
+- a validated Go symbol-recovery playbook plus a production fleet run over the exact owned GoReSym v3.4 binary that
+  retained 27,980 records with no warning or truncation.
+
+### Security
+
+- installation binds GitHub's declared release size and SHA-256, extracts beneath strict byte ceilings, and atomically
+  activates a content-identified payload;
+- callers cannot supply commands, paths, flags, manual addresses, compiler-version overrides, or environment, and the
+  reviewed invocation runs against one immutable artifact without network access; and
+- conformance analyzes the exact installed tool payload itself, avoiding a bundled binary fixture while binding tool,
+  fixture, operation, sandbox, raw output, normalized output, collection totals, and field truncation identities.
+
 ## [0.15.0] - 2026-07-30
 
 ### Added

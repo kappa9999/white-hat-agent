@@ -45,6 +45,15 @@ capabilities:
     adapter_contract: [Bind rule, tool, and artifact identities; report match counts and truncation.]
     status: experimental
     updated_at: 2026-07-29T22:00:00Z
+  - capability_id: binary.go-symbol-recover
+    title: Recover Go binary symbols and runtime metadata
+    description: Recover bounded Go build, module, function, source-file, type, interface, and embedded-string metadata from one compiled artifact.
+    execution_class: analysis
+    input_types: [artifact/file]
+    output_types: [surface/go-symbol-map]
+    adapter_contract: [Bind the exact artifact and parser identities; preserve recovered virtual addresses, collection totals, field truncation, and raw parser output.]
+    status: experimental
+    updated_at: 2026-07-30T13:20:00Z
   - capability_id: binary.static-inspect
     title: Map native binary code
     description: Recover bounded decompiler text, exact callsites, defined strings, and anchored xrefs.
