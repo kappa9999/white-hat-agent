@@ -10,6 +10,7 @@ from fastmcp.server.middleware.timing import TimingMiddleware
 from pydantic import Field, ValidationError
 
 from ._version import __version__
+from .adapter_ensure import AdapterEnsurer, AdapterEnsureResult
 from .adapter_execution import AdapterExecutionReceipt, AdapterExecutionRequest
 from .adapter_provisioning import (
     AdapterProvisioner,
@@ -477,6 +478,29 @@ def _adapter_server(workspace: Workspace) -> FastMCP:
             required_capabilities,
             kind=kind,
             max_execution_class=max_execution_class,
+        )
+
+    @server.tool(
+        name="ensure",
+        version="1.0",
+        description=(
+            "Provision, update, and fixture-conform the smallest reviewed provider set for exact "
+            "capabilities, including managed runtime dependencies."
+        ),
+        annotations={"readOnlyHint": False, "idempotentHint": True, "openWorldHint": True},
+        tags={"adapter", "network", "provisioning", "conformance", "write"},
+    )
+    def ensure(
+        required_capabilities: list[str],
+        kind: AdapterKind | None = None,
+        max_execution_class: ExecutionClass | None = None,
+        update: bool = True,
+    ) -> AdapterEnsureResult:
+        return AdapterEnsurer(workspace.adapters, workspace.adapter_execution).ensure(
+            required_capabilities,
+            kind=kind,
+            max_execution_class=max_execution_class,
+            update=update,
         )
 
     @server.tool(

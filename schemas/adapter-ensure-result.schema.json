@@ -1,0 +1,251 @@
+{
+  "$defs": {
+    "AdapterEnsureEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": {
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "title": "Adapter Id",
+          "type": "string"
+        },
+        "changed": {
+          "default": false,
+          "title": "Changed",
+          "type": "boolean"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "detail": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation Id"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AdapterEnsureOutcome"
+        },
+        "phase": {
+          "$ref": "#/$defs/AdapterEnsurePhase"
+        },
+        "plan_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Digest"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "phase",
+        "outcome",
+        "detail"
+      ],
+      "title": "AdapterEnsureEvent",
+      "type": "object"
+    },
+    "AdapterEnsureOutcome": {
+      "enum": [
+        "skipped",
+        "unchanged",
+        "changed",
+        "passed",
+        "failed"
+      ],
+      "title": "AdapterEnsureOutcome",
+      "type": "string"
+    },
+    "AdapterEnsurePhase": {
+      "enum": [
+        "dependency",
+        "provision",
+        "conformance"
+      ],
+      "title": "AdapterEnsurePhase",
+      "type": "string"
+    },
+    "AdapterSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "conformance_required": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Conformance Required",
+          "type": "array"
+        },
+        "provisioning_required": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Provisioning Required",
+          "type": "array"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "ready_adapters": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Ready Adapters",
+          "type": "array"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "required_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "selected_adapters": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Selected Adapters",
+          "type": "array"
+        },
+        "uncovered_capabilities": {
+          "items": {
+            "pattern": "^[a-z0-9]+(?:[._:-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Uncovered Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "required_capabilities",
+        "selected_adapters",
+        "ready_adapters",
+        "provisioning_required",
+        "conformance_required",
+        "uncovered_capabilities",
+        "complete",
+        "ready",
+        "reasons"
+      ],
+      "title": "AdapterSelection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "complete": {
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/AdapterEnsureEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "failures": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failures",
+      "type": "array"
+    },
+    "final_selection": {
+      "$ref": "#/$defs/AdapterSelection"
+    },
+    "initial_selection": {
+      "$ref": "#/$defs/AdapterSelection"
+    },
+    "ready": {
+      "title": "Ready",
+      "type": "boolean"
+    },
+    "requested_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Requested Capabilities",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "update_requested": {
+      "title": "Update Requested",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "requested_capabilities",
+    "update_requested",
+    "initial_selection",
+    "events",
+    "final_selection",
+    "failures",
+    "complete",
+    "ready"
+  ],
+  "title": "AdapterEnsureResult",
+  "type": "object"
+}

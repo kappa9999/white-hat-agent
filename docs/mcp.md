@@ -49,7 +49,8 @@ uv run --project /absolute/path/to/white-hat-agent \
 
 ## Surface design
 
-Mounted names become `knowledge_search`, `adapter_resolve`, `intelligence_sync`, `campaign_enqueue`, and so on.
+Mounted names become `knowledge_search`, `adapter_resolve`, `adapter_ensure`, `intelligence_sync`,
+`campaign_enqueue`, and so on.
 Tools use strict structured input/output. Resources expose workspace health, the corpus manifest, playbooks, and the
 capability and concrete-adapter catalogs. Prompts help a host model compile submissions, normalize opportunities,
 and plan campaigns without requiring one provider's API.
@@ -59,12 +60,14 @@ artifacts, an execution ceiling, and available adapter capabilities, it composes
 stages. Each stage carries its own `ProbeIntent` and freshly evaluated `ScopeDecision`. Planning is read-only; the
 operator or host agent still persists the manifest, explicitly transitions its lifecycle, and enqueues chosen stages.
 
-Three built-in tools are open-world. `intelligence_sync` performs bounded GET requests to fixed official CVE List V5,
+Four built-in tools are open-world. `intelligence_sync` performs bounded GET requests to fixed official CVE List V5,
 NVD 2.0, CISA, OSV, and optional FIRST EPSS endpoints, then mutates only the local workspace state and snapshot store.
 `adapter_plan_provision` performs read-only resolution against the reviewed provider's official GitHub release or
 commit API. `adapter_provision` applies an exact plan by downloading only its resolved official artifacts or commit
-into `.whitehat/adapters/`; it is both networked and mutating. None contacts advisory targets. Clients should require
-approval for synchronization and provisioning when those side effects are not already part of operator policy.
+into `.whitehat/adapters/`; it is both networked and mutating. `adapter_ensure` composes deterministic capability
+resolution, those same exact provision plans, managed runtime closure, and relevant fixed-fixture conformance. None
+contacts advisory targets. Clients should require approval for synchronization and provisioning when those side
+effects are not already part of operator policy.
 
 `adapter_conform` is local, closed-world execution: it runs fixed version/dependency checks and one synthetic fixture
 through one reviewed typed driver in an offline Bubblewrap sandbox, then records the identity-bound result.

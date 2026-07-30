@@ -1274,7 +1274,7 @@ def test_ghidra_native_map_invocation_is_fixed(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
         adapter_execution,
         "_system_java_mounts",
-        lambda: (adapter_execution.SandboxMount(java, "/opt/java"),),
+        lambda *_args: (adapter_execution.SandboxMount(java, "/opt/java"),),
     )
     status = AdapterStatus(
         adapter_id="ghidra",
@@ -1364,12 +1364,12 @@ def test_jadx_invocations_bind_one_distribution_and_fixed_arguments(tmp_path, mo
     monkeypatch.setattr(
         adapter_execution,
         "_system_java_payload_digests",
-        lambda: ("a" * 64, "b" * 64),
+        lambda *_args: ("a" * 64, "b" * 64),
     )
     monkeypatch.setattr(
         adapter_execution,
         "_system_java_mounts",
-        lambda: (adapter_execution.SandboxMount(java, "/opt/java"),),
+        lambda *_args: (adapter_execution.SandboxMount(java, "/opt/java"),),
     )
     status = AdapterStatus(
         adapter_id="jadx",

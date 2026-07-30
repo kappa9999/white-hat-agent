@@ -16,7 +16,7 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Literal, Self
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
@@ -25,6 +25,7 @@ from .adapter_registry import (
     AdapterManager,
     AdapterManifest,
     AdapterRegistryError,
+    AdoptiumProvisioner,
     GitCheckoutProvisioner,
     GitHubReleaseProvisioner,
     InstalledAdapterRecord,
@@ -66,7 +67,7 @@ class AdapterProvisionPlan(StrictModel):
     adapter_id: Slug
     manifest_digest: Sha256
     platform: str
-    method: Literal["github-release", "git-checkout"]
+    method: Literal["github-release", "adoptium-api", "git-checkout"]
     action: ProvisionAction
     current_version: str | None = None
     target_version: str = Field(min_length=1)
@@ -82,8 +83,8 @@ class AdapterProvisionPlan(StrictModel):
 
     @model_validator(mode="after")
     def valid_plan(self) -> Self:
-        if self.method == "github-release" and not self.artifacts:
-            raise ValueError("GitHub release plans require resolved artifacts")
+        if self.method in {"github-release", "adoptium-api"} and not self.artifacts:
+            raise ValueError("release plans require resolved artifacts")
         if self.method == "git-checkout" and self.artifacts:
             raise ValueError("git checkout plans do not accept release artifacts")
         return self
@@ -114,15 +115,20 @@ class AdapterProvisioner:
         if not status.supported:
             raise AdapterRegistryError(f"adapter does not support current platform: {platform}")
         if isinstance(definition, GitHubReleaseProvisioner):
-            requirement_blockers = [
-                item for item in status.blockers if item.startswith("runtime requirement")
-            ]
+            requirement_blockers = _provision_requirement_blockers(manifest, status.blockers)
             return self._plan_github(
                 manifest,
                 definition,
                 platform,
                 status.version,
                 requirement_blockers,
+            )
+        if isinstance(definition, AdoptiumProvisioner):
+            return self._plan_adoptium(
+                manifest,
+                definition,
+                platform,
+                status.version,
             )
         if isinstance(definition, GitCheckoutProvisioner):
             return self._plan_git(manifest, definition, platform, status.revision)
@@ -142,7 +148,7 @@ class AdapterProvisioner:
                 changed=False,
                 installed=record,
             )
-        if plan.method == "github-release":
+        if plan.method in {"github-release", "adoptium-api"}:
             record = self._provision_github(plan, manifest)
         else:
             record = self._provision_git(plan, manifest)
@@ -248,6 +254,55 @@ class AdapterProvisioner:
             created_at=utc_now(),
         )
 
+    def _plan_adoptium(
+        self,
+        manifest: AdapterManifest,
+        definition: AdoptiumProvisioner,
+        platform: str,
+        current_version: str | None,
+    ) -> AdapterProvisionPlan:
+        api_url = _adoptium_api_url(definition, platform)
+        payload = _get_adoptium_json(api_url)
+        if len(payload) != 1:
+            raise AdapterRegistryError(
+                f"Adoptium API must resolve exactly one package; matches={len(payload)}"
+            )
+        release = payload[0]
+        revision = _required_string(release.get("release_name"), "Adoptium release name")
+        artifact = _resolved_adoptium_artifact(release, definition, platform)
+        if artifact.size > definition.max_download_bytes:
+            raise AdapterRegistryError(
+                f"Adoptium package is {artifact.size} bytes; maximum is {definition.max_download_bytes}"
+            )
+        target_version = _adoptium_version(revision)
+        if version_key(target_version)[0] != definition.feature_version:
+            raise AdapterRegistryError("Adoptium API returned a different feature version")
+        action = ProvisionAction.INSTALL
+        if current_version:
+            action = (
+                ProvisionAction.NONE
+                if version_key(current_version) >= version_key(target_version)
+                else ProvisionAction.UPDATE
+            )
+        entrypoints = _resolved_release_entrypoints(definition, platform, target_version)
+        return AdapterProvisionPlan(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            platform=platform,
+            method="adoptium-api",
+            action=action,
+            current_version=current_version,
+            target_version=target_version,
+            revision=revision,
+            source_urls=[api_url, artifact.url],
+            artifacts=[artifact],
+            entrypoints=entrypoints,
+            strip_single_directory=definition.strip_single_directory,
+            max_download_bytes=definition.max_download_bytes,
+            max_install_bytes=definition.max_install_bytes,
+            created_at=utc_now(),
+        )
+
     def _validate_plan(self, plan: AdapterProvisionPlan, manifest: AdapterManifest) -> None:
         if plan.manifest_digest != manifest.digest():
             raise AdapterRegistryError("provision plan does not match the current adapter manifest")
@@ -298,6 +353,45 @@ class AdapterProvisioner:
             api_url = f"https://api.github.com/repos/{definition.repository}/releases/latest"
             if plan.source_urls != [api_url, *[artifact.url for artifact in plan.artifacts]]:
                 raise AdapterRegistryError("provision plan sources do not match the resolved artifacts")
+        elif isinstance(definition, AdoptiumProvisioner):
+            if len(plan.artifacts) != 1:
+                raise AdapterRegistryError("Adoptium plans require exactly one package")
+            if plan.target_version != _adoptium_version(plan.revision):
+                raise AdapterRegistryError("Adoptium plan version does not match its release")
+            if version_key(plan.target_version)[0] != definition.feature_version:
+                raise AdapterRegistryError("Adoptium plan has a different feature version")
+            expected_entries = _resolved_release_entrypoints(
+                definition,
+                plan.platform,
+                plan.target_version,
+            )
+            if plan.entrypoints != expected_entries:
+                raise AdapterRegistryError("Adoptium plan entrypoints do not match the manifest")
+            if plan.strip_single_directory != definition.strip_single_directory:
+                raise AdapterRegistryError("Adoptium plan extraction layout does not match the manifest")
+            if (
+                plan.max_download_bytes != definition.max_download_bytes
+                or plan.max_install_bytes != definition.max_install_bytes
+                or plan.artifacts[0].size > definition.max_download_bytes
+            ):
+                raise AdapterRegistryError("Adoptium plan exceeds the manifest bounds")
+            _validate_release_asset_url(
+                plan.artifacts[0].url,
+                "adoptium/temurin21-binaries",
+            )
+            release_path = urlsplit(plan.artifacts[0].url).path.removeprefix(
+                "/adoptium/temurin21-binaries/releases/download/"
+            )
+            encoded_revision, separator, encoded_name = release_path.partition("/")
+            if (
+                not separator
+                or unquote(encoded_revision) != plan.revision
+                or unquote(encoded_name) != plan.artifacts[0].name
+            ):
+                raise AdapterRegistryError("Adoptium package URL does not match its release")
+            api_url = _adoptium_api_url(definition, plan.platform)
+            if plan.source_urls != [api_url, plan.artifacts[0].url]:
+                raise AdapterRegistryError("Adoptium plan sources do not match the manifest")
         elif isinstance(definition, GitCheckoutProvisioner):
             owner_repo = definition.repository.removeprefix("https://github.com/").removesuffix(".git")
             encoded_ref = quote(definition.ref, safe="")
@@ -333,7 +427,7 @@ class AdapterProvisioner:
                 )
         if plan.action != expected_action:
             raise AdapterRegistryError("provision plan action is stale for the current adapter state")
-        expected_blockers = [item for item in current.blockers if item.startswith("runtime requirement")]
+        expected_blockers = _provision_requirement_blockers(manifest, current.blockers)
         if plan.blockers != expected_blockers:
             raise AdapterRegistryError("provision plan blockers are stale for the current host")
 
@@ -515,6 +609,36 @@ def _get_json(url: str) -> dict[str, object]:
     return payload
 
 
+def _get_adoptium_json(url: str) -> list[dict[str, object]]:
+    _validate_adoptium_api_url(url)
+    request = Request(
+        url,
+        headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+        method="GET",
+    )
+    try:
+        with build_opener(_AdoptiumApiRedirectHandler()).open(request, timeout=30) as response:
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > _MAX_RELEASE_METADATA_BYTES:
+                raise AdapterRegistryError("Adoptium API response exceeds metadata byte limit")
+            body = response.read(_MAX_RELEASE_METADATA_BYTES + 1)
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        raise AdapterRegistryError(f"Adoptium API request failed: {type(exc).__name__}") from exc
+    if len(body) > _MAX_RELEASE_METADATA_BYTES:
+        raise AdapterRegistryError("Adoptium API response exceeds metadata byte limit")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AdapterRegistryError("Adoptium API returned invalid JSON") from exc
+    if (
+        not isinstance(payload, list)
+        or len(payload) > 10
+        or any(not isinstance(item, dict) for item in payload)
+    ):
+        raise AdapterRegistryError("Adoptium API response must be a bounded object list")
+    return payload
+
+
 def _asset_name_matches(asset: object, pattern: str) -> bool:
     return (
         isinstance(asset, dict)
@@ -536,6 +660,40 @@ def _resolved_asset(asset: object, repository: str) -> ResolvedArtifact:
     if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
         raise AdapterRegistryError("GitHub release asset lacks a SHA-256 digest")
     return ResolvedArtifact(name=name, url=url, size=size, sha256=digest.removeprefix("sha256:"))
+
+
+def _resolved_adoptium_artifact(
+    release: dict[str, object],
+    definition: AdoptiumProvisioner,
+    platform: str,
+) -> ResolvedArtifact:
+    os_name, architecture = _adoptium_coordinates(platform)
+    binary = release.get("binary")
+    if not isinstance(binary, dict):
+        raise AdapterRegistryError("Adoptium release is missing binary metadata")
+    expected = {
+        "architecture": architecture,
+        "os": os_name,
+        "image_type": definition.image_type,
+        "jvm_impl": definition.jvm_impl,
+    }
+    if any(binary.get(key) != value for key, value in expected.items()):
+        raise AdapterRegistryError("Adoptium binary metadata does not match the requested runtime")
+    package = binary.get("package")
+    if not isinstance(package, dict):
+        raise AdapterRegistryError("Adoptium release is missing package metadata")
+    name = _required_string(package.get("name"), "Adoptium package name")
+    url = _required_string(package.get("link"), "Adoptium package URL")
+    _validate_release_asset_url(url, "adoptium/temurin21-binaries")
+    if unquote(urlsplit(url).path.rsplit("/", 1)[-1]) != name:
+        raise AdapterRegistryError("Adoptium package name does not match its URL")
+    size = package.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 1:
+        raise AdapterRegistryError("Adoptium package has invalid size")
+    digest = _required_string(package.get("checksum"), "Adoptium package checksum").lower()
+    if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise AdapterRegistryError("Adoptium package lacks a valid SHA-256 checksum")
+    return ResolvedArtifact(name=name, url=url, size=size, sha256=digest)
 
 
 def _download_artifact(artifact: ResolvedArtifact, destination: Path, *, max_bytes: int) -> None:
@@ -725,8 +883,57 @@ def _required_string(value: object, label: str) -> str:
     return value.strip()
 
 
+def _provision_requirement_blockers(
+    manifest: AdapterManifest,
+    blockers: list[str],
+) -> list[str]:
+    retained: list[str] = []
+    for blocker in blockers:
+        match = re.fullmatch(r"runtime requirement ([0-9]+)(?: .*)?", blocker)
+        if match is None:
+            continue
+        index = int(match.group(1)) - 1
+        if index < 0 or index >= len(manifest.requirements):
+            retained.append(blocker)
+            continue
+        if manifest.requirements[index].managed_adapter_id is None:
+            retained.append(blocker)
+    return retained
+
+
+def _adoptium_coordinates(platform: str) -> tuple[str, str]:
+    try:
+        return {
+            "linux-x86_64": ("linux", "x64"),
+            "linux-arm64": ("linux", "aarch64"),
+            "macos-x86_64": ("mac", "x64"),
+            "macos-arm64": ("mac", "aarch64"),
+            "windows-x86_64": ("windows", "x64"),
+            "windows-arm64": ("windows", "aarch64"),
+        }[platform]
+    except KeyError as exc:
+        raise AdapterRegistryError(f"Adoptium does not support current platform: {platform}") from exc
+
+
+def _adoptium_api_url(definition: AdoptiumProvisioner, platform: str) -> str:
+    os_name, architecture = _adoptium_coordinates(platform)
+    query = urlencode(
+        {
+            "architecture": architecture,
+            "heap_size": "normal",
+            "image_type": definition.image_type,
+            "os": os_name,
+            "vendor": definition.vendor,
+        }
+    )
+    return (
+        f"https://api.adoptium.net/v3/assets/latest/{definition.feature_version}/"
+        f"{definition.jvm_impl}?{query}"
+    )
+
+
 def _resolved_release_entrypoints(
-    definition: GitHubReleaseProvisioner,
+    definition: GitHubReleaseProvisioner | AdoptiumProvisioner,
     platform: str,
     target_version: str,
 ) -> list[str]:
@@ -753,6 +960,13 @@ def _release_version(tag: str) -> str:
     return match.group(0) if match else tag
 
 
+def _adoptium_version(release_name: str) -> str:
+    match = re.fullmatch(r"jdk-(?P<version>[0-9]+(?:\.[0-9]+)*(?:\+[0-9]+)?)", release_name)
+    if match is None:
+        raise AdapterRegistryError("Adoptium release has an unexpected version identity")
+    return match.group("version")
+
+
 def _validate_github_api_url(url: str) -> None:
     parsed = urlsplit(url)
     if (
@@ -769,6 +983,26 @@ def _validate_github_api_url(url: str) -> None:
         is None
     ):
         raise AdapterRegistryError("URL is outside the bounded GitHub API surface")
+
+
+def _validate_adoptium_api_url(url: str) -> None:
+    parsed = urlsplit(url)
+    query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "api.adoptium.net"
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+        or re.fullmatch(r"/v3/assets/latest/[0-9]{2}/hotspot", parsed.path) is None
+        or set(query) != {"architecture", "heap_size", "image_type", "os", "vendor"}
+        or query.get("architecture") not in (["x64"], ["aarch64"])
+        or query.get("heap_size") != ["normal"]
+        or query.get("image_type") != ["jdk"]
+        or query.get("os") not in (["linux"], ["mac"], ["windows"])
+        or query.get("vendor") != ["eclipse"]
+    ):
+        raise AdapterRegistryError("URL is outside the bounded Adoptium API surface")
 
 
 def _validate_release_asset_url(url: str, repository: str | None) -> None:
@@ -792,6 +1026,11 @@ def _validate_release_asset_url(url: str, repository: str | None) -> None:
 class _GitHubApiRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise AdapterRegistryError("GitHub API redirects require adapter manifest review")
+
+
+class _AdoptiumApiRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise AdapterRegistryError("Adoptium API redirects require adapter manifest review")
 
 
 class _ReleaseAssetRedirectHandler(HTTPRedirectHandler):

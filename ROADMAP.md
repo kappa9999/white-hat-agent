@@ -17,6 +17,8 @@
 
 - concrete manifest, observed status, deterministic resolver, official release/Git provisioning, and bounded local
   knowledge search (initial built-in implementation complete);
+- capability-level autonomous provider closure with dependency-aware Temurin JDK provisioning and relevant fixture
+  conformance (initial Ghidra/JADX implementation complete);
 - typed execution handshake and exact-identity conformance kit (Ghidra, YARA-X, capa, LLVM, and JADX implemented on
   Linux/WSL);
 - Bubblewrap offline subprocess supervisor with fixed drivers, no network, bounded resources, and evidence-only input

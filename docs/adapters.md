@@ -6,9 +6,9 @@ White Hat Agent keeps **what a task needs** separate from **which concrete provi
 - `adapters/catalog.yaml` contains reviewed concrete tools and machine-readable knowledge sources.
 - `.whitehat/adapters/` contains ignored workspace-local installations and exact source revisions.
 
-This is one selection layer beneath the existing planner, not a second planner or package manager. Tool names never
-enter playbooks. Installed and version-healthy are observations; only an exact passing operation conformance report
-adds executable capabilities to agent status.
+This is one selection layer beneath the existing planner, not a general host package manager. Tool names never enter
+playbooks. Installed and version-healthy are observations; only an exact passing operation conformance report adds
+executable capabilities to agent status.
 
 ## Agent loop
 
@@ -26,6 +26,12 @@ wha adapter resolve --kind tool \
   --capability artifact.inspect \
   --capability binary.behavior-identify
 
+# Explicit autonomous closure: select providers, update them, provision managed
+# runtime dependencies only when needed, and run the relevant fixed fixtures.
+wha adapter ensure --yes \
+  --capability binary.static-inspect \
+  --capability experiment.design
+
 # Read-only supply-chain plan, then exact application.
 wha adapter plan ghidra --out ghidra-plan.json
 wha adapter provision --plan ghidra-plan.json
@@ -41,8 +47,15 @@ wha adapter status ghidra
 ```
 
 Search, status, resolution, campaign planning, fleet claiming, and `wha doctor` never install or execute anything.
-`adapter provision` and `adapter install --yes` write managed installations. `adapter conform` is the explicit local
-execution boundary and writes its identity-bound conformance report.
+`adapter provision`, `adapter install --yes`, and `adapter ensure --yes` write managed installations. `adapter ensure`
+is an explicit composition of the same resolver, provision-plan validation, and fixed conformance boundaries; it is
+never called by planning or fleet work. `adapter conform` remains the provider-specific local execution boundary and
+writes its identity-bound conformance report.
+
+When a selected Ghidra or JADX operation has no usable Java runtime, `ensure` provisions the reviewed `temurin-jdk`
+dependency from Eclipse Adoptium's platform-specific API. If host Java exists, the first fixed conformance probe uses
+it; a failed Java-version check causes exactly one managed-runtime install and retry. A valid host runtime therefore
+does not trigger a redundant JDK download.
 
 `adapter conform` is the separate local execution gate. It never reads campaign evidence: inside the same offline
 supervisor it runs fixed version/dependency probes, then the reviewed driver against its bundled inert fixture (the
@@ -64,6 +77,7 @@ content-digested into the report, so dependency drift invalidates cached health 
 
 | Provider | Unique role | Provisioning |
 |---|---|---|
+| Eclipse Temurin JDK 21 | Managed Java runtime closure for reviewed JVM-backed tools | Platform-specific Adoptium package |
 | Ghidra | Multi-ISA static analysis, decompilation, headless scripting, binary comparison | Official release asset |
 | Frida | Fixed load-time process, module, import, export, and dependency mapping | Exact standalone official release asset |
 | LLVM | LLDB, object/symbol tools, sanitizers, coverage, libFuzzer | Detect existing; OS channels vary |
@@ -73,6 +87,7 @@ content-digested into the report, so dependency drift invalidates cached health 
 | JADX | Android DEX/APK/AAB decompilation and resources | Official release asset |
 | MITRE ATT&CK | Enterprise, mobile, and ICS STIX behavior knowledge | Exact release assets |
 | capa rules | Executable-capability rules with ATT&CK/MBC mappings | Exact Git commit |
+| OWASP WSTG | Web/API test objectives, procedures, evidence, and remediation methodology | Exact Git commit |
 
 The vulnerability-intelligence layer already handles CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS with immutable
 snapshots; those feeds are not duplicated here.
@@ -173,6 +188,9 @@ wha adapter search mitre-attack T1059.001
 
 wha adapter install capa-rules --yes
 wha adapter search capa-rules "reverse shell"
+
+wha adapter ensure --kind knowledge --capability experiment.design --yes
+wha adapter search owasp-wstg "Test Objectives"
 ```
 
 `search` is a bounded direct scan, not another index or semantic store. It returns file, line, snippet, and revision;
@@ -188,6 +206,11 @@ GitHub release provisioning:
 4. downloads with byte limits and verifies size plus SHA-256;
 5. rejects archive traversal, links, devices, duplicate paths, excess entries, malformed raw `.xz` streams, and decompression bombs; and
 6. atomically activates a complete workspace-local installation.
+
+Adoptium runtime provisioning queries only the fixed Eclipse Adoptium API v3 `latest/<feature>/hotspot` surface with
+an exact platform, architecture, JDK image type, normal heap, and Eclipse vendor tuple. It requires one package,
+retains the release identity, declared size, and SHA-256 checksum, accepts only the official
+`adoptium/temurin21-binaries` GitHub release URL, then uses the same bounded extraction and atomic activation path.
 
 Git knowledge provisioning resolves a reviewed branch/ref through GitHub to one commit, fetches that commit with
 global/system Git configuration and hooks disabled, verifies `HEAD`, rejects symlinks and oversized trees, removes Git

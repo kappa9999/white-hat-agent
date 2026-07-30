@@ -34,6 +34,7 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
             "adapter_search",
             "adapter_status",
             "adapter_resolve",
+            "adapter_ensure",
             "adapter_plan_provision",
             "adapter_provision",
             "adapter_conform",

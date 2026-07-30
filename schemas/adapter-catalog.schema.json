@@ -128,6 +128,7 @@
             {
               "discriminator": {
                 "mapping": {
+                  "adoptium-api": "#/$defs/AdoptiumProvisioner",
                   "git-checkout": "#/$defs/GitCheckoutProvisioner",
                   "github-release": "#/$defs/GitHubReleaseProvisioner"
                 },
@@ -136,6 +137,9 @@
               "oneOf": [
                 {
                   "$ref": "#/$defs/GitHubReleaseProvisioner"
+                },
+                {
+                  "$ref": "#/$defs/AdoptiumProvisioner"
                 },
                 {
                   "$ref": "#/$defs/GitCheckoutProvisioner"
@@ -269,6 +273,76 @@
         "limits"
       ],
       "title": "AdapterOperationBinding",
+      "type": "object"
+    },
+    "AdoptiumProvisioner": {
+      "additionalProperties": false,
+      "properties": {
+        "entrypoints": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Entrypoints",
+          "type": "object"
+        },
+        "feature_version": {
+          "maximum": 99,
+          "minimum": 21,
+          "title": "Feature Version",
+          "type": "integer"
+        },
+        "image_type": {
+          "const": "jdk",
+          "default": "jdk",
+          "title": "Image Type",
+          "type": "string"
+        },
+        "jvm_impl": {
+          "const": "hotspot",
+          "default": "hotspot",
+          "title": "Jvm Impl",
+          "type": "string"
+        },
+        "kind": {
+          "const": "adoptium-api",
+          "default": "adoptium-api",
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_download_bytes": {
+          "maximum": 2147483648,
+          "minimum": 1,
+          "title": "Max Download Bytes",
+          "type": "integer"
+        },
+        "max_install_bytes": {
+          "maximum": 8589934592,
+          "minimum": 1,
+          "title": "Max Install Bytes",
+          "type": "integer"
+        },
+        "strip_single_directory": {
+          "default": true,
+          "title": "Strip Single Directory",
+          "type": "boolean"
+        },
+        "vendor": {
+          "const": "eclipse",
+          "default": "eclipse",
+          "title": "Vendor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feature_version",
+        "entrypoints",
+        "max_download_bytes",
+        "max_install_bytes"
+      ],
+      "title": "AdoptiumProvisioner",
       "type": "object"
     },
     "ExecutionClass": {
@@ -465,6 +539,19 @@
           },
           "title": "Executable Names",
           "type": "object"
+        },
+        "managed_adapter_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Managed Adapter Id"
         },
         "minimum_version": {
           "anyOf": [

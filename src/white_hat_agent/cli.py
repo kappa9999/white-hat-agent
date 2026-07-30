@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ._version import __version__
+from .adapter_ensure import AdapterEnsurer
 from .adapter_execution import AdapterExecutionError, AdapterExecutionRequest
 from .adapter_provisioning import AdapterProvisioner, AdapterProvisionPlan
 from .adapter_registry import AdapterKind, AdapterRegistryError
@@ -143,6 +144,20 @@ def build_parser() -> argparse.ArgumentParser:
     adapter_resolve.add_argument("--capability", action="append", required=True)
     adapter_resolve.add_argument("--kind", choices=[item.value for item in AdapterKind])
     adapter_resolve.add_argument("--max-execution-class", choices=[item.value for item in ExecutionClass])
+    adapter_ensure = adapter_commands.add_parser(
+        "ensure",
+        help="provision and conform the smallest current provider set for required capabilities",
+    )
+    _workspace_option(adapter_ensure)
+    adapter_ensure.add_argument("--capability", action="append", required=True)
+    adapter_ensure.add_argument("--kind", choices=[item.value for item in AdapterKind])
+    adapter_ensure.add_argument(
+        "--max-execution-class",
+        choices=[item.value for item in ExecutionClass],
+    )
+    adapter_ensure.add_argument("--no-update", action="store_true")
+    adapter_ensure.add_argument("--yes", action="store_true")
+    adapter_ensure.add_argument("--out", type=Path)
     adapter_plan = adapter_commands.add_parser(
         "plan", help="resolve exact upstream identities without changing the host"
     )
@@ -705,6 +720,19 @@ def _run_adapter(args: argparse.Namespace) -> None:
                 kind=kind,
                 max_execution_class=ceiling,
             )
+        )
+    elif args.adapter_command == "ensure":
+        if not args.yes:
+            raise ValueError("adapter ensure requires --yes because it changes local tool state")
+        ceiling = ExecutionClass(args.max_execution_class) if args.max_execution_class else None
+        _emit(
+            AdapterEnsurer(manager, workspace.adapter_execution).ensure(
+                args.capability,
+                kind=kind,
+                max_execution_class=ceiling,
+                update=not args.no_update,
+            ),
+            args.out,
         )
     elif args.adapter_command == "plan":
         _emit(AdapterProvisioner(manager).plan(args.adapter_id), args.out)

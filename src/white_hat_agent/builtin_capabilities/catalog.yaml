@@ -208,3 +208,12 @@ capabilities:
     adapter_contract: [Bind the capture and decoder identities; disable name resolution and external input; report packet ceilings and truncation.]
     status: experimental
     updated_at: 2026-07-30T04:00:00Z
+  - capability_id: runtime.java
+    title: Supply a verified Java runtime
+    description: Provide a content-identified Java runtime dependency for reviewed adapter operations.
+    execution_class: analysis
+    input_types: [adapter/requirement]
+    output_types: [runtime/java]
+    adapter_contract: [Bind the runtime version, platform, release, package checksum, installed content, and consuming operation.]
+    status: stable
+    updated_at: 2026-07-30T05:00:00Z
