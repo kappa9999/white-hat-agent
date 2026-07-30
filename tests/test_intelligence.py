@@ -5,7 +5,7 @@ import json
 import sqlite3
 from collections import defaultdict
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,8 @@ from white_hat_agent.intelligence import (
     CVE_LIST_V5_ATTRIBUTION,
     CVE_LIST_V5_DELTA_URL,
     EPSS_API_URL,
+    NVD_ATTRIBUTION,
+    NVD_CVE_API_URL,
     OSV_API_BASE_URL,
     OSV_ATTRIBUTION,
     OSV_MODIFIED_INDEX_URL,
@@ -38,9 +40,11 @@ from white_hat_agent.intelligence import (
     SnapshotKind,
     SyncStatus,
     cve_list_v5_record_url,
+    nvd_cve_api_url,
     parse_cisa_kev,
     parse_cve_delta_log,
     parse_cve_record,
+    parse_nvd_page,
     parse_osv_modified_index,
     rank_advisory,
 )
@@ -239,6 +243,132 @@ def _cve_snapshot(store: IntelligenceStore, cve: str, payload: bytes = b"{}"):
     )
 
 
+def _nvd_record(cve: str, *, summary: str = "NVD fixture description.") -> dict:
+    return {
+        "id": cve,
+        "sourceIdentifier": "fixture@example.test",
+        "published": "2026-07-20T00:00:00.000",
+        "lastModified": "2026-07-29T11:00:00.000",
+        "vulnStatus": "Analyzed",
+        "descriptions": [{"lang": "en", "value": summary}],
+        "metrics": {
+            "cvssMetricV31": [
+                {
+                    "source": "nvd@nist.gov",
+                    "type": "Primary",
+                    "cvssData": {
+                        "version": "3.1",
+                        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                        "baseScore": 9.1,
+                        "baseSeverity": "CRITICAL",
+                    },
+                    "exploitabilityScore": 3.9,
+                    "impactScore": 5.2,
+                }
+            ],
+            "ssvcV203": [
+                {
+                    "source": "nvd@nist.gov",
+                    "ssvcData": {
+                        "timestamp": "2026-07-29T11:30:00Z",
+                        "id": cve,
+                        "options": [
+                            {"exploitation": "poc"},
+                            {"automatable": "yes"},
+                            {"technicalImpact": "total"},
+                        ],
+                        "role": "CISA Coordinator",
+                        "version": "2.0.3",
+                    },
+                }
+            ],
+        },
+        "weaknesses": [
+            {
+                "source": "nvd@nist.gov",
+                "type": "Primary",
+                "description": [{"lang": "en", "value": "CWE-89"}],
+            }
+        ],
+        "configurations": [
+            {
+                "nodes": [
+                    {
+                        "operator": "OR",
+                        "negate": False,
+                        "cpeMatch": [
+                            {
+                                "vulnerable": True,
+                                "criteria": "cpe:2.3:a:fixture:product:*:*:*:*:*:*:*:*",
+                                "versionEndExcluding": "2.0.0",
+                                "matchCriteriaId": "00000000-0000-4000-8000-000000000001",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ],
+        "affected": [
+            {
+                "source": "fixture@example.test",
+                "affectedData": [
+                    {
+                        "vendor": "Fixture",
+                        "product": "Product",
+                        "versions": [
+                            {
+                                "version": "1.0.0",
+                                "lessThan": "2.0.0",
+                                "versionType": "semver",
+                                "status": "affected",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "references": [
+            {
+                "url": "https://example.test/vendor-advisory",
+                "source": "fixture@example.test",
+                "tags": ["Vendor Advisory", "Patch"],
+            }
+        ],
+        "cveTags": [{"sourceIdentifier": "fixture@example.test", "tags": ["disputed"]}],
+        "futureNvdField": {"preserved": True},
+    }
+
+
+def _nvd_page(*records: dict, total: int, start_index: int) -> dict:
+    return {
+        "format": "NVD_CVE",
+        "version": "2.0",
+        "timestamp": "2026-07-29T12:00:00.000",
+        "totalResults": total,
+        "startIndex": start_index,
+        "resultsPerPage": len(records),
+        "vulnerabilities": [{"cve": record} for record in records],
+    }
+
+
+def _nvd_snapshot(store: IntelligenceStore, payload: bytes = b"{}"):
+    url = nvd_cve_api_url(
+        NOW - timedelta(hours=26),
+        NOW,
+        results_per_page=100,
+        start_index=0,
+    )
+    return store.save_snapshot(
+        payload,
+        source=IntelligenceSource.NVD,
+        kind=SnapshotKind.API_PAGE,
+        source_url=url,
+        retrieved_at=NOW,
+        media_type="application/json",
+        attribution=NVD_ATTRIBUTION,
+    )
+
+
 def _cve_record(cve: str, *, state: str = "PUBLISHED") -> dict:
     metadata = {
         "cveId": cve,
@@ -372,6 +502,171 @@ def test_strict_provenance_and_cisa_count_integrity_and_bounds(tmp_path) -> None
         provenance.model_copy(update={"unexpected": True}).model_validate(
             {**provenance.model_dump(mode="json"), "unexpected": True}
         )
+
+
+def test_nvd_page_preserves_native_configuration_and_normalizes_priority_signals(tmp_path) -> None:
+    store = _store(tmp_path)
+    raw = _nvd_record("CVE-2026-60137")
+    document = _nvd_page(raw, total=1, start_index=0)
+    snapshot = _nvd_snapshot(store, json.dumps(document, sort_keys=True).encode())
+
+    page = parse_nvd_page(
+        document,
+        snapshot,
+        expected_start_index=0,
+        max_items=100,
+        max_record_bytes=1024 * 1024,
+    )
+    advisory = page.records[0].advisory
+
+    assert page.total_results == 1 and page.results_per_page == 1
+    assert advisory.identifiers == ["CVE-2026-60137"]
+    assert advisory.cwes == ["CWE-89"]
+    assert advisory.affected == []
+    assert {signal.kind for signal in advisory.severity} == {
+        SeverityKind.CVSS,
+        SeverityKind.SSVC,
+    }
+    assert next(signal for signal in advisory.severity if signal.kind == SeverityKind.CVSS).score == 9.1
+    ssvc = next(signal for signal in advisory.severity if signal.kind == SeverityKind.SSVC)
+    assert ssvc.label == "poc"
+    assert ssvc.metadata["options"] == {
+        "automatable": "yes",
+        "exploitation": "poc",
+        "technicalImpact": "total",
+    }
+    assert advisory.references[0].type.value == "fix"
+    metadata = advisory.source_metadata["nvd"]
+    assert metadata["configurations"] == raw["configurations"]
+    assert metadata["affected"] == raw["affected"]
+    assert metadata["unknown_fields"] == ["futureNvdField"]
+    assert advisory.provenance[0].attribution.attribution.startswith("This product uses data")
+
+    malformed = _nvd_page(raw, total=0, start_index=0)
+    with pytest.raises(IntelligenceParseError, match="exceeds totalResults"):
+        parse_nvd_page(
+            malformed,
+            snapshot,
+            expected_start_index=0,
+            max_items=100,
+            max_record_bytes=1024 * 1024,
+        )
+
+
+def test_nvd_incremental_sync_pages_then_commits_one_closed_window(tmp_path) -> None:
+    first_cve = "CVE-2026-60137"
+    second_cve = "CVE-2026-60138"
+    boundary = NOW - timedelta(hours=26)
+    first_url = nvd_cve_api_url(boundary, NOW, results_per_page=1, start_index=0)
+    second_url = nvd_cve_api_url(boundary, NOW, results_per_page=1, start_index=1)
+    transport = FakeTransport(
+        {
+            first_url: _json_response(
+                first_url,
+                _nvd_page(_nvd_record(first_cve), total=2, start_index=0),
+            ),
+            second_url: _json_response(
+                second_url,
+                _nvd_page(_nvd_record(second_cve), total=2, start_index=1),
+            ),
+        }
+    )
+    limits = IntelligenceLimits(
+        max_nvd_records_per_page=1,
+        nvd_request_delay_seconds=0,
+    )
+    store = _store(tmp_path)
+    service = IntelligenceService(store, transport=transport, clock=lambda: NOW, limits=limits)
+
+    report = service.sync(sources=["nvd"], since_hours=24, limit_per_source=2)
+    result = report.results[0]
+    state = store.get_source_state(IntelligenceSource.NVD)
+    manifest = json.loads(store.read_snapshot(state.last_snapshot_id))
+
+    assert report.status == SyncStatus.SUCCESS and report.successful
+    assert result.records_seen == result.records_selected == result.records_inserted == 2
+    assert result.snapshots_stored == 3
+    assert result.cursor_before is None and result.cursor_after == NOW
+    assert state.cursor_at == NOW and state.last_status == SyncStatus.SUCCESS
+    assert [request[0] for request in transport.requests] == [first_url, second_url]
+    assert all(request[1]["User-Agent"].startswith("white-hat-agent") for request in transport.requests)
+    assert manifest["total_results"] == 2 and manifest["fail_closed"] is False
+    assert [page["snapshot_id"] for page in manifest["pages"]] == result.metadata["page_snapshot_ids"]
+    assert {item["id"] for item in manifest["records"]} == {first_cve, second_cve}
+    assert {source.value for source in service.get(first_cve).sources} == {"nvd"}
+
+
+def test_nvd_candidate_ceiling_is_fail_closed_and_preserves_cursor(tmp_path) -> None:
+    boundary = NOW - timedelta(hours=26)
+    url = nvd_cve_api_url(boundary, NOW, results_per_page=1, start_index=0)
+    transport = FakeTransport(
+        {
+            url: _json_response(
+                url,
+                _nvd_page(_nvd_record("CVE-2026-60137"), total=2, start_index=0),
+            )
+        }
+    )
+    store = _store(tmp_path)
+    service = IntelligenceService(
+        store,
+        transport=transport,
+        clock=lambda: NOW,
+        limits=IntelligenceLimits(max_nvd_records_per_page=1, nvd_request_delay_seconds=0),
+    )
+
+    report = service.sync(sources=["nvd"], since_hours=24, limit_per_source=1)
+    result = report.results[0]
+    state = store.get_source_state(IntelligenceSource.NVD)
+
+    assert report.status == SyncStatus.PARTIAL and not report.successful
+    assert result.truncated and result.records_seen == 2 and result.records_selected == 0
+    assert result.issues[0].code == "nvd_candidate_limit"
+    assert result.cursor_after is None and state.cursor_at is None
+    assert service.list(sources=["nvd"]) == []
+    assert store.snapshot_count() == 2
+    assert [request[0] for request in transport.requests] == [url]
+    _validate_official_url(url)
+    with pytest.raises(IntelligenceTransportError, match="outside the official allowlist"):
+        _validate_official_url(f"{NVD_CVE_API_URL}?cveIds=CVE-2026-60137")
+
+
+def test_nvd_enriches_canonical_cve_without_replacing_its_semantics(tmp_path) -> None:
+    cve = "CVE-2026-60137"
+    store = _store(tmp_path)
+    cve_snapshot = _cve_snapshot(store, cve)
+    nvd_snapshot = _nvd_snapshot(store)
+    canonical = parse_cve_record(_cve_record(cve), cve_snapshot)
+    nvd = parse_nvd_page(
+        _nvd_page(_nvd_record(cve), total=1, start_index=0),
+        nvd_snapshot,
+        expected_start_index=0,
+        max_items=1,
+        max_record_bytes=1024 * 1024,
+    ).records[0]
+
+    store.upsert_source_record(
+        canonical,
+        snapshot_id=cve_snapshot.snapshot_id,
+        seen_at=NOW,
+    )
+    store.upsert_source_record(
+        nvd,
+        snapshot_id=nvd_snapshot.snapshot_id,
+        seen_at=NOW,
+    )
+    merged = store.get_advisory(cve)
+
+    assert merged.title == "Canonical fixture title"
+    assert merged.summary == "Canonical fixture description."
+    assert {source.value for source in merged.sources} == {"cve-list-v5", "nvd"}
+    assert merged.cwes == ["CWE-79", "CWE-89"]
+    assert {signal.source for signal in merged.severity} == {
+        IntelligenceSource.CVE_LIST_V5,
+        IntelligenceSource.NVD,
+    }
+    assert merged.source_metadata["nvd"]["configurations"] == _nvd_record(cve)["configurations"]
+    assert merged.affected and all(item.ecosystem != "NVD" for item in merged.affected)
 
 
 def test_cve_list_v5_delta_deduplicates_and_proves_closed_window() -> None:

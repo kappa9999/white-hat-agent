@@ -3,6 +3,23 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.7.0] - 2026-07-29
+
+### Added
+
+- bounded NVD CVE API 2.0 last-modified ingestion with immutable page snapshots, a closed-window selection manifest,
+  exact official attribution, fixed-endpoint pagination, and production workflow integration;
+- additive CVSS, SSVC, CWE, and reference enrichment correlated with canonical CVE List V5 records; and
+- source-native preservation of NVD CPE/configuration and affected data for a future Boolean applicability evaluator.
+
+### Security
+
+- NVD synchronization fails closed on record, page, pagination, duplicate, malformed-response, and 120-day window
+  limits, and only advances its cursor after a complete checkpoint;
+- the public client observes NVD's recommended six-second inter-page delay and the transport rejects arbitrary NVD
+  query shapes; and
+- NVD data cannot replace canonical CVE title, description, state, or affected-package semantics during merge.
+
 ## [0.6.0] - 2026-07-29
 
 ### Added
@@ -144,6 +161,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.7.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/kappa9999/white-hat-agent/compare/v0.4.0...v0.4.1

@@ -11,12 +11,14 @@ from ..models import Sha256, StrictModel, UnitScore
 class IntelligenceSource(StrEnum):
     CISA_KEV = "cisa-kev"
     CVE_LIST_V5 = "cve-list-v5"
+    NVD = "nvd"
     OSV = "osv"
     EPSS = "epss"
 
 
 class SnapshotKind(StrEnum):
     FULL_FEED = "full-feed"
+    API_PAGE = "api-page"
     DELTA_LOG = "delta-log"
     INDEX_PREFIX = "index-prefix"
     SELECTION_MANIFEST = "selection-manifest"
@@ -72,6 +74,7 @@ class RangeType(StrEnum):
 class SeverityKind(StrEnum):
     CVSS = "cvss"
     EPSS = "epss"
+    SSVC = "ssvc"
     QUALITATIVE = "qualitative"
     OTHER = "other"
 
@@ -383,6 +386,11 @@ class IntelligenceLimits(StrictModel):
     max_cve_candidates: int = Field(default=10_000, ge=1)
     max_cve_record_bytes: int = Field(default=4 * 1024 * 1024, ge=1024)
     max_cve_consecutive_server_errors: int = Field(default=3, ge=1, le=20)
+    max_nvd_page_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
+    max_nvd_record_bytes: int = Field(default=4 * 1024 * 1024, ge=1024)
+    max_nvd_records_per_page: int = Field(default=2_000, ge=1, le=2_000)
+    max_nvd_pages: int = Field(default=100, ge=1, le=1_000)
+    nvd_request_delay_seconds: float = Field(default=6.0, ge=0.0, le=60.0)
     max_osv_index_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
     max_osv_index_lines: int = Field(default=1_000_000, ge=1)
     max_osv_candidates: int = Field(default=5_000, ge=1)
@@ -392,5 +400,6 @@ class IntelligenceLimits(StrictModel):
     max_epss_cves_per_request: int = Field(default=100, ge=1, le=500)
     max_limit_per_source: int = Field(default=10_000, ge=1, le=10_000)
     cve_overlap_hours: float = Field(default=2.0, ge=0.0, le=24.0)
+    nvd_overlap_hours: float = Field(default=2.0, ge=0.0, le=24.0)
     osv_overlap_hours: float = Field(default=2.0, ge=0.0, le=24.0)
     max_snapshot_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)

@@ -60,7 +60,7 @@ stages. Each stage carries its own `ProbeIntent` and freshly evaluated `ScopeDec
 operator or host agent still persists the manifest, explicitly transitions its lifecycle, and enqueues chosen stages.
 
 Three built-in tools are open-world. `intelligence_sync` performs bounded GET requests to fixed official CVE List V5,
-CISA, OSV, and optional FIRST EPSS endpoints, then mutates only the local workspace state and snapshot store.
+NVD 2.0, CISA, OSV, and optional FIRST EPSS endpoints, then mutates only the local workspace state and snapshot store.
 `adapter_plan_provision` performs read-only resolution against the reviewed provider's official GitHub release or
 commit API. `adapter_provision` applies an exact plan by downloading only its resolved official artifacts or commit
 into `.whitehat/adapters/`; it is both networked and mutating. None contacts advisory targets. Clients should require

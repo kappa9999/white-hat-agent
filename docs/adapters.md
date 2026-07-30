@@ -72,8 +72,8 @@ content-digested into the report, so dependency drift invalidates cached health 
 | MITRE ATT&CK | Enterprise, mobile, and ICS STIX behavior knowledge | Exact release assets |
 | capa rules | Executable-capability rules with ATT&CK/MBC mappings | Exact Git commit |
 
-The vulnerability-intelligence layer already handles CVE List V5, CISA KEV, OSV, and EPSS with immutable snapshots;
-those feeds are not duplicated here.
+The vulnerability-intelligence layer already handles CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS with immutable
+snapshots; those feeds are not duplicated here.
 
 ## Typed offline execution
 

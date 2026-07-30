@@ -4,6 +4,7 @@
       "enum": [
         "cisa-kev",
         "cve-list-v5",
+        "nvd",
         "osv",
         "epss"
       ],
@@ -14,6 +15,7 @@
     "SnapshotKind": {
       "enum": [
         "full-feed",
+        "api-page",
         "delta-log",
         "index-prefix",
         "selection-manifest",
