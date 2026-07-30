@@ -1010,17 +1010,20 @@ class IntelligenceStore:
         connection.execute(
             "DELETE FROM intelligence_advisory_ecosystems WHERE advisory_id = ?", (advisory_id,)
         )
-        ecosystems = sorted(
-            {item.ecosystem for item in aggregate.affected if item.ecosystem}, key=str.casefold
-        )
-        for ecosystem in ecosystems:
+        ecosystems_by_key: dict[str, str] = {}
+        for ecosystem in sorted(
+            {item.ecosystem for item in aggregate.affected if item.ecosystem},
+            key=lambda item: (item.casefold(), item),
+        ):
+            ecosystems_by_key.setdefault(_identifier_key(ecosystem), ecosystem)
+        for ecosystem_key, ecosystem in sorted(ecosystems_by_key.items()):
             connection.execute(
                 """
                 INSERT INTO intelligence_advisory_ecosystems(
                     advisory_id, ecosystem_key, ecosystem
                 ) VALUES (?, ?, ?)
                 """,
-                (advisory_id, _identifier_key(ecosystem), ecosystem),
+                (advisory_id, ecosystem_key, ecosystem),
             )
 
     @contextmanager
