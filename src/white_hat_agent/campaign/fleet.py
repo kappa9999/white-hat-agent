@@ -566,8 +566,14 @@ class FleetStore:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             now = datetime.now(UTC)
-            expires = now + timedelta(seconds=extend_seconds)
-            self._assert_lease(connection, task_id, agent_id, lease_token, now)
+            current_expiration = self._assert_lease(
+                connection,
+                task_id,
+                agent_id,
+                lease_token,
+                now,
+            )
+            expires = max(current_expiration, now + timedelta(seconds=extend_seconds))
             connection.execute(
                 "UPDATE tasks SET lease_expires_at = ?, updated_at = ? WHERE task_id = ?",
                 (_iso(expires), _iso(now), task_id),
@@ -919,7 +925,7 @@ class FleetStore:
         agent_id: str,
         lease_token: str,
         now: datetime,
-    ) -> None:
+    ) -> datetime:
         row = connection.execute(
             """
             SELECT t.state, t.lease_owner, t.lease_token_sha256, t.lease_expires_at,
@@ -944,6 +950,7 @@ class FleetStore:
         expires = datetime.fromisoformat(row["lease_expires_at"])
         if expires < now:
             raise FleetError("task lease has expired")
+        return expires
 
 
 def _terminal_state(outcome: str) -> TaskState:

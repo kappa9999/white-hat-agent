@@ -19,7 +19,7 @@ def test_checked_in_corpus_is_valid_and_deterministic() -> None:
     second_manifest = corpus.manifest()
 
     assert first.valid and second.valid
-    assert first.playbook_count == 5
+    assert first.playbook_count == 6
     assert first_manifest.manifest_digest == second_manifest.manifest_digest
     assert corpus.get("http-response-surface-map").metadata.version == "1.0.0"
 

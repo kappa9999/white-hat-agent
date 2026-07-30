@@ -116,6 +116,35 @@ def test_scope_bound_deduplicated_lease_and_result_lifecycle(tmp_path) -> None:
     assert "Remove only fields" in submission.original_text
 
 
+def test_heartbeat_never_shortens_an_active_lease(tmp_path) -> None:
+    store = FleetStore(tmp_path / "fleet.db")
+    store.initialize()
+    store.create_campaign(build_campaign())
+    store.enqueue_intent("example-lab-campaign", _intent())
+    store.register_agent(
+        AgentRegistration(
+            agent_id="http-agent",
+            display_name="HTTP fixture adapter",
+            provider="fixture",
+            capabilities=["http.request", "http.capture", "data.diff", "evidence.write"],
+            max_execution_class=ExecutionClass.CONTROLLED_ACTIVE,
+        )
+    )
+    store.set_campaign_state("example-lab-campaign", CampaignState.READY)
+    store.set_campaign_state("example-lab-campaign", CampaignState.RUNNING)
+    lease = store.claim_task("http-agent", lease_seconds=600)
+    assert lease is not None and lease.task.lease_expires_at is not None
+
+    retained = store.heartbeat(
+        lease.task.task_id,
+        "http-agent",
+        lease.lease_token,
+        extend_seconds=10,
+    )
+
+    assert retained == lease.task.lease_expires_at
+
+
 def test_campaign_budget_and_transition_invariants(tmp_path) -> None:
     store = FleetStore(tmp_path / "fleet.db")
     store.initialize()

@@ -32,7 +32,7 @@ def verify_cli(executable: Path, temporary_root: Path, expected_version: str, la
     if version != f"White Hat Agent Core {expected_version}":
         raise RuntimeError(f"unexpected {label} version output: {version}")
     playbooks = list((workspace / "corpus/playbooks").rglob("playbook.yaml"))
-    if len(playbooks) != 5 or not (workspace / "capabilities/catalog.yaml").is_file():
+    if len(playbooks) != 6 or not (workspace / "capabilities/catalog.yaml").is_file():
         raise RuntimeError(f"{label} candidate omitted bundled assets")
 
 
@@ -49,10 +49,12 @@ def smoke_distribution(artifact: Path, temporary_root: Path, expected_version: s
         (
             "from white_hat_agent.adapter_execution import "
             "_fixture_bytes, _ghidra_native_map_fixture_bytes, "
-            "_ghidra_native_map_script_bytes, _ghidra_script_bytes, _jadx_fixture_bytes; "
+            "_ghidra_native_map_script_bytes, _ghidra_script_bytes, _jadx_fixture_bytes, "
+            "_yara_x_conformance_rule; "
             "assert len(_fixture_bytes()) == 784; "
             "assert len(_ghidra_native_map_fixture_bytes()) == 1496; "
             "assert len(_jadx_fixture_bytes()) == 904; "
+            "assert len(_yara_x_conformance_rule().encode()) == 211; "
             "assert len(_ghidra_script_bytes()) == 6116; "
             "assert len(_ghidra_native_map_script_bytes()) == 17951"
         ),

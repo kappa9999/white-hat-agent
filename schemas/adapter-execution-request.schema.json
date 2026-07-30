@@ -196,6 +196,28 @@
       ],
       "title": "LlvmObjectInspectPayload",
       "type": "object"
+    },
+    "YaraXFileScanPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "yara-x.file-scan",
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "rule_source": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "title": "Rule Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id",
+        "rule_source"
+      ],
+      "title": "YaraXFileScanPayload",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -230,7 +252,8 @@
           "ghidra.binary-summary": "#/$defs/GhidraBinarySummaryPayload",
           "ghidra.native-code-map": "#/$defs/GhidraNativeCodeMapPayload",
           "jadx.android-static-map": "#/$defs/JadxAndroidStaticMapPayload",
-          "llvm.object-inspect": "#/$defs/LlvmObjectInspectPayload"
+          "llvm.object-inspect": "#/$defs/LlvmObjectInspectPayload",
+          "yara-x.file-scan": "#/$defs/YaraXFileScanPayload"
         },
         "propertyName": "operation_id"
       },
@@ -249,6 +272,9 @@
         },
         {
           "$ref": "#/$defs/JadxAndroidStaticMapPayload"
+        },
+        {
+          "$ref": "#/$defs/YaraXFileScanPayload"
         }
       ],
       "title": "Operation"

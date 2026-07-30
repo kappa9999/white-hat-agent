@@ -15,11 +15,12 @@ import tempfile
 import time
 from contextlib import ExitStack, suppress
 from dataclasses import dataclass
+from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal, Protocol, Self
 
-from pydantic import AwareDatetime, Field, JsonValue, SecretStr, model_validator
+from pydantic import AwareDatetime, Field, JsonValue, SecretStr, field_validator, model_validator
 
 from .adapter_registry import (
     AdapterConformanceCheck,
@@ -72,12 +73,104 @@ class JadxAndroidStaticMapPayload(StrictModel):
     operation_id: Literal["jadx.android-static-map"]
 
 
+def _contains_yara_include_directive(source: str) -> bool:
+    index = 0
+    brace_depth = 0
+    expect_regex = False
+    while index < len(source):
+        char = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if char.isspace():
+            index += 1
+            continue
+        if char == "/" and following == "/":
+            newline = source.find("\n", index + 2)
+            index = len(source) if newline < 0 else newline + 1
+            continue
+        if char == "/" and following == "*":
+            closing = source.find("*/", index + 2)
+            index = len(source) if closing < 0 else closing + 2
+            continue
+        if char == '"':
+            index += 1
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                elif source[index] == '"':
+                    index += 1
+                    break
+                else:
+                    index += 1
+            expect_regex = False
+            continue
+        if char == "/" and expect_regex:
+            index += 1
+            in_character_class = False
+            while index < len(source):
+                if source[index] == "\\":
+                    index += 2
+                    continue
+                if source[index] == "[":
+                    in_character_class = True
+                elif source[index] == "]":
+                    in_character_class = False
+                elif source[index] == "/" and not in_character_class:
+                    index += 1
+                    break
+                index += 1
+            expect_regex = False
+            continue
+        if char.isalpha() or char == "_":
+            end = index + 1
+            while end < len(source) and (source[end].isalnum() or source[end] == "_"):
+                end += 1
+            token = source[index:end].casefold()
+            if brace_depth == 0 and token == "include":
+                return True
+            expect_regex = token == "matches"
+            index = end
+            continue
+        if char == "{":
+            brace_depth += 1
+            expect_regex = False
+        elif char == "}":
+            brace_depth = max(0, brace_depth - 1)
+            expect_regex = False
+        elif char == "=":
+            if following == "~":
+                expect_regex = True
+                index += 2
+                continue
+            expect_regex = following != "="
+        else:
+            expect_regex = False
+        index += 1
+    return False
+
+
+class YaraXFileScanPayload(StrictModel):
+    operation_id: Literal["yara-x.file-scan"]
+    rule_source: str = Field(min_length=1, max_length=65_536)
+
+    @field_validator("rule_source")
+    @classmethod
+    def bounded_standalone_rule_source(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("rule_source cannot contain NUL bytes")
+        if len(value.encode("utf-8")) > 65_536:
+            raise ValueError("rule_source exceeds the UTF-8 byte limit")
+        if _contains_yara_include_directive(value):
+            raise ValueError("rule_source cannot include external files")
+        return value
+
+
 AdapterOperationPayload = Annotated[
     GhidraBinarySummaryPayload
     | GhidraNativeCodeMapPayload
     | CapaFileAnalyzePayload
     | LlvmObjectInspectPayload
-    | JadxAndroidStaticMapPayload,
+    | JadxAndroidStaticMapPayload
+    | YaraXFileScanPayload,
     Field(discriminator="operation_id"),
 ]
 
@@ -229,12 +322,18 @@ class AdapterExecutionManifest(StrictModel):
     sandbox_profile_sha256: Sha256
     input_evidence_ids: list[str]
     input_content_sha256: list[Sha256]
+    operation_payload: dict[str, JsonValue]
     effective_limits: OperationResourceLimits
     exit_code: int | None = None
     signal: int | None = None
 
     @classmethod
-    def from_result(cls, result: AdapterExecutionResult) -> Self:
+    def from_result(
+        cls,
+        result: AdapterExecutionResult,
+        *,
+        operation_payload: dict[str, JsonValue],
+    ) -> Self:
         return cls(
             receipt=AdapterExecutionReceipt.from_result(result),
             request_digest=result.request_digest,
@@ -249,6 +348,7 @@ class AdapterExecutionManifest(StrictModel):
             sandbox_profile_sha256=result.sandbox_profile_sha256,
             input_evidence_ids=result.input_evidence_ids,
             input_content_sha256=result.input_content_sha256,
+            operation_payload=operation_payload,
             effective_limits=result.effective_limits,
             exit_code=result.exit_code,
             signal=result.signal,
@@ -262,10 +362,17 @@ class SandboxMount:
 
 
 @dataclass(frozen=True)
+class SandboxInlineFile:
+    destination: str
+    content: bytes
+
+
+@dataclass(frozen=True)
 class TrustedInvocation:
     argv: tuple[str, ...]
     mounts: tuple[SandboxMount, ...]
     result_relative_path: str | None = None
+    inline_files: tuple[SandboxInlineFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -324,14 +431,22 @@ JADX_FIXTURE = ConformanceFixture(
     resource_name="minimal_android_dex.b64",
     sha256="865d09fc9bc4a407c2bab2516dd2576a63d410d036f30c21b6a28b8b875ec847",
 )
+YARA_X_FIXTURE = ConformanceFixture(
+    fixture_id="yara-x-marker-elf64-x86-64-v1",
+    filename="fixture.elf",
+    resource_name="native_code_map_elf64.b64",
+    sha256="160fad2a70818a93807bc01ccfff766f7c3702756e8135ee5239132de9fe56b0",
+)
 # Backward-compatible public constants for the original shared ELF fixture.
 FIXTURE_ID = ELF_FIXTURE.fixture_id
 FIXTURE_SHA256 = ELF_FIXTURE.sha256
 GHIDRA_SCRIPT_SHA256 = "87e15c8b2368cc739e4cca74ca306c1cbbddef9cc673626737de7dbc6317a5a9"
 GHIDRA_NATIVE_MAP_SCRIPT_SHA256 = "59fc8004e838a78d169db17f356a37de437397d5f244c65e0317cc30909c2e28"
+YARA_X_CONFORMANCE_RULE_SHA256 = "5c79304a77695997bbaadc354626cbc447d7bd3b46f14683a45069bddc582961"
 DRIVER_VERSION = "1.2.0"
 GHIDRA_NATIVE_MAP_DRIVER_VERSION = "1.0.0"
 JADX_DRIVER_VERSION = "1.0.0"
+YARA_X_DRIVER_VERSION = "1.0.4"
 MINIMUM_EVIDENCE_IMPORT_BYTES = 65_536
 
 
@@ -356,6 +471,7 @@ class ProviderDriver(Protocol):
         process: SupervisedProcessResult,
         artifact_sha256: str,
         limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
     ) -> AdapterNormalizedResult: ...
 
     def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]: ...
@@ -394,6 +510,7 @@ class OfflineSandboxSupervisor:
         tool_work_dir.mkdir(mode=0o700)
         stdout_path = work_dir / "stdout.bin"
         stderr_path = work_dir / "stderr.bin"
+        invocation = self._materialize_inline_files(invocation, work_dir, limits)
         command = self._command(invocation, input_path, tool_work_dir)
         started = time.monotonic()
         limited = False
@@ -476,6 +593,44 @@ class OfflineSandboxSupervisor:
             result_path=result_path,
             output_complete=output_complete,
             warnings=tuple(warnings),
+        )
+
+    def _materialize_inline_files(
+        self,
+        invocation: TrustedInvocation,
+        work_dir: Path,
+        limits: OperationResourceLimits,
+    ) -> TrustedInvocation:
+        if not invocation.inline_files:
+            return invocation
+        if len(invocation.inline_files) > 16:
+            raise AdapterExecutionError("adapter invocation has too many inline files")
+        destinations = {mount.destination for mount in invocation.mounts}
+        inline_root = work_dir / "inline-inputs"
+        inline_root.mkdir(mode=0o700)
+        mounts = list(invocation.mounts)
+        total_bytes = 0
+        for index, item in enumerate(invocation.inline_files):
+            destination = PurePosixPath(item.destination)
+            if (
+                not destination.is_absolute()
+                or destination.parent != PurePosixPath("/input")
+                or destination.name in {"", "artifact"}
+                or destination.as_posix() in destinations
+            ):
+                raise AdapterExecutionError("adapter inline file has an unsafe destination")
+            total_bytes += len(item.content)
+            if total_bytes > limits.max_input_bytes:
+                raise AdapterExecutionError("adapter inline files exceed the input byte limit")
+            source = inline_root / f"{index:02d}-{destination.name}"
+            source.write_bytes(item.content)
+            source.chmod(0o400)
+            mounts.append(SandboxMount(source=source, destination=destination.as_posix()))
+            destinations.add(destination.as_posix())
+        return TrustedInvocation(
+            argv=invocation.argv,
+            mounts=tuple(mounts),
+            result_relative_path=invocation.result_relative_path,
         )
 
     def _command(
@@ -562,7 +717,16 @@ class OfflineSandboxSupervisor:
         for mount in invocation.mounts:
             source = mount.source.resolve(strict=True)
             parent = str(Path(mount.destination).parent)
-            if parent not in created and parent not in {"/", "/usr", "/bin", "/lib", "/lib64", "/etc"}:
+            if parent not in created and parent not in {
+                "/",
+                "/usr",
+                "/bin",
+                "/lib",
+                "/lib64",
+                "/etc",
+                "/input",
+                "/work",
+            }:
                 command.extend(("--dir", parent))
                 created.add(parent)
             command.extend(("--ro-bind", str(source), mount.destination))
@@ -617,7 +781,9 @@ class LlvmObjectInspectDriver:
         process: SupervisedProcessResult,
         artifact_sha256: str,
         limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
     ) -> AdapterNormalizedResult:
+        del operation
         payload = _read_json(process.stdout_path, limits.max_output_bytes)
         if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
             raise AdapterExecutionError("llvm-readobj emitted an unexpected JSON document")
@@ -714,7 +880,9 @@ class CapaFileAnalyzeDriver:
         process: SupervisedProcessResult,
         artifact_sha256: str,
         limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
     ) -> AdapterNormalizedResult:
+        del operation
         payload = _read_json(process.stdout_path, limits.max_output_bytes)
         if not isinstance(payload, dict) or not isinstance(payload.get("meta"), dict):
             raise AdapterExecutionError("capa emitted an unexpected JSON document")
@@ -775,6 +943,192 @@ class CapaFileAnalyzeDriver:
                 name="fixture-os",
                 ok=normalized.data.get("operating_system") == "linux",
                 detail=str(normalized.data.get("operating_system")),
+            ),
+        ]
+
+
+class YaraXFileScanDriver:
+    adapter_id = "yara-x"
+    operation_id = "yara-x.file-scan"
+    driver_id = "whitehat.yara-x-ndjson"
+    driver_version = YARA_X_DRIVER_VERSION
+    max_matches_per_pattern = 32
+    match_text_bytes = 64
+
+    def _executable(self, entrypoints: list[str]) -> Path:
+        executable = next(
+            (Path(path).resolve() for path in entrypoints if Path(path).name.casefold() in {"yr", "yr.exe"}),
+            None,
+        )
+        if executable is None or not executable.is_file():
+            raise AdapterExecutionError("YARA-X operation requires an observed yr entrypoint")
+        return executable
+
+    def tool_payload_digest(self, entrypoints: list[str]) -> str:
+        return stable_digest(
+            {
+                "executable_sha256": _hash_file(self._executable(entrypoints)),
+                "conformance_rule_sha256": YARA_X_CONFORMANCE_RULE_SHA256,
+                "output_contract": "ndjson-v1",
+            }
+        )
+
+    def prepare(
+        self,
+        status: AdapterStatus,
+        operation: AdapterOperationPayload,
+        limits: OperationResourceLimits,
+        assets: dict[str, Path],
+    ) -> TrustedInvocation:
+        del assets
+        if not isinstance(operation, YaraXFileScanPayload):
+            raise AdapterExecutionError("YARA-X driver received a different operation payload")
+        if limits.max_processes < 8:
+            raise AdapterExecutionError("YARA-X file scan requires a process/thread limit of at least 8")
+        if limits.memory_mib < 2048:
+            raise AdapterExecutionError("YARA-X file scan requires at least 2048 MiB of address space")
+        rule_bytes = operation.rule_source.encode("utf-8")
+        if not rule_bytes:
+            raise AdapterExecutionError("YARA-X rule source cannot be empty")
+        return TrustedInvocation(
+            argv=(
+                "/opt/tool/yr",
+                "scan",
+                "--output-format",
+                "ndjson",
+                "--print-meta",
+                "--print-namespace",
+                "--print-tags",
+                f"--print-strings={self.match_text_bytes}",
+                "--threads",
+                "1",
+                "--timeout",
+                str(max(1, min(limits.wall_seconds, 86_400))),
+                "--max-matches-per-pattern",
+                str(self.max_matches_per_pattern),
+                "--no-mmap",
+                "--disable-console-logs",
+                "/input/rules.yar",
+                "/input/artifact",
+            ),
+            mounts=(SandboxMount(self._executable(status.entrypoints), "/opt/tool/yr"),),
+            inline_files=(SandboxInlineFile("/input/rules.yar", rule_bytes),),
+        )
+
+    def normalize(
+        self,
+        process: SupervisedProcessResult,
+        artifact_sha256: str,
+        limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
+    ) -> AdapterNormalizedResult:
+        if not isinstance(operation, YaraXFileScanPayload):
+            raise AdapterExecutionError("YARA-X normalization requires its exact operation payload")
+        payload = _read_single_ndjson(process.stdout_path, limits.max_output_bytes)
+        if set(payload) != {"path", "rules"} or payload.get("path") != "/input/artifact":
+            raise AdapterExecutionError("YARA-X emitted an unexpected target result")
+        raw_rules = payload.get("rules")
+        if not isinstance(raw_rules, list):
+            raise AdapterExecutionError("YARA-X result has an invalid rules collection")
+
+        validated = [_normalize_yara_rule(value) for value in raw_rules]
+        identities = [(str(rule["namespace"]), str(rule["identifier"])) for rule in validated]
+        if len(identities) != len(set(identities)):
+            raise AdapterExecutionError("YARA-X result contains duplicate rule identities")
+        validated.sort(key=lambda rule: (str(rule["namespace"]), str(rule["identifier"])))
+
+        returned: list[JsonValue] = []
+        remaining = limits.max_records
+        total_strings = sum(len(rule["strings"]) for rule in validated)
+        returned_strings = 0
+        match_limit_reached = False
+        for raw_rule in validated:
+            if remaining == 0:
+                break
+            remaining -= 1
+            strings = list(raw_rule["strings"])
+            counts: dict[str, int] = {}
+            for item in strings:
+                identifier = str(item["identifier"])
+                counts[identifier] = counts.get(identifier, 0) + 1
+            if any(count >= self.max_matches_per_pattern for count in counts.values()):
+                match_limit_reached = True
+            selected_strings = strings[:remaining]
+            remaining -= len(selected_strings)
+            returned_strings += len(selected_strings)
+            returned.append(
+                {
+                    "identifier": raw_rule["identifier"],
+                    "namespace": raw_rule["namespace"],
+                    "meta": raw_rule["meta"],
+                    "tags": raw_rule["tags"],
+                    "strings": selected_strings,
+                    "strings_truncated": len(selected_strings) != len(strings),
+                }
+            )
+
+        returned_rules = len(returned)
+        rule_source_bytes = operation.rule_source.encode("utf-8")
+        truncated = (
+            returned_rules != len(validated) or returned_strings != total_strings or match_limit_reached
+        )
+        data: dict[str, JsonValue] = {
+            "engine": "yara-x",
+            "rule_source_sha256": hashlib.sha256(rule_source_bytes).hexdigest(),
+            "rule_source_bytes": len(rule_source_bytes),
+            "match_text_bytes": self.match_text_bytes,
+            "max_matches_per_pattern": self.max_matches_per_pattern,
+            "match_limit_reached": match_limit_reached,
+            "total_rule_matches": len(validated),
+            "returned_rule_matches": returned_rules,
+            "total_string_matches": total_strings,
+            "returned_string_matches": returned_strings,
+            "rules": returned,
+        }
+        return AdapterNormalizedResult(
+            operation_id=self.operation_id,
+            artifact_sha256=artifact_sha256,
+            records_returned=returned_rules + returned_strings,
+            truncated=truncated,
+            data=data,
+        )
+
+    def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]:
+        rules = normalized.data.get("rules")
+        marker = rules[0] if isinstance(rules, list) and len(rules) == 1 else None
+        strings = marker.get("strings") if isinstance(marker, dict) else None
+        string = strings[0] if isinstance(strings, list) and len(strings) == 1 else None
+        metadata = marker.get("meta") if isinstance(marker, dict) else None
+        return [
+            AdapterConformanceCheck(
+                name="fixture-rule",
+                ok=(
+                    isinstance(marker, dict)
+                    and marker.get("identifier") == "wha_native_marker"
+                    and marker.get("namespace") == "default"
+                    and marker.get("tags") == ["conformance"]
+                ),
+                detail=f"returned_rules={normalized.data.get('returned_rule_matches', 0)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-rule-metadata",
+                ok=metadata == [["purpose", "White Hat Agent typed YARA-X conformance"]],
+                detail=f"metadata_entries={len(metadata) if isinstance(metadata, list) else 0}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-string-match",
+                ok=(
+                    isinstance(string, dict)
+                    and string.get("identifier") == "$marker"
+                    and string.get("offset") == 192
+                    and string.get("match") == "WHA_NATIVE_CODE_MAP_MARKER"
+                ),
+                detail=f"returned_strings={normalized.data.get('returned_string_matches', 0)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-rule-identity",
+                ok=normalized.data.get("rule_source_sha256") == YARA_X_CONFORMANCE_RULE_SHA256,
+                detail=str(normalized.data.get("rule_source_sha256", "")),
             ),
         ]
 
@@ -875,7 +1229,9 @@ class GhidraBinarySummaryDriver:
         process: SupervisedProcessResult,
         artifact_sha256: str,
         limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
     ) -> AdapterNormalizedResult:
+        del operation
         if process.result_path is None or not process.result_path.is_file():
             raise AdapterExecutionError("Ghidra summary output is missing")
         payload = _read_json(process.result_path, limits.max_output_bytes)
@@ -992,7 +1348,9 @@ class GhidraNativeCodeMapDriver:
         process: SupervisedProcessResult,
         artifact_sha256: str,
         limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
     ) -> AdapterNormalizedResult:
+        del operation
         if process.result_path is None or not process.result_path.is_file():
             raise AdapterExecutionError("Ghidra native code map output is missing")
         payload = _read_json(process.result_path, limits.max_output_bytes)
@@ -1360,7 +1718,9 @@ class JadxAndroidStaticMapDriver:
         process: SupervisedProcessResult,
         artifact_sha256: str,
         limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
     ) -> AdapterNormalizedResult:
+        del operation
         if process.result_path is None:
             raise AdapterExecutionError("JADX output directory is missing")
         files = _regular_output_tree(
@@ -1570,6 +1930,7 @@ DRIVERS: dict[tuple[str, str], ProviderDriver] = {
     ("capa", "capa.file-analyze"): CapaFileAnalyzeDriver(),
     ("llvm", "llvm.object-inspect"): LlvmObjectInspectDriver(),
     ("jadx", "jadx.android-static-map"): JadxAndroidStaticMapDriver(),
+    ("yara-x", "yara-x.file-scan"): YaraXFileScanDriver(),
 }
 
 
@@ -1624,6 +1985,7 @@ class AdapterExecutionBroker:
             raise AdapterExecutionError(f"adapter has no fixed version probe: {adapter_id}")
         driver = _driver(adapter_id, operation_id)
         started_at = utc_now()
+        started_monotonic = time.monotonic()
         checks: list[AdapterConformanceCheck] = []
         warnings: list[str] = []
         tool_digest = driver.tool_payload_digest(status.entrypoints)
@@ -1736,7 +2098,12 @@ class AdapterExecutionBroker:
                 warnings.extend(process.warnings)
                 if process.outcome == AdapterExecutionOutcome.SUCCEEDED:
                     try:
-                        normalized = driver.normalize(process, fixture_digest, operation.limits)
+                        normalized = driver.normalize(
+                            process,
+                            fixture_digest,
+                            operation.limits,
+                            _fixture_operation(operation_id),
+                        )
                         checks.extend(driver.fixture_checks(normalized))
                     except (AdapterExecutionError, OSError, UnicodeError, ValueError) as exc:
                         checks.append(
@@ -1764,7 +2131,7 @@ class AdapterExecutionBroker:
             fixture_id=fixture.fixture_id,
             fixture_sha256=fixture.sha256,
             started_at=started_at,
-            finished_at=utc_now(),
+            finished_at=started_at + timedelta(seconds=time.monotonic() - started_monotonic),
             passed=all(check.ok for check in checks),
             checks=checks,
             warnings=list(dict.fromkeys(warnings)),
@@ -1848,6 +2215,7 @@ class AdapterExecutionBroker:
         adapter_id = driver.adapter_id
         manifest = self.manager.registry.get(adapter_id)
         operation = _operation(manifest.operations, request.operation.operation_id)
+        operation_payload = request.operation.model_dump(mode="json")
         manifest_variable_bytes = sum(
             len(value.encode("utf-8"))
             for value in (
@@ -1860,7 +2228,7 @@ class AdapterExecutionBroker:
                 operation.operation_version,
                 *request.input_evidence_ids,
             )
-        )
+        ) + len(json.dumps(operation_payload, ensure_ascii=True, separators=(",", ":")).encode())
         if manifest_variable_bytes + MINIMUM_EVIDENCE_IMPORT_BYTES > self.evidence.max_import_bytes:
             raise AdapterExecutionError("evidence import limit is too small for bounded execution metadata")
         if not set(operation.capabilities).issubset(task.required_capabilities):
@@ -1896,6 +2264,7 @@ class AdapterExecutionBroker:
         )
         evidence_id = request.input_evidence_ids[0]
         started_at = utc_now()
+        started_monotonic = time.monotonic()
         execution_id = stable_id(
             "adapter-execution",
             {"request_digest": request.digest(), "started_at": started_at.isoformat()},
@@ -1930,7 +2299,12 @@ class AdapterExecutionBroker:
             warnings.extend(process.warnings)
             if outcome == AdapterExecutionOutcome.SUCCEEDED:
                 try:
-                    normalized = driver.normalize(process, input_record.content_sha256, effective_limits)
+                    normalized = driver.normalize(
+                        process,
+                        input_record.content_sha256,
+                        effective_limits,
+                        request.operation,
+                    )
                 except (AdapterExecutionError, OSError, UnicodeError, ValueError) as exc:
                     outcome = AdapterExecutionOutcome.INVALID_OUTPUT
                     warnings.append(f"normalization failed: {type(exc).__name__}")
@@ -1991,7 +2365,7 @@ class AdapterExecutionBroker:
                 captures.append(capture)
                 if registered:
                     evidence_ids.append(registered.evidence_id)
-            finished_at = utc_now()
+            finished_at = started_at + timedelta(seconds=time.monotonic() - started_monotonic)
             result = AdapterExecutionResult(
                 execution_id=execution_id,
                 request_digest=request.digest(),
@@ -2029,7 +2403,10 @@ class AdapterExecutionBroker:
             manifest_path = temp_root / "execution-manifest.json"
             manifest_bytes = (
                 json.dumps(
-                    AdapterExecutionManifest.from_result(result).model_dump(mode="json"),
+                    AdapterExecutionManifest.from_result(
+                        result,
+                        operation_payload=operation_payload,
+                    ).model_dump(mode="json"),
                     indent=2,
                     sort_keys=True,
                 )
@@ -2185,6 +2562,11 @@ def _fixture_operation(operation_id: str) -> AdapterOperationPayload:
         return LlvmObjectInspectPayload(operation_id=operation_id)
     if operation_id == "jadx.android-static-map":
         return JadxAndroidStaticMapPayload(operation_id=operation_id)
+    if operation_id == "yara-x.file-scan":
+        return YaraXFileScanPayload(
+            operation_id=operation_id,
+            rule_source=_yara_x_conformance_rule(),
+        )
     raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
 
 
@@ -2199,6 +2581,8 @@ def _conformance_fixture(operation_id: str) -> ConformanceFixture:
         return GHIDRA_NATIVE_MAP_FIXTURE
     if operation_id == "jadx.android-static-map":
         return JADX_FIXTURE
+    if operation_id == "yara-x.file-scan":
+        return YARA_X_FIXTURE
     raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
 
 
@@ -2243,6 +2627,16 @@ def _ghidra_native_map_script_bytes() -> bytes:
     if hashlib.sha256(payload).hexdigest() != GHIDRA_NATIVE_MAP_SCRIPT_SHA256:
         raise AdapterExecutionError("bundled Ghidra native-code-map script digest mismatch")
     return payload
+
+
+def _yara_x_conformance_rule() -> str:
+    resource = importlib.resources.files("white_hat_agent").joinpath(
+        "builtin_adapter_fixtures/yara_x_marker.yar"
+    )
+    payload = resource.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != YARA_X_CONFORMANCE_RULE_SHA256:
+        raise AdapterExecutionError("packaged YARA-X conformance rule digest does not match")
+    return payload.decode("utf-8")
 
 
 def _effective_limits(
@@ -2343,6 +2737,135 @@ def _read_json(path: Path, max_bytes: int) -> JsonValue:
     if path.stat().st_size > max_bytes:
         raise AdapterExecutionError("adapter JSON output exceeds the byte limit")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_single_ndjson(path: Path, max_bytes: int) -> dict[str, JsonValue]:
+    if path.is_symlink() or not path.is_file():
+        raise AdapterExecutionError("adapter NDJSON output is not a regular file")
+    if path.stat().st_size > max_bytes:
+        raise AdapterExecutionError("adapter NDJSON output exceeds the byte limit")
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise AdapterExecutionError("adapter NDJSON output must contain exactly one record")
+    value = json.loads(lines[0])
+    if not isinstance(value, dict):
+        raise AdapterExecutionError("adapter NDJSON record is not an object")
+    return value
+
+
+def _yara_string(value: object, field: str, *, max_length: int, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not value and not allow_empty) or len(value) > max_length:
+        raise AdapterExecutionError(f"YARA-X result has an invalid {field}")
+    return value
+
+
+def _normalize_yara_rule(value: object) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or set(value) != {
+        "identifier",
+        "namespace",
+        "meta",
+        "tags",
+        "strings",
+    }:
+        raise AdapterExecutionError("YARA-X result has an unexpected rule schema")
+    identifier = _yara_string(value["identifier"], "rule identifier", max_length=256)
+    namespace = _yara_string(value["namespace"], "rule namespace", max_length=256)
+
+    raw_meta = value["meta"]
+    if not isinstance(raw_meta, list) or len(raw_meta) > 64:
+        raise AdapterExecutionError("YARA-X result has invalid rule metadata")
+    metadata: list[JsonValue] = []
+    meta_keys: set[str] = set()
+    for entry in raw_meta:
+        if not isinstance(entry, list) or len(entry) != 2:
+            raise AdapterExecutionError("YARA-X result has an invalid metadata entry")
+        key = _yara_string(entry[0], "metadata key", max_length=256)
+        meta_value = entry[1]
+        if isinstance(meta_value, str):
+            meta_value = _yara_string(
+                meta_value,
+                "metadata value",
+                max_length=4096,
+                allow_empty=True,
+            )
+        elif not isinstance(meta_value, (bool, int, float)) or (
+            isinstance(meta_value, float) and not math.isfinite(meta_value)
+        ):
+            raise AdapterExecutionError("YARA-X result has an invalid metadata value")
+        if key in meta_keys:
+            raise AdapterExecutionError("YARA-X result has duplicate metadata keys")
+        meta_keys.add(key)
+        metadata.append([key, meta_value])
+    metadata.sort(key=lambda entry: str(entry[0]))
+
+    raw_tags = value["tags"]
+    if not isinstance(raw_tags, list) or len(raw_tags) > 64:
+        raise AdapterExecutionError("YARA-X result has invalid rule tags")
+    tags = [_yara_string(tag, "tag", max_length=256) for tag in raw_tags]
+    if len(tags) != len(set(tags)):
+        raise AdapterExecutionError("YARA-X result has duplicate rule tags")
+    tags.sort()
+
+    raw_strings = value["strings"]
+    if not isinstance(raw_strings, list):
+        raise AdapterExecutionError("YARA-X result has invalid string matches")
+    strings: list[dict[str, JsonValue]] = []
+    string_identities: set[tuple[object, ...]] = set()
+    for item in raw_strings:
+        if not isinstance(item, dict):
+            raise AdapterExecutionError("YARA-X result has an invalid string match")
+        required = {"identifier", "offset", "match"}
+        allowed = required | {"xor_key", "plaintext"}
+        if not required.issubset(item) or not set(item).issubset(allowed):
+            raise AdapterExecutionError("YARA-X result has an unexpected string schema")
+        match_identifier = _yara_string(item["identifier"], "string identifier", max_length=256)
+        offset = item["offset"]
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise AdapterExecutionError("YARA-X result has an invalid string offset")
+        match_text = _yara_string(
+            item["match"],
+            "matched text",
+            max_length=512,
+            allow_empty=True,
+        )
+        normalized: dict[str, JsonValue] = {
+            "identifier": match_identifier,
+            "offset": offset,
+            "match": match_text,
+        }
+        xor_key = item.get("xor_key")
+        plaintext = item.get("plaintext")
+        if xor_key is not None:
+            if isinstance(xor_key, bool) or not isinstance(xor_key, int) or not 0 <= xor_key <= 255:
+                raise AdapterExecutionError("YARA-X result has an invalid XOR key")
+            normalized["xor_key"] = xor_key
+            normalized["plaintext"] = _yara_string(
+                plaintext,
+                "XOR plaintext",
+                max_length=512,
+                allow_empty=True,
+            )
+        elif "plaintext" in item:
+            raise AdapterExecutionError("YARA-X result has plaintext without an XOR key")
+        identity = (
+            normalized["identifier"],
+            normalized["offset"],
+            normalized["match"],
+            normalized.get("xor_key"),
+            normalized.get("plaintext"),
+        )
+        if identity in string_identities:
+            raise AdapterExecutionError("YARA-X result has duplicate string matches")
+        string_identities.add(identity)
+        strings.append(normalized)
+    strings.sort(key=lambda item: (int(item["offset"]), str(item["identifier"]), str(item["match"])))
+    return {
+        "identifier": identifier,
+        "namespace": namespace,
+        "meta": metadata,
+        "tags": tags,
+        "strings": strings,
+    }
 
 
 def _regular_output_tree(

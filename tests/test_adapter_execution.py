@@ -12,6 +12,7 @@ from white_hat_agent.adapter_execution import (
     DRIVER_VERSION,
     MINIMUM_EVIDENCE_IMPORT_BYTES,
     SANDBOX_PROFILE_SHA256,
+    YARA_X_CONFORMANCE_RULE_SHA256,
     AdapterExecutionBroker,
     AdapterExecutionError,
     AdapterExecutionOutcome,
@@ -25,13 +26,17 @@ from white_hat_agent.adapter_execution import (
     LlvmObjectInspectDriver,
     LlvmObjectInspectPayload,
     OfflineSandboxSupervisor,
+    SandboxInlineFile,
     SupervisedProcessResult,
     TrustedInvocation,
+    YaraXFileScanDriver,
+    YaraXFileScanPayload,
     _effective_limits,
     _fixture_bytes,
     _ghidra_native_map_fixture_bytes,
     _jadx_fixture_bytes,
     _tree_usage,
+    _yara_x_conformance_rule,
     conformance_report_is_current,
 )
 from white_hat_agent.adapter_registry import (
@@ -284,6 +289,45 @@ def test_fixture_and_request_secret_contract() -> None:
     )
     assert native_map_request.operation.operation_id == "ghidra.native-code-map"
 
+    yara_rule = _yara_x_conformance_rule()
+    assert hashlib.sha256(yara_rule.encode()).hexdigest() == YARA_X_CONFORMANCE_RULE_SHA256
+    yara_request = request.model_copy(
+        update={
+            "operation": YaraXFileScanPayload(
+                operation_id="yara-x.file-scan",
+                rule_source=yara_rule,
+            )
+        }
+    )
+    assert yara_request.operation.operation_id == "yara-x.file-scan"
+    assert json.loads(yara_request.model_dump_json())["operation"]["rule_source"] == yara_rule
+    with pytest.raises(ValueError, match="external files"):
+        YaraXFileScanPayload(
+            operation_id="yara-x.file-scan",
+            rule_source='include "other.yar"',
+        )
+    with pytest.raises(ValueError, match="external files"):
+        YaraXFileScanPayload(
+            operation_id="yara-x.file-scan",
+            rule_source='include/**/"/usr/share/other.yar"',
+        )
+    with pytest.raises(ValueError, match="external files"):
+        YaraXFileScanPayload(
+            operation_id="yara-x.file-scan",
+            rule_source='rule first { condition: true }\ninclude "other.yar"',
+        )
+    lexical_include_text = YaraXFileScanPayload(
+        operation_id="yara-x.file-scan",
+        rule_source=(
+            "/* include comments are inert */\n"
+            "rule fixture {\n"
+            '  strings: $text = "include" $regex = /include[{}]/\n'
+            "  condition: $text or $regex\n"
+            "}"
+        ),
+    )
+    assert '"include"' in lexical_include_text.rule_source
+
 
 def test_limit_overrides_can_only_reduce_contract() -> None:
     reduced = _effective_limits(_limits(), AdapterLimitOverrides(max_records=10, wall_seconds=5))
@@ -368,6 +412,175 @@ def test_llvm_normalization_uses_one_shared_record_budget(tmp_path) -> None:
     assert len(normalized.data["sections"]) == 2
     assert normalized.data["symbols"] == []
     assert normalized.data["needed_libraries"] == []
+
+
+def test_yara_x_normalization_preserves_rule_identity_matches_and_limits(tmp_path) -> None:
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stdout.write_text(
+        json.dumps(
+            {
+                "path": "/input/artifact",
+                "rules": [
+                    {
+                        "identifier": "wha_native_marker",
+                        "namespace": "default",
+                        "meta": [["purpose", "White Hat Agent typed YARA-X conformance"]],
+                        "tags": ["conformance"],
+                        "strings": [
+                            {
+                                "identifier": "$marker",
+                                "offset": 192,
+                                "match": "WHA_NATIVE_CODE_MAP_MARKER",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    operation = YaraXFileScanPayload(
+        operation_id="yara-x.file-scan",
+        rule_source=_yara_x_conformance_rule(),
+    )
+    driver = YaraXFileScanDriver()
+
+    normalized = driver.normalize(process, "a" * 64, _limits(), operation)
+
+    assert normalized.records_returned == 2
+    assert not normalized.truncated
+    assert normalized.data["rule_source_sha256"] == YARA_X_CONFORMANCE_RULE_SHA256
+    assert normalized.data["rules"][0]["strings"][0]["offset"] == 192
+    assert all(check.ok for check in driver.fixture_checks(normalized))
+
+    reduced = driver.normalize(
+        process,
+        "a" * 64,
+        _limits().model_copy(update={"max_records": 1}),
+        operation,
+    )
+    assert reduced.records_returned == 1
+    assert reduced.truncated
+    assert reduced.data["rules"][0]["strings"] == []
+    assert reduced.data["rules"][0]["strings_truncated"] is True
+
+
+def test_yara_x_normalization_rejects_schema_drift_and_duplicate_rules(tmp_path) -> None:
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    operation = YaraXFileScanPayload(
+        operation_id="yara-x.file-scan",
+        rule_source="rule fixture { condition: true }",
+    )
+    driver = YaraXFileScanDriver()
+    rule = {
+        "identifier": "fixture",
+        "namespace": "default",
+        "meta": [],
+        "tags": [],
+        "strings": [],
+    }
+
+    stdout.write_text(
+        json.dumps({"path": "/input/artifact", "rules": [], "unknown": True}) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AdapterExecutionError, match="target result"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+    stdout.write_text(
+        json.dumps({"path": "/input/artifact", "rules": [rule, rule]}) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AdapterExecutionError, match="duplicate rule identities"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+    stdout.write_text(
+        json.dumps({"path": "/input/artifact", "rules": []})
+        + "\n"
+        + json.dumps({"path": "/input/artifact", "rules": []})
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AdapterExecutionError, match="exactly one"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+
+def test_yara_x_invocation_is_fixed_and_rule_source_is_inline(tmp_path) -> None:
+    executable = tmp_path / "yr"
+    executable.write_bytes(b"fixture YARA-X executable")
+    status = AdapterStatus(
+        adapter_id="yara-x",
+        manifest_digest="1" * 64,
+        observed_at=utc_now(),
+        platform="linux-x86_64",
+        supported=True,
+        installed=True,
+        healthy=True,
+        source="system",
+        version="1.19.0",
+        entrypoints=[str(executable)],
+        observed_identity_sha256="2" * 64,
+    )
+    operation = YaraXFileScanPayload(
+        operation_id="yara-x.file-scan",
+        rule_source="rule fixture { condition: true }",
+    )
+    driver = YaraXFileScanDriver()
+    yara_limits = _limits().model_copy(update={"memory_mib": 2048})
+
+    invocation = driver.prepare(status, operation, yara_limits, {})
+
+    assert invocation.argv[-2:] == ("/input/rules.yar", "/input/artifact")
+    assert invocation.argv[0:2] == ("/opt/tool/yr", "scan")
+    assert "rule fixture" not in " ".join(invocation.argv)
+    assert invocation.inline_files == (SandboxInlineFile("/input/rules.yar", operation.rule_source.encode()),)
+    assert {mount.destination for mount in invocation.mounts} == {"/opt/tool/yr"}
+    with pytest.raises(AdapterExecutionError, match="at least 8"):
+        driver.prepare(
+            status,
+            operation,
+            yara_limits.model_copy(update={"max_processes": 4}),
+            {},
+        )
+    with pytest.raises(AdapterExecutionError, match="2048 MiB"):
+        driver.prepare(
+            status,
+            operation,
+            yara_limits.model_copy(update={"memory_mib": 1024}),
+            {},
+        )
+    with pytest.raises(AdapterExecutionError, match="different operation"):
+        driver.prepare(
+            status,
+            LlvmObjectInspectPayload(operation_id="llvm.object-inspect"),
+            yara_limits,
+            {},
+        )
 
 
 def test_jadx_normalization_preserves_code_graph_and_manifest(tmp_path) -> None:
@@ -774,6 +987,38 @@ def test_sandbox_exposes_tool_work_but_not_broker_captures(tmp_path) -> None:
     assert str(broker_root) not in command
 
 
+def test_sandbox_materializes_only_flat_read_only_inline_inputs(tmp_path) -> None:
+    executable = tmp_path / "bwrap"
+    executable.write_bytes(b"fixture")
+    executable.chmod(0o700)
+    supervisor = OfflineSandboxSupervisor(executable)
+    work = tmp_path / "broker"
+    work.mkdir()
+    invocation = TrustedInvocation(
+        argv=("/bin/true",),
+        mounts=(),
+        inline_files=(SandboxInlineFile("/input/rules.yar", b"rule x { condition: true }"),),
+    )
+
+    materialized = supervisor._materialize_inline_files(invocation, work, _limits())
+
+    assert materialized.inline_files == ()
+    assert len(materialized.mounts) == 1
+    assert materialized.mounts[0].destination == "/input/rules.yar"
+    assert materialized.mounts[0].source.read_bytes() == b"rule x { condition: true }"
+    assert materialized.mounts[0].source.stat().st_mode & 0o777 == 0o400
+
+    unsafe = invocation.__class__(
+        argv=("/bin/true",),
+        mounts=(),
+        inline_files=(SandboxInlineFile("/etc/rules.yar", b"fixture"),),
+    )
+    unsafe_work = tmp_path / "unsafe"
+    unsafe_work.mkdir()
+    with pytest.raises(AdapterExecutionError, match="unsafe destination"):
+        supervisor._materialize_inline_files(unsafe, unsafe_work, _limits())
+
+
 def test_explicit_version_probe_is_fixed_and_parsed_after_supervision(tmp_path) -> None:
     executable = tmp_path / "llvm-readobj"
     executable.write_bytes(b"fixture")
@@ -969,6 +1214,7 @@ def test_execution_requires_lease_and_persists_evidence_without_token(tmp_path, 
     result = broker.execute(request)
 
     assert result.outcome == AdapterExecutionOutcome.SUCCEEDED
+    assert result.finished_at >= result.started_at
     assert result.normalized and result.normalized.data["format"] == "elf64-x86-64"
     assert len(json.dumps(result.model_dump(mode="json"))) > evidence.max_import_bytes
     assert supervisor.calls == 1
@@ -994,6 +1240,7 @@ def test_execution_requires_lease_and_persists_evidence_without_token(tmp_path, 
         (evidence.artifacts_dir / manifest_record.storage_path).read_text(encoding="utf-8")
     )
     assert "normalized" not in manifest_payload
+    assert manifest_payload["operation_payload"] == {"operation_id": "llvm.object-inspect"}
     assert any(
         capture["name"] == "normalized" and capture["evidence_id"]
         for capture in manifest_payload["receipt"]["captures"]

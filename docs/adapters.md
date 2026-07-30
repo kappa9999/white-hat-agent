@@ -46,8 +46,9 @@ execution boundary and writes its identity-bound conformance report.
 
 `adapter conform` is the separate local execution gate. It never reads campaign evidence: inside the same offline
 supervisor it runs fixed version/dependency probes, then the reviewed driver against its bundled inert fixture (the
-784-byte summary ELF, 1,496-byte native-map ELF, or 904-byte DEX), and writes one identity-bound report under
-`.whitehat/adapters/.conformance/`. A tool or manifest change invalidates the report. `adapter resolve` reports a
+784-byte summary ELF, 1,496-byte native-map ELF, 211-byte standalone YARA-X rule, or 904-byte DEX), and writes one
+identity-bound report under `.whitehat/adapters/.conformance/`. A tool or manifest change invalidates the report.
+`adapter resolve` reports a
 present, identity-observable but unproven provider under `conformance_required`, not `ready_adapters`. An installed
 tool whose identity cannot be read is repaired through its reviewed provisioner when one exists; it is otherwise an
 explicit uncovered capability, never an impossible conformance action.
@@ -85,6 +86,7 @@ The first executable family is deliberately small:
 | `capa.file-analyze` | Bounded behavior-rule summaries and analysis identity | capa JSON with embedded reviewed rules |
 | `ghidra.binary-summary` | Program, memory-block, function, and external-symbol summary | bundled `WhaBinarySummary.java` only |
 | `ghidra.native-code-map` | Decompiled functions, exact callsites, defined strings, and anchored string xrefs | bundled `WhaNativeCodeMap.java` only |
+| `yara-x.file-scan` | Rule identities, metadata, tags, string offsets, and bounded matched bytes | fixed YARA-X NDJSON mode against one artifact |
 | `jadx.android-static-map` | Decompiled class JSON, method code, call graph, manifest text, and resource inventory | fixed JADX JSON and JSON call-graph modes |
 
 The Ghidra native-code-map driver accepts one `artifact/file` evidence object and emits one
@@ -94,6 +96,15 @@ cannot consume the complete result. Every decompiler failure, per-function code 
 callsite, and xref anchor remains explicit. The request has no script, symbol, address, option, path, environment, or
 project field.
 
+The YARA-X driver accepts one `artifact/file` evidence object plus at most 64 KiB of complete standalone rule source
+and emits one `evidence/signature-match`. The exact rule source is retained in the execution manifest and its digest is
+bound into the normalized result. External includes are rejected; callers cannot select paths, namespaces, module-data
+files, external variables, commands, or flags. The fixed one-file invocation emits NDJSON with rule metadata, tags,
+and at most 32 occurrences per pattern with 64 matched bytes per occurrence. Strict normalization rejects extra targets,
+records, fields, duplicate identities, malformed offsets, or inconsistent XOR output and reports every rule, string,
+record, and engine ceiling. The measured YARA-X runtime floor is 2 GiB of address space and eight process/thread slots;
+requests below either floor fail before execution.
+
 The JADX driver accepts one `artifact/mobile-build` evidence object and emits one `surface/static-map`. It fixes the
 configuration, mapping, deobfuscation, output, call-graph, thread, and logging modes; callers cannot add a plugin or
 CLI option. Class documents retain JADX's structured declarations, signatures, offsets, and decompiled code lines.
@@ -101,9 +112,10 @@ All referenced class paths must remain canonical beneath the result root, and un
 files, path escapes, or aggregate limit overruns invalidate the output.
 
 Execution requires one active fleet lease and one same-task local evidence ID. The request contains one required,
-provider-specific operation discriminator and optional resource reductions; the operation selects its only reviewed
-provider, so there is no duplicate provider field. It has no command, arguments, path, environment, script, plugin,
-mount, or output-directory field. The broker rechecks campaign state, lease token, task capabilities/execution class,
+provider-specific operation discriminator and optional resource reductions; YARA-X also accepts only its bounded
+standalone rule source. The operation selects its only reviewed provider, so there is no duplicate provider field. It
+has no command, arguments, path, environment, plugin, mount, or output-directory field. The broker rechecks campaign
+state, lease token, task capabilities/execution class,
 evidence campaign/task/target/type/digest/length, conformance identity, and current tool payload before process start.
 It renews the active lease for the bounded run, snapshots the verified input through a no-follow file descriptor, and
 rechecks the lease before evidence registration.
@@ -113,14 +125,15 @@ cleared sandbox environment, no network namespace, dropped capabilities, isolate
 home/tmp/var, no host `/etc`, read-only system/tool/input mounts, one tool work directory, and broker-private capture
 files outside that mount. Wall time, CPU, memory, monitored process count, open files, all work-directory entries,
 aggregate work bytes, output records, and input bytes are bounded by the operation contract; a request may only reduce
-those ceilings. The effective output ceiling is also capped by the evidence store.
+those ceilings subject to any measured provider runtime floor. The effective output ceiling is also capped by the
+evidence store.
 
 Every run returns normalized structured data to Python/CLI and registers bounded stdout, stderr, normalized JSON, and
 a final execution manifest in the content-addressed evidence store. MCP returns a compact receipt with evidence
 handles instead of embedding analyzer output. The manifest is also compact: it retains task/scope/intent, input,
-manifest, operation, tool, conformance, sandbox, capture, and truncation identities while referencing normalized
-evidence by ID and digest. It never duplicates analyzer data, persists or returns the lease token, completes the fleet
-task, or promotes a finding automatically.
+manifest, exact sanitized operation payload, tool, conformance, sandbox, capture, and truncation identities while
+referencing normalized evidence by ID and digest. It never duplicates analyzer data, persists or returns the lease
+token, completes the fleet task, or promotes a finding automatically.
 
 The current Bubblewrap profile is an offline least-authority execution layer, not a sealed malware detonation VM. It
 still read-mounts host `/usr`, `/bin`, and runtime libraries, and process-tree limits use polling plus POSIX per-process
