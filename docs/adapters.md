@@ -86,6 +86,7 @@ content-digested into the report, so dependency drift invalidates cached health 
 | capa | Machine-readable executable capability triage | Official release asset |
 | JADX | Android DEX/APK/AAB decompilation and resources | Official release asset |
 | MITRE ATT&CK | Enterprise, mobile, and ICS STIX behavior knowledge | Exact release assets |
+| MITRE CWE | Canonical weakness definitions, relationships, detection, mitigations, and examples | Versioned official XML catalog |
 | capa rules | Executable-capability rules with ATT&CK/MBC mappings | Exact Git commit |
 | OWASP WSTG | Web/API test objectives, procedures, evidence, and remediation methodology | Exact Git commit |
 
@@ -186,6 +187,9 @@ Knowledge sources are installed only when needed. Results retain the exact relea
 wha adapter install mitre-attack --yes
 wha adapter search mitre-attack T1059.001
 
+wha adapter ensure --kind knowledge --capability weakness.lookup --yes
+wha adapter search mitre-cwe CWE-79
+
 wha adapter install capa-rules --yes
 wha adapter search capa-rules "reverse shell"
 
@@ -215,6 +219,12 @@ retains the release identity, declared size, and SHA-256 checksum, accepts only 
 Git knowledge provisioning resolves a reviewed branch/ref through GitHub to one commit, fetches that commit with
 global/system Git configuration and hooks disabled, verifies `HEAD`, rejects symlinks and oversized trees, removes Git
 metadata, then activates the exact snapshot. No catalog entry can contain a shell command.
+
+MITRE CWE provisioning queries only the fixed public version endpoint and canonical XML ZIP. Planning streams the
+small catalog once to bind its exact size and SHA-256; application downloads it again and fails on drift. Extraction
+then requires one version-named XML file whose version, content date, and weakness/category/view counts exactly match
+the version response before atomic activation. The XML itself remains the bounded searchable source—no duplicate
+index or transformed corpus is generated.
 
 Managed state records the manifest digest, upstream URLs, tag/commit, asset digests, deterministic content-tree digest,
 version, entrypoints, and install time. Knowledge status, search, and read fail closed if current bytes no longer match

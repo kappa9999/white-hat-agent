@@ -474,6 +474,30 @@ adapters:
     updated_at: 2026-07-29T21:00:00Z
 
   - schema_version: "1.0"
+    adapter_id: mitre-cwe
+    adapter_version: "1.0.0"
+    title: MITRE CWE Catalog
+    description: Canonical software and hardware weakness definitions, relationships, consequences, detection methods, mitigations, examples, and attack-pattern mappings.
+    kind: knowledge
+    provider: MITRE CWE
+    provider_url: https://cwe.mitre.org/
+    license:
+      name: MITRE CWE Terms of Use
+      url: https://cwe.mitre.org/about/termsofuse.html
+      attribution: © 2026 The MITRE Corporation; reproduced with permission
+    capabilities: [weakness.lookup]
+    modes: [offline]
+    max_execution_class: analysis
+    platforms: [any]
+    priority: 5
+    provisioner:
+      kind: mitre-cwe
+      max_download_bytes: 8388608
+      max_install_bytes: 67108864
+    search_globs: ['cwec_v*.xml']
+    updated_at: 2026-07-30T12:45:00Z
+
+  - schema_version: "1.0"
     adapter_id: capa-rules
     adapter_version: "1.0.0"
     title: capa executable-capability rules

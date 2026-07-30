@@ -16,10 +16,12 @@ from white_hat_agent import adapter_provisioning
 from white_hat_agent.adapter_provisioning import (
     AdapterProvisioner,
     AdapterProvisionPlan,
+    CweCatalogIdentity,
     ProvisionAction,
     ResolvedArtifact,
     _adoptium_api_url,
     _materialize_assets,
+    _validate_cwe_snapshot,
 )
 from white_hat_agent.adapter_registry import (
     AdapterCatalogManifest,
@@ -36,6 +38,7 @@ from white_hat_agent.adapter_registry import (
     AdoptiumProvisioner,
     GitHubReleaseProvisioner,
     InstalledAdapterRecord,
+    MitreCweProvisioner,
     OperationResourceLimits,
     ProbeDefinition,
     content_tree_digest,
@@ -257,6 +260,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
             "network.capture-inspect": ExecutionClass.ANALYSIS,
             "runtime.java": ExecutionClass.ANALYSIS,
             "trace.capture": ExecutionClass.READ_ONLY,
+            "weakness.lookup": ExecutionClass.ANALYSIS,
         },
     )
 
@@ -265,11 +269,12 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     knowledge = registry.search("", kind=AdapterKind.KNOWLEDGE)
 
     assert report.valid
-    assert report.adapter_count == 11
+    assert report.adapter_count == 12
     assert reverse[0].adapter.adapter_id == "ghidra"
     assert {item.adapter.adapter_id for item in knowledge} == {
         "capa-rules",
         "mitre-attack",
+        "mitre-cwe",
         "owasp-wstg",
     }
     jadx = registry.get("jadx")
@@ -944,6 +949,166 @@ def test_adoptium_platform_matrix_is_bounded(platform, coordinate, entrypoint) -
 
     assert coordinate in url
     assert entrypoint in definition.entrypoints[platform.split("-", 1)[0]]
+
+
+def test_mitre_cwe_plan_binds_official_version_counts_and_catalog(tmp_path, monkeypatch) -> None:
+    manifest = AdapterManifest(
+        adapter_id="fixture-cwe",
+        title="Fixture CWE",
+        description="Fixture canonical weakness catalog",
+        kind=AdapterKind.KNOWLEDGE,
+        provider="MITRE CWE",
+        provider_url="https://cwe.mitre.org/",
+        license=_license(),
+        capabilities=["weakness.lookup"],
+        platforms=["any"],
+        provisioner=MitreCweProvisioner(
+            max_download_bytes=8_388_608,
+            max_install_bytes=67_108_864,
+        ),
+        search_globs=["cwec_v*.xml"],
+        updated_at=utc_now(),
+    )
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_get_cwe_version_json",
+        lambda _url: {
+            "ContentVersion": "4.20",
+            "ContentDate": "2026-04-30",
+            "TotalWeaknesses": 969,
+            "TotalCategories": 422,
+            "TotalViews": 59,
+        },
+    )
+    artifact = ResolvedArtifact(
+        name="cwec_latest.xml.zip",
+        url="https://cwe.mitre.org/data/xml/cwec_latest.xml.zip",
+        size=2_021_351,
+        sha256="a" * 64,
+    )
+    monkeypatch.setattr(adapter_provisioning, "_resolve_cwe_artifact", lambda _limit: artifact)
+
+    plan = AdapterProvisioner(manager).plan(manifest.adapter_id)
+
+    assert plan.method == "mitre-cwe"
+    assert plan.target_version == "4.20"
+    assert plan.revision == "cwe-4.20@2026-04-30"
+    assert plan.artifacts == [artifact]
+    assert plan.cwe_identity == CweCatalogIdentity(
+        content_date="2026-04-30",
+        total_weaknesses=969,
+        total_categories=422,
+        total_views=59,
+    )
+    forged = plan.model_copy(update={"revision": "cwe-4.21@2026-04-30"})
+    with pytest.raises(AdapterRegistryError, match="catalog identity"):
+        AdapterProvisioner(manager).provision(forged)
+
+
+def test_mitre_cwe_provision_validates_catalog_and_supports_revision_bound_search(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    manifest = AdapterManifest(
+        adapter_id="fixture-cwe",
+        title="Fixture CWE",
+        description="Fixture canonical weakness catalog",
+        kind=AdapterKind.KNOWLEDGE,
+        provider="MITRE CWE",
+        provider_url="https://cwe.mitre.org/",
+        license=_license(),
+        capabilities=["weakness.lookup"],
+        platforms=["any"],
+        provisioner=MitreCweProvisioner(
+            max_download_bytes=1_000_000,
+            max_install_bytes=2_000_000,
+        ),
+        search_globs=["cwec_v*.xml"],
+        updated_at=utc_now(),
+    )
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+    archive = tmp_path / "cwec_latest.xml.zip"
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Weakness_Catalog xmlns="http://cwe.mitre.org/cwe-7" Name="CWE" Version="4.20" Date="2026-04-30">
+  <Weaknesses>
+    <Weakness ID="79" Name="Cross-site Scripting">
+      <Description>Neutralization failure</Description>
+    </Weakness>
+  </Weaknesses>
+  <Categories><Category ID="1" Name="Fixture"/></Categories>
+  <Views><View ID="1000" Name="Fixture"/></Views>
+</Weakness_Catalog>
+"""
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("cwec_v4.20.xml", xml)
+    artifact = ResolvedArtifact(
+        name=archive.name,
+        url="https://cwe.mitre.org/data/xml/cwec_latest.xml.zip",
+        size=archive.stat().st_size,
+        sha256="b" * 64,
+    )
+    plan = AdapterProvisionPlan(
+        adapter_id=manifest.adapter_id,
+        manifest_digest=manifest.digest(),
+        platform=current_platform(),
+        method="mitre-cwe",
+        action=ProvisionAction.INSTALL,
+        target_version="4.20",
+        revision="cwe-4.20@2026-04-30",
+        source_urls=[
+            "https://cwe-api.mitre.org/api/v1/cwe/version",
+            artifact.url,
+        ],
+        artifacts=[artifact],
+        max_download_bytes=1_000_000,
+        max_install_bytes=2_000_000,
+        cwe_identity=CweCatalogIdentity(
+            content_date="2026-04-30",
+            total_weaknesses=1,
+            total_categories=1,
+            total_views=1,
+        ),
+        created_at=utc_now(),
+    )
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_download_cwe_artifact",
+        lambda _artifact, destination, max_bytes: shutil.copyfile(archive, destination),
+    )
+
+    result = AdapterProvisioner(manager).provision(plan)
+    hits = manager.search_knowledge(manifest.adapter_id, "CWE-79")
+
+    assert result.changed
+    assert result.installed is not None
+    assert result.installed.revision == "cwe-4.20@2026-04-30"
+    assert len(hits) == 1
+    assert hits[0].revision == result.installed.revision
+    assert hits[0].relative_path == "cwec_v4.20.xml"
+    assert 'Weakness ID="79"' in hits[0].snippet
+
+
+def test_mitre_cwe_snapshot_rejects_version_endpoint_count_mismatch(tmp_path) -> None:
+    content = tmp_path / "content"
+    content.mkdir()
+    (content / "cwec_v4.20.xml").write_text(
+        '<Weakness_Catalog xmlns="http://cwe.mitre.org/cwe-7" Name="CWE" '
+        'Version="4.20" Date="2026-04-30"><Weaknesses/></Weakness_Catalog>',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AdapterRegistryError, match="counts"):
+        _validate_cwe_snapshot(
+            content,
+            version="4.20",
+            identity=CweCatalogIdentity(
+                content_date="2026-04-30",
+                total_weaknesses=1,
+                total_categories=1,
+                total_views=1,
+            ),
+        )
 
 
 def test_managed_requirement_is_preferred_when_host_dependency_is_missing(tmp_path, monkeypatch) -> None:

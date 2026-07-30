@@ -3,6 +3,23 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.15.0] - 2026-07-30
+
+### Added
+
+- the provider-neutral `weakness.lookup` capability and canonical MITRE CWE knowledge adapter covering software and
+  hardware weakness definitions, relationships, consequences, detection methods, mitigations, examples, and attack-
+  pattern mappings; and
+- autonomous cross-platform CWE installation through the existing `adapter ensure` CLI/MCP path, with direct bounded
+  search and excerpt reads over the exact managed XML revision.
+
+### Security
+
+- CWE planning is restricted to MITRE's fixed version and catalog endpoints, streams the catalog to bind exact size
+  and SHA-256, and fails if the apply-time bytes drift; and
+- extraction requires one version-named XML file whose version, content date, and all 969 weakness, 422 category, and
+  59 view records match the authoritative version response before content-tree hashing and atomic activation.
+
 ## [0.14.0] - 2026-07-30
 
 ### Added

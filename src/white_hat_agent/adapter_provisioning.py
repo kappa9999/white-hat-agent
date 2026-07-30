@@ -12,12 +12,14 @@ import tarfile
 import tempfile
 import zipfile
 from collections.abc import Mapping
+from datetime import date
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Literal, Self
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from xml.etree import ElementTree
 
 from pydantic import AwareDatetime, Field, field_validator, model_validator
 
@@ -29,6 +31,7 @@ from .adapter_registry import (
     GitCheckoutProvisioner,
     GitHubReleaseProvisioner,
     InstalledAdapterRecord,
+    MitreCweProvisioner,
     content_tree_digest,
     current_platform,
     platform_values,
@@ -40,6 +43,10 @@ from .models import Sha256, StrictModel, stable_digest, utc_now
 _USER_AGENT = "white-hat-agent-adapter-provisioner/1 (+https://github.com/kappa9999/white-hat-agent)"
 _MAX_RELEASE_METADATA_BYTES = 4_194_304
 _MAX_ARCHIVE_ENTRIES = 100_000
+_CWE_VERSION_URL = "https://cwe-api.mitre.org/api/v1/cwe/version"
+_CWE_CATALOG_URL = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip"
+_CWE_CATALOG_NAME = "cwec_latest.xml.zip"
+_CWE_XML_NAMESPACE = "http://cwe.mitre.org/cwe-7"
 
 
 class ProvisionAction(StrEnum):
@@ -62,12 +69,19 @@ class ResolvedArtifact(StrictModel):
         return value
 
 
+class CweCatalogIdentity(StrictModel):
+    content_date: date
+    total_weaknesses: int = Field(ge=1, le=100_000)
+    total_categories: int = Field(ge=1, le=100_000)
+    total_views: int = Field(ge=1, le=100_000)
+
+
 class AdapterProvisionPlan(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     adapter_id: Slug
     manifest_digest: Sha256
     platform: str
-    method: Literal["github-release", "adoptium-api", "git-checkout"]
+    method: Literal["github-release", "adoptium-api", "git-checkout", "mitre-cwe"]
     action: ProvisionAction
     current_version: str | None = None
     target_version: str = Field(min_length=1)
@@ -78,15 +92,18 @@ class AdapterProvisionPlan(StrictModel):
     strip_single_directory: bool = False
     max_download_bytes: int = Field(default=1, ge=1, le=2_147_483_648)
     max_install_bytes: int = Field(default=1, ge=1, le=8_589_934_592)
+    cwe_identity: CweCatalogIdentity | None = None
     created_at: AwareDatetime
     blockers: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def valid_plan(self) -> Self:
-        if self.method in {"github-release", "adoptium-api"} and not self.artifacts:
+        if self.method in {"github-release", "adoptium-api", "mitre-cwe"} and not self.artifacts:
             raise ValueError("release plans require resolved artifacts")
         if self.method == "git-checkout" and self.artifacts:
             raise ValueError("git checkout plans do not accept release artifacts")
+        if (self.method == "mitre-cwe") != (self.cwe_identity is not None):
+            raise ValueError("only MITRE CWE plans require a CWE catalog identity")
         return self
 
     def digest(self) -> str:
@@ -132,6 +149,8 @@ class AdapterProvisioner:
             )
         if isinstance(definition, GitCheckoutProvisioner):
             return self._plan_git(manifest, definition, platform, status.revision)
+        if isinstance(definition, MitreCweProvisioner):
+            return self._plan_cwe(manifest, definition, platform, status.version)
         raise AssertionError(f"unsupported provisioner: {type(definition).__name__}")
 
     def provision(self, plan: AdapterProvisionPlan) -> AdapterProvisionResult:
@@ -148,8 +167,8 @@ class AdapterProvisioner:
                 changed=False,
                 installed=record,
             )
-        if plan.method in {"github-release", "adoptium-api"}:
-            record = self._provision_github(plan, manifest)
+        if plan.method in {"github-release", "adoptium-api", "mitre-cwe"}:
+            record = self._provision_archive(plan, manifest)
         else:
             record = self._provision_git(plan, manifest)
         return AdapterProvisionResult(
@@ -303,6 +322,47 @@ class AdapterProvisioner:
             created_at=utc_now(),
         )
 
+    def _plan_cwe(
+        self,
+        manifest: AdapterManifest,
+        definition: MitreCweProvisioner,
+        platform: str,
+        current_version: str | None,
+    ) -> AdapterProvisionPlan:
+        release = _get_cwe_version_json(_CWE_VERSION_URL)
+        target_version = _required_cwe_version(release.get("ContentVersion"))
+        identity = CweCatalogIdentity(
+            content_date=_required_cwe_date(release.get("ContentDate")),
+            total_weaknesses=_required_cwe_count(release.get("TotalWeaknesses"), "weaknesses"),
+            total_categories=_required_cwe_count(release.get("TotalCategories"), "categories"),
+            total_views=_required_cwe_count(release.get("TotalViews"), "views"),
+        )
+        artifact = _resolve_cwe_artifact(definition.max_download_bytes)
+        action = ProvisionAction.INSTALL
+        if current_version:
+            action = (
+                ProvisionAction.NONE
+                if version_key(current_version) >= version_key(target_version)
+                else ProvisionAction.UPDATE
+            )
+        return AdapterProvisionPlan(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            platform=platform,
+            method="mitre-cwe",
+            action=action,
+            current_version=current_version,
+            target_version=target_version,
+            revision=f"cwe-{target_version}@{identity.content_date.isoformat()}",
+            source_urls=[_CWE_VERSION_URL, _CWE_CATALOG_URL],
+            artifacts=[artifact],
+            strip_single_directory=False,
+            max_download_bytes=definition.max_download_bytes,
+            max_install_bytes=definition.max_install_bytes,
+            cwe_identity=identity,
+            created_at=utc_now(),
+        )
+
     def _validate_plan(self, plan: AdapterProvisionPlan, manifest: AdapterManifest) -> None:
         if plan.manifest_digest != manifest.digest():
             raise AdapterRegistryError("provision plan does not match the current adapter manifest")
@@ -407,6 +467,25 @@ class AdapterProvisioner:
                 or plan.max_install_bytes != definition.max_checkout_bytes
             ):
                 raise AdapterRegistryError("provision plan checkout bounds do not match the manifest")
+        elif isinstance(definition, MitreCweProvisioner):
+            if plan.cwe_identity is None or len(plan.artifacts) != 1:
+                raise AdapterRegistryError("MITRE CWE plans require one catalog and its identity")
+            expected_revision = f"cwe-{plan.target_version}@{plan.cwe_identity.content_date.isoformat()}"
+            if plan.revision != expected_revision:
+                raise AdapterRegistryError("MITRE CWE plan version does not match its catalog identity")
+            artifact = plan.artifacts[0]
+            if artifact.name != _CWE_CATALOG_NAME or artifact.url != _CWE_CATALOG_URL:
+                raise AdapterRegistryError("MITRE CWE plan does not reference the canonical catalog")
+            if (
+                artifact.size > definition.max_download_bytes
+                or plan.max_download_bytes != definition.max_download_bytes
+                or plan.max_install_bytes != definition.max_install_bytes
+            ):
+                raise AdapterRegistryError("MITRE CWE plan exceeds the manifest bounds")
+            if plan.entrypoints or plan.strip_single_directory:
+                raise AdapterRegistryError("MITRE CWE plan has an invalid extraction layout")
+            if plan.source_urls != [_CWE_VERSION_URL, _CWE_CATALOG_URL]:
+                raise AdapterRegistryError("MITRE CWE plan sources do not match the canonical catalog")
         expected_current = current.revision if plan.method == "git-checkout" else current.version
         serialized_current = (
             expected_current[:12] if plan.method == "git-checkout" and expected_current else expected_current
@@ -431,7 +510,7 @@ class AdapterProvisioner:
         if plan.blockers != expected_blockers:
             raise AdapterRegistryError("provision plan blockers are stale for the current host")
 
-    def _provision_github(
+    def _provision_archive(
         self,
         plan: AdapterProvisionPlan,
         manifest: AdapterManifest,
@@ -445,7 +524,14 @@ class AdapterProvisioner:
             downloaded: list[Path] = []
             for artifact in plan.artifacts:
                 destination = downloads / artifact.name
-                _download_artifact(artifact, destination, max_bytes=plan.max_download_bytes)
+                if plan.method == "mitre-cwe":
+                    _download_cwe_artifact(
+                        artifact,
+                        destination,
+                        max_bytes=plan.max_download_bytes,
+                    )
+                else:
+                    _download_artifact(artifact, destination, max_bytes=plan.max_download_bytes)
                 downloaded.append(destination)
             _materialize_assets(
                 downloaded,
@@ -453,6 +539,14 @@ class AdapterProvisioner:
                 strip_single_directory=plan.strip_single_directory,
                 max_install_bytes=plan.max_install_bytes,
             )
+            if plan.method == "mitre-cwe":
+                if plan.cwe_identity is None:
+                    raise AdapterRegistryError("MITRE CWE plan is missing its catalog identity")
+                _validate_cwe_snapshot(
+                    content,
+                    version=plan.target_version,
+                    identity=plan.cwe_identity,
+                )
             for relative in plan.entrypoints:
                 entrypoint = content / relative
                 if not entrypoint.is_file() or entrypoint.is_symlink():
@@ -637,6 +731,177 @@ def _get_adoptium_json(url: str) -> list[dict[str, object]]:
     ):
         raise AdapterRegistryError("Adoptium API response must be a bounded object list")
     return payload
+
+
+def _get_cwe_version_json(url: str) -> dict[str, object]:
+    _validate_cwe_url(url, expected=_CWE_VERSION_URL)
+    request = Request(
+        url,
+        headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+        method="GET",
+    )
+    try:
+        with build_opener(_CweRedirectHandler()).open(request, timeout=30) as response:
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > _MAX_RELEASE_METADATA_BYTES:
+                raise AdapterRegistryError("MITRE CWE version response exceeds metadata byte limit")
+            body = response.read(_MAX_RELEASE_METADATA_BYTES + 1)
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        raise AdapterRegistryError(f"MITRE CWE version request failed: {type(exc).__name__}") from exc
+    if len(body) > _MAX_RELEASE_METADATA_BYTES:
+        raise AdapterRegistryError("MITRE CWE version response exceeds metadata byte limit")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AdapterRegistryError("MITRE CWE version endpoint returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise AdapterRegistryError("MITRE CWE version response must be an object")
+    return payload
+
+
+def _resolve_cwe_artifact(max_bytes: int) -> ResolvedArtifact:
+    size, digest = _stream_cwe_catalog(max_bytes=max_bytes)
+    return ResolvedArtifact(
+        name=_CWE_CATALOG_NAME,
+        url=_CWE_CATALOG_URL,
+        size=size,
+        sha256=digest,
+    )
+
+
+def _download_cwe_artifact(
+    artifact: ResolvedArtifact,
+    destination: Path,
+    *,
+    max_bytes: int,
+) -> None:
+    if artifact.name != _CWE_CATALOG_NAME or artifact.url != _CWE_CATALOG_URL:
+        raise AdapterRegistryError("MITRE CWE artifact is not the canonical catalog")
+    try:
+        size, digest = _stream_cwe_catalog(max_bytes=max_bytes, destination=destination)
+    except BaseException:
+        destination.unlink(missing_ok=True)
+        raise
+    if size != artifact.size:
+        destination.unlink(missing_ok=True)
+        raise AdapterRegistryError("MITRE CWE catalog size changed after planning")
+    if digest != artifact.sha256:
+        destination.unlink(missing_ok=True)
+        raise AdapterRegistryError("MITRE CWE catalog digest changed after planning")
+
+
+def _stream_cwe_catalog(
+    *,
+    max_bytes: int,
+    destination: Path | None = None,
+) -> tuple[int, str]:
+    _validate_cwe_url(_CWE_CATALOG_URL, expected=_CWE_CATALOG_URL)
+    request = Request(
+        _CWE_CATALOG_URL,
+        headers={"Accept": "application/zip", "User-Agent": _USER_AGENT},
+        method="GET",
+    )
+    digest = hashlib.sha256()
+    received = 0
+    output = None
+    try:
+        if destination is not None:
+            output = destination.open("xb")
+        with build_opener(_CweRedirectHandler()).open(request, timeout=60) as response:
+            content_length = response.headers.get("Content-Length")
+            if content_length:
+                declared = int(content_length)
+                if declared < 1 or declared > max_bytes:
+                    raise AdapterRegistryError("MITRE CWE catalog exceeds its download byte limit")
+            while chunk := response.read(1_048_576):
+                received += len(chunk)
+                if received > max_bytes:
+                    raise AdapterRegistryError("MITRE CWE catalog exceeds its download byte limit")
+                digest.update(chunk)
+                if output is not None:
+                    output.write(chunk)
+        if received < 1:
+            raise AdapterRegistryError("MITRE CWE catalog download was empty")
+        if output is not None:
+            output.flush()
+            os.fsync(output.fileno())
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        raise AdapterRegistryError(f"MITRE CWE catalog request failed: {type(exc).__name__}") from exc
+    finally:
+        if output is not None:
+            output.close()
+    return received, digest.hexdigest()
+
+
+def _validate_cwe_snapshot(
+    content: Path,
+    *,
+    version: str,
+    identity: CweCatalogIdentity,
+) -> None:
+    expected = content / f"cwec_v{version}.xml"
+    files = [path for path in content.rglob("*") if path.is_file()]
+    if files != [expected] or expected.is_symlink():
+        raise AdapterRegistryError("MITRE CWE archive must contain exactly its versioned XML catalog")
+    namespace = f"{{{_CWE_XML_NAMESPACE}}}"
+    expected_tags = {
+        f"{namespace}Weakness": "Weakness",
+        f"{namespace}Category": "Category",
+        f"{namespace}View": "View",
+    }
+    counts = {name: 0 for name in expected_tags.values()}
+    try:
+        events = ElementTree.iterparse(expected, events=("start", "end"))
+        _, root = next(events)
+        root_tag = root.tag
+        root_attributes = dict(root.attrib)
+        for event, element in events:
+            if event == "start":
+                record_type = expected_tags.get(element.tag)
+                if record_type is not None:
+                    counts[record_type] += 1
+            else:
+                element.clear()
+    except (ElementTree.ParseError, OSError, StopIteration) as exc:
+        raise AdapterRegistryError("MITRE CWE catalog XML is invalid") from exc
+    if root_tag != f"{namespace}Weakness_Catalog" or root_attributes.get("Name") != "CWE":
+        raise AdapterRegistryError("MITRE CWE catalog has an unexpected XML identity")
+    if (
+        root_attributes.get("Version") != version
+        or root_attributes.get("Date") != identity.content_date.isoformat()
+    ):
+        raise AdapterRegistryError("MITRE CWE catalog version does not match its plan")
+    expected_counts = {
+        "Weakness": identity.total_weaknesses,
+        "Category": identity.total_categories,
+        "View": identity.total_views,
+    }
+    if counts != expected_counts:
+        raise AdapterRegistryError(
+            "MITRE CWE catalog counts do not match its version endpoint: "
+            f"observed={counts}; expected={expected_counts}"
+        )
+
+
+def _required_cwe_version(value: object) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", value) is None:
+        raise AdapterRegistryError("MITRE CWE version endpoint returned an invalid content version")
+    return value
+
+
+def _required_cwe_date(value: object) -> date:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None:
+        raise AdapterRegistryError("MITRE CWE version endpoint returned an invalid content date")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise AdapterRegistryError("MITRE CWE version endpoint returned an invalid content date") from exc
+
+
+def _required_cwe_count(value: object, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 100_000:
+        raise AdapterRegistryError(f"MITRE CWE version endpoint returned an invalid {label} count")
+    return value
 
 
 def _asset_name_matches(asset: object, pattern: str) -> bool:
@@ -1005,6 +1270,19 @@ def _validate_adoptium_api_url(url: str) -> None:
         raise AdapterRegistryError("URL is outside the bounded Adoptium API surface")
 
 
+def _validate_cwe_url(url: str, *, expected: str) -> None:
+    parsed = urlsplit(url)
+    if (
+        url != expected
+        or parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise AdapterRegistryError("URL is outside the bounded MITRE CWE surface")
+
+
 def _validate_release_asset_url(url: str, repository: str | None) -> None:
     parsed = urlsplit(url)
     if (
@@ -1031,6 +1309,11 @@ class _GitHubApiRedirectHandler(HTTPRedirectHandler):
 class _AdoptiumApiRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise AdapterRegistryError("Adoptium API redirects require adapter manifest review")
+
+
+class _CweRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise AdapterRegistryError("MITRE CWE redirects require adapter manifest review")
 
 
 class _ReleaseAssetRedirectHandler(HTTPRedirectHandler):

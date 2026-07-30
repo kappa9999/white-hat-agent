@@ -134,7 +134,8 @@ and planning never install anything.
 
 Provisioning has a separate plan/apply boundary. A GitHub release plan resolves one official repository, exact release
 tag, asset size, and GitHub-published SHA-256; an Adoptium plan resolves one platform-specific JDK package and its
-declared checksum; a Git plan resolves one reviewed repository/ref to an exact commit.
+declared checksum; a Git plan resolves one reviewed repository/ref to an exact commit; and the MITRE CWE plan binds
+the canonical catalog version, content date, record counts, size, and SHA-256.
 Application revalidates manifest, host, release/commit identity, sources, digests, and bounds; rejects archive
 traversal, links, special files, and unbounded downloads/checkouts; and activates only a complete workspace-local
 installation. The explicit `adapter ensure` operation composes resolution, dependency closure, plan/apply, and only

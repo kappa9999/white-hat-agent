@@ -121,6 +121,8 @@ wha adapter resolve --capability binary.runtime-inspect
 # Add and query exact, revision-bound machine-readable knowledge on demand.
 wha adapter install mitre-attack --yes
 wha adapter search mitre-attack T1059.001
+wha adapter ensure --kind knowledge --capability weakness.lookup --yes
+wha adapter search mitre-cwe CWE-79
 wha adapter ensure --kind knowledge --capability experiment.design --yes
 wha adapter search owasp-wstg "Test Objectives"
 ```
@@ -136,8 +138,8 @@ order, protocol chains, transport streams, selected DNS/HTTP/TLS/QUIC/WebSocket 
 without exposing live capture or caller-defined decoder settings. All typed drivers run without network access over
 immutable fleet-task evidence. Status and resolution never execute discovered binaries; fixed command-backed version
 checks run only during explicit sandboxed conformance, and a version result alone grants no executable capability.
-Knowledge adapters cover MITRE ATT&CK STIX, capa rules, and the revision-bound OWASP Web Security Testing Guide; CVE
-List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
+Knowledge adapters cover MITRE ATT&CK STIX, the canonical MITRE CWE catalog, capa rules, and the revision-bound OWASP
+Web Security Testing Guide; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
 remains in the intelligence layer. See
 [tools and knowledge adapters](docs/adapters.md).
 

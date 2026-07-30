@@ -297,6 +297,35 @@
       "title": "GitHubReleaseProvisioner",
       "type": "object"
     },
+    "MitreCweProvisioner": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mitre-cwe",
+          "default": "mitre-cwe",
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_download_bytes": {
+          "maximum": 2147483648,
+          "minimum": 1,
+          "title": "Max Download Bytes",
+          "type": "integer"
+        },
+        "max_install_bytes": {
+          "maximum": 8589934592,
+          "minimum": 1,
+          "title": "Max Install Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_download_bytes",
+        "max_install_bytes"
+      ],
+      "title": "MitreCweProvisioner",
+      "type": "object"
+    },
     "OperationResourceLimits": {
       "additionalProperties": false,
       "properties": {
@@ -580,7 +609,8 @@
             "mapping": {
               "adoptium-api": "#/$defs/AdoptiumProvisioner",
               "git-checkout": "#/$defs/GitCheckoutProvisioner",
-              "github-release": "#/$defs/GitHubReleaseProvisioner"
+              "github-release": "#/$defs/GitHubReleaseProvisioner",
+              "mitre-cwe": "#/$defs/MitreCweProvisioner"
             },
             "propertyName": "kind"
           },
@@ -593,6 +623,9 @@
             },
             {
               "$ref": "#/$defs/GitCheckoutProvisioner"
+            },
+            {
+              "$ref": "#/$defs/MitreCweProvisioner"
             }
           ]
         },

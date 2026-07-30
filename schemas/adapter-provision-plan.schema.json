@@ -1,5 +1,41 @@
 {
   "$defs": {
+    "CweCatalogIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "content_date": {
+          "format": "date",
+          "title": "Content Date",
+          "type": "string"
+        },
+        "total_categories": {
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Total Categories",
+          "type": "integer"
+        },
+        "total_views": {
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Total Views",
+          "type": "integer"
+        },
+        "total_weaknesses": {
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Total Weaknesses",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "content_date",
+        "total_weaknesses",
+        "total_categories",
+        "total_views"
+      ],
+      "title": "CweCatalogIdentity",
+      "type": "object"
+    },
     "ProvisionAction": {
       "enum": [
         "none",
@@ -84,6 +120,17 @@
       "default": null,
       "title": "Current Version"
     },
+    "cwe_identity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CweCatalogIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "entrypoints": {
       "items": {
         "type": "string"
@@ -114,7 +161,8 @@
       "enum": [
         "github-release",
         "adoptium-api",
-        "git-checkout"
+        "git-checkout",
+        "mitre-cwe"
       ],
       "title": "Method",
       "type": "string"
