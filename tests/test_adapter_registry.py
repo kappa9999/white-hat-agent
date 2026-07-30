@@ -206,6 +206,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
             "hypothesis.generate": ExecutionClass.ANALYSIS,
             "mobile.runtime-observe": ExecutionClass.READ_ONLY,
             "mobile.static-inspect": ExecutionClass.ANALYSIS,
+            "network.capture-inspect": ExecutionClass.ANALYSIS,
             "trace.capture": ExecutionClass.READ_ONLY,
         },
     )
@@ -236,6 +237,11 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     assert yara_x.capabilities == ["artifact.signature-match"]
     assert [operation.operation_id for operation in yara_x.operations] == ["yara-x.file-scan"]
     assert yara_x.operations[0].output_types == ["evidence/signature-match"]
+    tshark = registry.get("tshark")
+    assert tshark.capabilities == ["network.capture-inspect"]
+    assert [operation.operation_id for operation in tshark.operations] == ["tshark.packet-capture-map"]
+    assert tshark.operations[0].input_types == ["artifact/packet-capture"]
+    assert tshark.operations[0].output_types == ["surface/network-protocol-map"]
 
 
 def test_status_defers_path_execution_and_uses_cached_conformance(tmp_path, monkeypatch) -> None:

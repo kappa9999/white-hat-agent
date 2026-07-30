@@ -73,6 +73,10 @@ class JadxAndroidStaticMapPayload(StrictModel):
     operation_id: Literal["jadx.android-static-map"]
 
 
+class TsharkPacketCaptureMapPayload(StrictModel):
+    operation_id: Literal["tshark.packet-capture-map"]
+
+
 def _contains_yara_include_directive(source: str) -> bool:
     index = 0
     brace_depth = 0
@@ -170,6 +174,7 @@ AdapterOperationPayload = Annotated[
     | CapaFileAnalyzePayload
     | LlvmObjectInspectPayload
     | JadxAndroidStaticMapPayload
+    | TsharkPacketCaptureMapPayload
     | YaraXFileScanPayload,
     Field(discriminator="operation_id"),
 ]
@@ -437,6 +442,12 @@ YARA_X_FIXTURE = ConformanceFixture(
     resource_name="native_code_map_elf64.b64",
     sha256="160fad2a70818a93807bc01ccfff766f7c3702756e8135ee5239132de9fe56b0",
 )
+TSHARK_FIXTURE = ConformanceFixture(
+    fixture_id="protocol-map-ethernet-ipv4-v1",
+    filename="fixture.pcap",
+    resource_name="protocol_map_ethernet_ipv4.b64",
+    sha256="a932f9b0da893cc34f3ad70d9e51291896ca0c80fd68b923803364797adb619b",
+)
 # Backward-compatible public constants for the original shared ELF fixture.
 FIXTURE_ID = ELF_FIXTURE.fixture_id
 FIXTURE_SHA256 = ELF_FIXTURE.sha256
@@ -447,6 +458,7 @@ DRIVER_VERSION = "1.2.0"
 GHIDRA_NATIVE_MAP_DRIVER_VERSION = "1.0.0"
 JADX_DRIVER_VERSION = "1.0.0"
 YARA_X_DRIVER_VERSION = "1.0.4"
+TSHARK_DRIVER_VERSION = "1.0.0"
 MINIMUM_EVIDENCE_IMPORT_BYTES = 65_536
 
 
@@ -1129,6 +1141,240 @@ class YaraXFileScanDriver:
                 name="fixture-rule-identity",
                 ok=normalized.data.get("rule_source_sha256") == YARA_X_CONFORMANCE_RULE_SHA256,
                 detail=str(normalized.data.get("rule_source_sha256", "")),
+            ),
+        ]
+
+
+_TSHARK_REQUIRED_FIELDS = (
+    "frame.number",
+    "frame.time_epoch",
+    "frame.len",
+    "frame.cap_len",
+    "frame.protocols",
+)
+_TSHARK_FIELD_SPECS = (
+    ("eth.src", "link_source", "str"),
+    ("eth.dst", "link_destination", "str"),
+    ("ip.src", "ipv4_source", "str"),
+    ("ip.dst", "ipv4_destination", "str"),
+    ("ipv6.src", "ipv6_source", "str"),
+    ("ipv6.dst", "ipv6_destination", "str"),
+    ("arp.opcode", "arp_opcode", "int"),
+    ("arp.src.proto_ipv4", "arp_ipv4_source", "str"),
+    ("arp.dst.proto_ipv4", "arp_ipv4_destination", "str"),
+    ("tcp.srcport", "tcp_source_port", "int"),
+    ("tcp.dstport", "tcp_destination_port", "int"),
+    ("tcp.stream", "tcp_stream", "int"),
+    ("tcp.flags", "tcp_flags", "str"),
+    ("tcp.seq", "tcp_sequence", "int"),
+    ("tcp.ack", "tcp_acknowledgment", "int"),
+    ("tcp.len", "tcp_payload_bytes", "int"),
+    ("udp.srcport", "udp_source_port", "int"),
+    ("udp.dstport", "udp_destination_port", "int"),
+    ("udp.stream", "udp_stream", "int"),
+    ("udp.length", "udp_datagram_bytes", "int"),
+    ("icmp.type", "icmp_type", "int"),
+    ("icmp.code", "icmp_code", "int"),
+    ("icmpv6.type", "icmpv6_type", "int"),
+    ("icmpv6.code", "icmpv6_code", "int"),
+    ("tcp.analysis.retransmission", "tcp_retransmission", "presence"),
+    ("tcp.analysis.fast_retransmission", "tcp_fast_retransmission", "presence"),
+    ("tcp.analysis.out_of_order", "tcp_out_of_order", "presence"),
+    ("tcp.analysis.lost_segment", "tcp_lost_segment", "presence"),
+    ("tcp.analysis.duplicate_ack", "tcp_duplicate_ack", "presence"),
+    ("tcp.analysis.zero_window", "tcp_zero_window", "presence"),
+    ("tcp.analysis.window_full", "tcp_window_full", "presence"),
+    ("tcp.analysis.keep_alive", "tcp_keep_alive", "presence"),
+    ("tcp.analysis.ack_rtt", "tcp_ack_rtt", "str"),
+    ("dns.id", "dns_transaction_id", "str"),
+    ("dns.flags.response", "dns_is_response", "bool"),
+    ("dns.qry.name", "dns_query_names", "str"),
+    ("dns.qry.type", "dns_query_types", "int"),
+    ("dns.a", "dns_ipv4_answers", "str"),
+    ("dns.aaaa", "dns_ipv6_answers", "str"),
+    ("dns.flags.rcode", "dns_response_codes", "int"),
+    ("http.request.method", "http_request_methods", "str"),
+    ("http.host", "http_hosts", "str"),
+    ("http.request.uri", "http_request_uris", "str"),
+    ("http.response.code", "http_response_codes", "int"),
+    ("http.content_type", "http_content_types", "str"),
+    ("tls.handshake.extensions_server_name", "tls_server_names", "str"),
+    ("tls.record.version", "tls_record_versions", "str"),
+    ("tls.handshake.type", "tls_handshake_types", "int"),
+    ("tls.handshake.version", "tls_handshake_versions", "str"),
+    ("tls.handshake.ciphersuite", "tls_cipher_suites", "str"),
+    ("tls.handshake.extensions_alpn_str", "tls_alpn_protocols", "str"),
+    ("quic.long.packet_type", "quic_long_packet_types", "int"),
+    ("quic.version", "quic_versions", "str"),
+    ("quic.dcid", "quic_destination_connection_ids", "str"),
+    ("quic.scid", "quic_source_connection_ids", "str"),
+    ("websocket.opcode", "websocket_opcodes", "int"),
+    ("websocket.payload_length", "websocket_payload_length_code", "int"),
+    ("websocket.payload_length_ext_16", "websocket_payload_bytes_16", "int"),
+    ("websocket.payload_length_ext_64", "websocket_payload_bytes_64", "int"),
+)
+_TSHARK_SELECTED_FIELDS = (*_TSHARK_REQUIRED_FIELDS, *(item[0] for item in _TSHARK_FIELD_SPECS))
+
+
+class TsharkPacketCaptureMapDriver:
+    adapter_id = "tshark"
+    operation_id = "tshark.packet-capture-map"
+    driver_id = "whitehat.tshark-json-fields"
+    driver_version = TSHARK_DRIVER_VERSION
+
+    def _executable(self, entrypoints: list[str]) -> Path:
+        executable = next(
+            (
+                Path(path).resolve()
+                for path in entrypoints
+                if Path(path).name.casefold() in {"tshark", "tshark.exe"}
+            ),
+            None,
+        )
+        if executable is None or not executable.is_file():
+            raise AdapterExecutionError("TShark operation requires an observed tshark entrypoint")
+        return executable
+
+    def tool_payload_digest(self, entrypoints: list[str]) -> str:
+        return stable_digest(
+            {
+                "executable_sha256": _hash_file(self._executable(entrypoints)),
+                "selected_fields": list(_TSHARK_SELECTED_FIELDS),
+                "output_contract": "packet-protocol-map-v1",
+            }
+        )
+
+    def prepare(
+        self,
+        status: AdapterStatus,
+        operation: AdapterOperationPayload,
+        limits: OperationResourceLimits,
+        assets: dict[str, Path],
+    ) -> TrustedInvocation:
+        del assets
+        if not isinstance(operation, TsharkPacketCaptureMapPayload):
+            raise AdapterExecutionError("TShark driver received a different operation payload")
+        argv = [
+            "/opt/tool/tshark",
+            "-r",
+            "/input/artifact",
+            "-n",
+            "-Q",
+            "-c",
+            str(limits.max_records),
+            "-T",
+            "json",
+            "--no-duplicate-keys",
+            "--temp-dir",
+            "/tmp",
+        ]
+        for field in _TSHARK_SELECTED_FIELDS:
+            argv.extend(("-e", field))
+        return TrustedInvocation(
+            argv=tuple(argv),
+            mounts=(SandboxMount(self._executable(status.entrypoints), "/opt/tool/tshark"),),
+        )
+
+    def normalize(
+        self,
+        process: SupervisedProcessResult,
+        artifact_sha256: str,
+        limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
+    ) -> AdapterNormalizedResult:
+        if not isinstance(operation, TsharkPacketCaptureMapPayload):
+            raise AdapterExecutionError("TShark normalization requires its exact operation payload")
+        raw = _read_json(process.stdout_path, limits.max_output_bytes)
+        if not isinstance(raw, list) or len(raw) > limits.max_records:
+            raise AdapterExecutionError("TShark result has an invalid packet collection")
+
+        packets: list[dict[str, JsonValue]] = []
+        previous_number = 0
+        protocol_counts: dict[str, int] = {}
+        for item in raw:
+            packet = _normalize_tshark_packet(item)
+            number = int(packet["number"])
+            if number <= previous_number:
+                raise AdapterExecutionError("TShark result has duplicate or unordered frame numbers")
+            previous_number = number
+            packets.append(packet)
+            for protocol in packet["protocols"]:
+                name = str(protocol)
+                protocol_counts[name] = protocol_counts.get(name, 0) + 1
+
+        limit_reached = len(packets) == limits.max_records
+        data: dict[str, JsonValue] = {
+            "decoder": "tshark",
+            "packet_limit": limits.max_records,
+            "packet_limit_reached": limit_reached,
+            "returned_packets": len(packets),
+            "first_timestamp_epoch": packets[0]["timestamp_epoch"] if packets else None,
+            "last_timestamp_epoch": packets[-1]["timestamp_epoch"] if packets else None,
+            "total_wire_bytes": sum(int(packet["wire_bytes"]) for packet in packets),
+            "total_captured_bytes": sum(int(packet["captured_bytes"]) for packet in packets),
+            "protocol_counts": dict(sorted(protocol_counts.items())),
+            "stream_endpoint_basis": "unambiguous single-layer TCP and UDP fields",
+            "streams": _tshark_stream_summaries(packets),
+            "packets": packets,
+        }
+        return AdapterNormalizedResult(
+            operation_id=self.operation_id,
+            artifact_sha256=artifact_sha256,
+            records_returned=len(packets),
+            truncated=limit_reached,
+            data=data,
+        )
+
+    def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]:
+        packets = normalized.data.get("packets")
+        packet_items = packets if isinstance(packets, list) else []
+        fields = [item.get("fields", {}) for item in packet_items if isinstance(item, dict)]
+        streams = normalized.data.get("streams")
+        stream_items = streams if isinstance(streams, list) else []
+        return [
+            AdapterConformanceCheck(
+                name="fixture-packets-and-protocols",
+                ok=(
+                    normalized.data.get("returned_packets") == 7
+                    and normalized.data.get("protocol_counts", {}).get("dns") == 2
+                    and normalized.data.get("protocol_counts", {}).get("http") == 2
+                ),
+                detail=f"returned_packets={normalized.data.get('returned_packets', 0)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-dns",
+                ok=any(
+                    isinstance(item, dict)
+                    and item.get("dns_query_names") == ["fixture.test"]
+                    and item.get("dns_ipv4_answers") == ["203.0.113.7"]
+                    for item in fields
+                ),
+                detail="fixture.test resolves to its documentation address",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-http",
+                ok=(
+                    any(
+                        isinstance(item, dict)
+                        and item.get("http_request_methods") == ["GET"]
+                        and item.get("http_hosts") == ["fixture.test"]
+                        and item.get("http_request_uris") == ["/status?fixture=1"]
+                        for item in fields
+                    )
+                    and any(
+                        isinstance(item, dict) and item.get("http_response_codes") == [200] for item in fields
+                    )
+                ),
+                detail="fixed request and response metadata decoded",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-streams",
+                ok=(
+                    len(stream_items) == 2
+                    and {item.get("transport") for item in stream_items if isinstance(item, dict)}
+                    == {"tcp", "udp"}
+                ),
+                detail=f"returned_streams={len(stream_items)}",
             ),
         ]
 
@@ -1930,6 +2176,7 @@ DRIVERS: dict[tuple[str, str], ProviderDriver] = {
     ("capa", "capa.file-analyze"): CapaFileAnalyzeDriver(),
     ("llvm", "llvm.object-inspect"): LlvmObjectInspectDriver(),
     ("jadx", "jadx.android-static-map"): JadxAndroidStaticMapDriver(),
+    ("tshark", "tshark.packet-capture-map"): TsharkPacketCaptureMapDriver(),
     ("yara-x", "yara-x.file-scan"): YaraXFileScanDriver(),
 }
 
@@ -2562,6 +2809,8 @@ def _fixture_operation(operation_id: str) -> AdapterOperationPayload:
         return LlvmObjectInspectPayload(operation_id=operation_id)
     if operation_id == "jadx.android-static-map":
         return JadxAndroidStaticMapPayload(operation_id=operation_id)
+    if operation_id == "tshark.packet-capture-map":
+        return TsharkPacketCaptureMapPayload(operation_id=operation_id)
     if operation_id == "yara-x.file-scan":
         return YaraXFileScanPayload(
             operation_id=operation_id,
@@ -2581,6 +2830,8 @@ def _conformance_fixture(operation_id: str) -> ConformanceFixture:
         return GHIDRA_NATIVE_MAP_FIXTURE
     if operation_id == "jadx.android-static-map":
         return JADX_FIXTURE
+    if operation_id == "tshark.packet-capture-map":
+        return TSHARK_FIXTURE
     if operation_id == "yara-x.file-scan":
         return YARA_X_FIXTURE
     raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
@@ -2607,6 +2858,10 @@ def _jadx_fixture_bytes() -> bytes:
 
 def _ghidra_native_map_fixture_bytes() -> bytes:
     return _fixture_payload(GHIDRA_NATIVE_MAP_FIXTURE)
+
+
+def _tshark_fixture_bytes() -> bytes:
+    return _fixture_payload(TSHARK_FIXTURE)
 
 
 def _ghidra_script_bytes() -> bytes:
@@ -2737,6 +2992,167 @@ def _read_json(path: Path, max_bytes: int) -> JsonValue:
     if path.stat().st_size > max_bytes:
         raise AdapterExecutionError("adapter JSON output exceeds the byte limit")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _tshark_values(layers: dict[str, object], field: str) -> list[str]:
+    raw = layers.get(field)
+    if not isinstance(raw, list) or not raw or len(raw) > 256:
+        raise AdapterExecutionError(f"TShark result has invalid values for {field}")
+    values: list[str] = []
+    for value in raw:
+        if not isinstance(value, str) or len(value) > 65_536 or "\x00" in value:
+            raise AdapterExecutionError(f"TShark result has an invalid value for {field}")
+        values.append(value)
+    return values
+
+
+def _tshark_integer(value: str, field: str, *, maximum: int = (1 << 64) - 1) -> int:
+    if re.fullmatch(r"[0-9]+", value) is None:
+        raise AdapterExecutionError(f"TShark result has a non-decimal {field}")
+    parsed = int(value)
+    if parsed > maximum:
+        raise AdapterExecutionError(f"TShark result has an out-of-range {field}")
+    return parsed
+
+
+def _normalize_tshark_packet(value: object) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or "_source" not in value:
+        raise AdapterExecutionError("TShark result has an invalid packet object")
+    if not set(value).issubset({"_index", "_type", "_score", "_source"}):
+        raise AdapterExecutionError("TShark result has unexpected packet metadata")
+    if "_index" in value and (not isinstance(value["_index"], str) or len(value["_index"]) > 256):
+        raise AdapterExecutionError("TShark result has invalid index metadata")
+    if value.get("_type", "doc") != "doc" or value.get("_score") is not None:
+        raise AdapterExecutionError("TShark result has invalid document metadata")
+    source = value["_source"]
+    if not isinstance(source, dict) or set(source) != {"layers"}:
+        raise AdapterExecutionError("TShark result has an invalid packet source")
+    layers = source["layers"]
+    if not isinstance(layers, dict):
+        raise AdapterExecutionError("TShark result has invalid packet layers")
+    if not set(_TSHARK_REQUIRED_FIELDS).issubset(layers):
+        raise AdapterExecutionError("TShark result is missing required frame fields")
+    if not set(layers).issubset(_TSHARK_SELECTED_FIELDS):
+        raise AdapterExecutionError("TShark result contains an unselected field")
+    for field in layers:
+        _tshark_values(layers, field)
+
+    number_values = _tshark_values(layers, "frame.number")
+    time_values = _tshark_values(layers, "frame.time_epoch")
+    wire_values = _tshark_values(layers, "frame.len")
+    captured_values = _tshark_values(layers, "frame.cap_len")
+    protocol_values = _tshark_values(layers, "frame.protocols")
+    required_values = (
+        number_values,
+        time_values,
+        wire_values,
+        captured_values,
+        protocol_values,
+    )
+    if any(len(items) != 1 for items in required_values):
+        raise AdapterExecutionError("TShark result repeats a required frame field")
+    timestamp = time_values[0]
+    if re.fullmatch(r"-?[0-9]{1,20}(?:\.[0-9]{1,12})?", timestamp) is None:
+        raise AdapterExecutionError("TShark result has an invalid frame timestamp")
+    protocols = protocol_values[0].split(":")
+    if (
+        not protocols
+        or len(protocols) > 128
+        or any(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", item) is None for item in protocols)
+    ):
+        raise AdapterExecutionError("TShark result has an invalid protocol chain")
+
+    fields: dict[str, JsonValue] = {}
+    for source_name, output_name, field_type in _TSHARK_FIELD_SPECS:
+        if source_name not in layers:
+            continue
+        raw_values = _tshark_values(layers, source_name)
+        if field_type == "presence":
+            fields[output_name] = True
+        elif field_type == "int":
+            fields[output_name] = [_tshark_integer(item, source_name) for item in raw_values]
+        elif field_type == "bool":
+            if any(item not in {"True", "False", "1", "0"} for item in raw_values):
+                raise AdapterExecutionError(f"TShark result has a non-boolean {source_name}")
+            fields[output_name] = [item in {"True", "1"} for item in raw_values]
+        else:
+            fields[output_name] = raw_values
+
+    return {
+        "number": _tshark_integer(number_values[0], "frame number", maximum=(1 << 32) - 1),
+        "timestamp_epoch": timestamp,
+        "wire_bytes": _tshark_integer(wire_values[0], "wire length", maximum=(1 << 32) - 1),
+        "captured_bytes": _tshark_integer(captured_values[0], "captured length", maximum=(1 << 32) - 1),
+        "protocols": protocols,
+        "fields": fields,
+    }
+
+
+def _tshark_single_field(fields: dict[str, JsonValue], name: str) -> JsonValue | None:
+    value = fields.get(name)
+    return value[0] if isinstance(value, list) and len(value) == 1 else None
+
+
+def _tshark_stream_summaries(packets: list[dict[str, JsonValue]]) -> list[JsonValue]:
+    state: dict[tuple[str, int], dict[str, object]] = {}
+    for packet in packets:
+        fields = packet.get("fields")
+        if not isinstance(fields, dict):
+            continue
+        selected: tuple[str, int, str, str] | None = None
+        for transport in ("tcp", "udp"):
+            stream = _tshark_single_field(fields, f"{transport}_stream")
+            if isinstance(stream, int):
+                selected = (
+                    transport,
+                    stream,
+                    f"{transport}_source_port",
+                    f"{transport}_destination_port",
+                )
+                break
+        if selected is None:
+            continue
+        transport, stream, source_port_name, destination_port_name = selected
+        key = (transport, stream)
+        item = state.setdefault(
+            key,
+            {"packet_count": 0, "wire_bytes": 0, "endpoints": set()},
+        )
+        item["packet_count"] = int(item["packet_count"]) + 1
+        item["wire_bytes"] = int(item["wire_bytes"]) + int(packet["wire_bytes"])
+        source_address = _tshark_single_field(fields, "ipv4_source") or _tshark_single_field(
+            fields, "ipv6_source"
+        )
+        destination_address = _tshark_single_field(fields, "ipv4_destination") or _tshark_single_field(
+            fields, "ipv6_destination"
+        )
+        source_port = _tshark_single_field(fields, source_port_name)
+        destination_port = _tshark_single_field(fields, destination_port_name)
+        endpoints = item["endpoints"]
+        if not isinstance(endpoints, set):
+            raise AdapterExecutionError("TShark stream state is invalid")
+        if isinstance(source_address, str) and isinstance(source_port, int):
+            endpoints.add((source_address, source_port))
+        if isinstance(destination_address, str) and isinstance(destination_port, int):
+            endpoints.add((destination_address, destination_port))
+
+    summaries: list[JsonValue] = []
+    for (transport, stream), item in sorted(state.items()):
+        endpoints = item["endpoints"]
+        if not isinstance(endpoints, set):
+            raise AdapterExecutionError("TShark stream state is invalid")
+        summaries.append(
+            {
+                "transport": transport,
+                "stream_id": stream,
+                "packet_count": int(item["packet_count"]),
+                "wire_bytes": int(item["wire_bytes"]),
+                "endpoints": [
+                    {"address": str(address), "port": int(port)} for address, port in sorted(endpoints)
+                ],
+            }
+        )
+    return summaries
 
 
 def _read_single_ndjson(path: Path, max_bytes: int) -> dict[str, JsonValue]:

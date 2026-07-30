@@ -190,3 +190,12 @@ capabilities:
     adapter_contract: [Detect attach failure or destabilization and preserve cleanup state.]
     status: experimental
     updated_at: 2026-07-29T12:00:00Z
+  - capability_id: network.capture-inspect
+    title: Inspect a packet capture
+    description: Decode one immutable packet capture into bounded packet, protocol, and transport-stream metadata.
+    execution_class: analysis
+    input_types: [artifact/packet-capture]
+    output_types: [surface/network-protocol-map]
+    adapter_contract: [Bind the capture and decoder identities; disable name resolution and external input; report packet ceilings and truncation.]
+    status: experimental
+    updated_at: 2026-07-30T04:00:00Z

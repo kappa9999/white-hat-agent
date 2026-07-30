@@ -1,0 +1,104 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: packet-capture-protocol-map
+  version: 1.0.0
+  title: Map protocols and streams in an immutable packet capture
+  summary: Decode one bounded packet capture without name resolution or live traffic access, preserving packet order, protocol chains, stream endpoints, selected application metadata, and truncation state.
+  domains: [network-security, protocol-analysis, reverse-engineering]
+  tags: [packet-capture, pcap, static-analysis]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-30T04:00:00Z
+  updated_at: 2026-07-30T04:00:00Z
+applicability:
+  target_kinds: [packet-capture]
+  platforms: []
+  technologies: []
+  preconditions:
+    - The packet capture is available as one immutable local evidence artifact.
+  assumptions:
+    - Decoded protocol metadata is triage evidence and does not by itself establish vulnerability or exploitability.
+  exclusions:
+    - Live capture, name resolution, external keys, caller-selected dissectors, display filters, profiles, plugins, or decode-as rules.
+scope:
+  minimum_execution_class: analysis
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 0
+  recommended_concurrency: 1
+  action_tags: [network-analysis]
+  data_classes: [packet-capture]
+taxonomies: []
+inputs:
+  - name: packet-capture
+    semantic_type: artifact/packet-capture
+    description: Exact immutable PCAP or PCAPNG artifact to decode.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: protocol-map
+    semantic_type: surface/network-protocol-map
+    description: Bounded packet records, protocol counts, transport-stream endpoints, selected DNS, HTTP, TLS, QUIC, and WebSocket metadata, and explicit truncation state.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: decode-capture
+    kind: analyze
+    title: Decode the bounded capture
+    instruction: Decode only the exact evidence artifact with name resolution and external input disabled; preserve capture and decoder identities, packet order and timestamps, decoded protocol chains, selected endpoint and application metadata, transport-stream summaries, the packet ceiling, and whether that ceiling was reached.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [network.capture-inspect]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The result is bound to the exact capture and decoder identities and declares whether the packet ceiling was reached.
+    failure_signals:
+      - Capture parsing, decoder conformance, output validation, or a resource limit prevents a trustworthy map.
+    evidence:
+      - evidence_type: surface/network-protocol-map
+        description: Normalized bounded capture map with explicit completeness state.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 300
+    max_repetitions: 1
+composition:
+  consumes: [artifact/packet-capture]
+  provides: [surface/network-protocol-map]
+  compatible_after: []
+  compatible_before: [causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: surface/network-protocol-map
+    description: Exact capture and decoder identities plus bounded decoded packets and stream summaries.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Treating protocol identification or an endpoint as proof of a vulnerability.
+  - Reporting a complete capture map when the packet ceiling or another output limit was reached.
+  - Assuming encrypted application payloads were decoded when only visible handshake metadata was preserved.
+variations:
+  - Use the protocol map to seed a separate, explicitly scoped parser, state-machine, or differential-analysis hypothesis.
+sources:
+  - source_id: tshark-man-page
+    kind: publication
+    title: TShark Manual Page
+    url: https://www.wireshark.org/docs/man-pages/tshark.html
+    authors: [Wireshark Foundation]
+    license: GPL-2.0-or-later
+    accessed_at: 2026-07-30T04:00:00Z
+    notes: Fixed field-selection, no-name-resolution, packet-limit, and JSON-output semantics informed the adapter contract; playbook wording is original.
+validation:
+  fixture_ids: [protocol-map-ethernet-ipv4-v1]
+  test_commands: ["pytest tests/test_adapter_execution.py tests/test_corpus.py"]
+  known_limitations:
+    - The fixed output excludes packet payload bytes, caller-supplied decryption material, custom dissectors, and live capture.
+  last_validated_at: 2026-07-30T04:00:00Z
+  validated_by: [white-hat-agent-test-suite]

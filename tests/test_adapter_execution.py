@@ -27,8 +27,11 @@ from white_hat_agent.adapter_execution import (
     LlvmObjectInspectPayload,
     OfflineSandboxSupervisor,
     SandboxInlineFile,
+    SandboxMount,
     SupervisedProcessResult,
     TrustedInvocation,
+    TsharkPacketCaptureMapDriver,
+    TsharkPacketCaptureMapPayload,
     YaraXFileScanDriver,
     YaraXFileScanPayload,
     _effective_limits,
@@ -36,6 +39,7 @@ from white_hat_agent.adapter_execution import (
     _ghidra_native_map_fixture_bytes,
     _jadx_fixture_bytes,
     _tree_usage,
+    _tshark_fixture_bytes,
     _yara_x_conformance_rule,
     conformance_report_is_current,
 )
@@ -328,6 +332,21 @@ def test_fixture_and_request_secret_contract() -> None:
     )
     assert '"include"' in lexical_include_text.rule_source
 
+    tshark_fixture = _tshark_fixture_bytes()
+    assert len(tshark_fixture) == 755
+    assert hashlib.sha256(tshark_fixture).hexdigest() == (
+        "a932f9b0da893cc34f3ad70d9e51291896ca0c80fd68b923803364797adb619b"
+    )
+    tshark_request = request.model_copy(
+        update={"operation": TsharkPacketCaptureMapPayload(operation_id="tshark.packet-capture-map")}
+    )
+    assert tshark_request.operation.operation_id == "tshark.packet-capture-map"
+    with pytest.raises(ValueError, match="Extra inputs"):
+        TsharkPacketCaptureMapPayload(
+            operation_id="tshark.packet-capture-map",
+            display_filter="http",
+        )
+
 
 def test_limit_overrides_can_only_reduce_contract() -> None:
     reduced = _effective_limits(_limits(), AdapterLimitOverrides(max_records=10, wall_seconds=5))
@@ -579,6 +598,199 @@ def test_yara_x_invocation_is_fixed_and_rule_source_is_inline(tmp_path) -> None:
             status,
             LlvmObjectInspectPayload(operation_id="llvm.object-inspect"),
             yara_limits,
+            {},
+        )
+
+
+def test_tshark_normalization_preserves_packets_protocols_and_streams(tmp_path) -> None:
+    def packet(number: int, protocols: str, fields: dict[str, list[str]]) -> dict:
+        return {
+            "_index": "packets-2023-11-14",
+            "_type": "doc",
+            "_score": None,
+            "_source": {
+                "layers": {
+                    "frame.number": [str(number)],
+                    "frame.time_epoch": [f"170000000{number}.000000000"],
+                    "frame.len": ["72"],
+                    "frame.cap_len": ["72"],
+                    "frame.protocols": [protocols],
+                    **fields,
+                }
+            },
+        }
+
+    packets = [
+        packet(
+            1,
+            "eth:ethertype:ip:udp:dns",
+            {
+                "ip.src": ["192.0.2.10"],
+                "ip.dst": ["198.51.100.53"],
+                "udp.srcport": ["53000"],
+                "udp.dstport": ["53"],
+                "udp.stream": ["0"],
+                "dns.id": ["0x1234"],
+                "dns.flags.response": ["False"],
+                "dns.qry.name": ["fixture.test"],
+            },
+        ),
+        packet(
+            2,
+            "eth:ethertype:ip:udp:dns",
+            {
+                "ip.src": ["198.51.100.53"],
+                "ip.dst": ["192.0.2.10"],
+                "udp.srcport": ["53"],
+                "udp.dstport": ["53000"],
+                "udp.stream": ["0"],
+                "dns.id": ["0x1234"],
+                "dns.flags.response": ["True"],
+                "dns.qry.name": ["fixture.test"],
+                "dns.a": ["203.0.113.7"],
+                "dns.flags.rcode": ["0"],
+            },
+        ),
+        packet(
+            3,
+            "eth:ethertype:ip:tcp:http",
+            {
+                "ip.src": ["192.0.2.10"],
+                "ip.dst": ["198.51.100.80"],
+                "tcp.srcport": ["49152"],
+                "tcp.dstport": ["80"],
+                "tcp.stream": ["0"],
+                "tcp.flags": ["0x0018"],
+                "tcp.seq": ["1"],
+                "tcp.ack": ["1"],
+                "tcp.len": ["104"],
+                "http.request.method": ["GET"],
+                "http.host": ["fixture.test"],
+                "http.request.uri": ["/status?fixture=1"],
+            },
+        ),
+    ]
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stdout.write_text(json.dumps(packets), encoding="utf-8")
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    operation = TsharkPacketCaptureMapPayload(operation_id="tshark.packet-capture-map")
+    driver = TsharkPacketCaptureMapDriver()
+
+    normalized = driver.normalize(process, "a" * 64, _limits(), operation)
+
+    assert normalized.records_returned == 3
+    assert not normalized.truncated
+    assert normalized.data["protocol_counts"] == {
+        "dns": 2,
+        "eth": 3,
+        "ethertype": 3,
+        "http": 1,
+        "ip": 3,
+        "tcp": 1,
+        "udp": 2,
+    }
+    assert normalized.data["packets"][1]["fields"]["dns_is_response"] == [True]
+    assert normalized.data["packets"][2]["fields"]["tcp_source_port"] == [49152]
+    assert [item["transport"] for item in normalized.data["streams"]] == ["tcp", "udp"]
+
+    stdout.write_text(json.dumps(packets[:2]), encoding="utf-8")
+    capped = driver.normalize(
+        process,
+        "a" * 64,
+        _limits().model_copy(update={"max_records": 2}),
+        operation,
+    )
+    assert capped.records_returned == 2
+    assert capped.truncated
+    assert capped.data["packet_limit_reached"] is True
+
+
+def test_tshark_normalization_rejects_schema_drift_and_unordered_frames(tmp_path) -> None:
+    layers = {
+        "frame.number": ["1"],
+        "frame.time_epoch": ["1700000000.000000000"],
+        "frame.len": ["42"],
+        "frame.cap_len": ["42"],
+        "frame.protocols": ["eth:ethertype:arp"],
+    }
+    packet = {"_source": {"layers": layers}}
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    driver = TsharkPacketCaptureMapDriver()
+    operation = TsharkPacketCaptureMapPayload(operation_id="tshark.packet-capture-map")
+
+    stdout.write_text(json.dumps([{**packet, "unexpected": True}]), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="unexpected packet metadata"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+    stdout.write_text(json.dumps([packet, packet]), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="unordered frame numbers"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+    stdout.write_text(
+        json.dumps([{"_source": {"layers": {**layers, "caller.option": ["unsafe"]}}}]),
+        encoding="utf-8",
+    )
+    with pytest.raises(AdapterExecutionError, match="unselected field"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+
+def test_tshark_invocation_is_fixed_and_offline(tmp_path) -> None:
+    executable = tmp_path / "tshark"
+    executable.write_bytes(b"fixture TShark executable")
+    status = AdapterStatus(
+        adapter_id="tshark",
+        manifest_digest="1" * 64,
+        observed_at=utc_now(),
+        platform="linux-x86_64",
+        supported=True,
+        installed=True,
+        healthy=True,
+        source="system",
+        version="4.2.2",
+        entrypoints=[str(executable)],
+        observed_identity_sha256="2" * 64,
+    )
+    driver = TsharkPacketCaptureMapDriver()
+    operation = TsharkPacketCaptureMapPayload(operation_id="tshark.packet-capture-map")
+
+    invocation = driver.prepare(status, operation, _limits(), {})
+
+    assert invocation.argv[:3] == ("/opt/tool/tshark", "-r", "/input/artifact")
+    assert "-n" in invocation.argv
+    assert invocation.argv[invocation.argv.index("-c") + 1] == "100"
+    assert invocation.argv[invocation.argv.index("--temp-dir") + 1] == "/tmp"
+    assert "frame.protocols" in invocation.argv
+    assert "http.request.uri" in invocation.argv
+    assert "tls.handshake.extensions_server_name" in invocation.argv
+    assert invocation.mounts == (SandboxMount(executable, "/opt/tool/tshark"),)
+    with pytest.raises(AdapterExecutionError, match="different operation"):
+        driver.prepare(
+            status,
+            LlvmObjectInspectPayload(operation_id="llvm.object-inspect"),
+            _limits(),
             {},
         )
 

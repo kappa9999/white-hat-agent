@@ -104,6 +104,10 @@ wha adapter install yara-x --yes
 wha adapter conform yara-x
 wha adapter resolve --capability artifact.signature-match
 
+# Turn an existing PCAP or PCAPNG into a bounded protocol and stream map.
+wha adapter conform tshark
+wha adapter resolve --capability network.capture-inspect
+
 # Add and query exact, revision-bound machine-readable knowledge on demand.
 wha adapter install mitre-attack --yes
 wha adapter search mitre-attack T1059.001
@@ -111,11 +115,11 @@ wha adapter search mitre-attack T1059.001
 
 The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Reviewed typed drivers
 execute Ghidra summaries and native-code maps, YARA-X signature evaluation, capa behavior identification, LLVM object
-inspection, and JADX Android class, call-graph, manifest, and resource mapping on Linux/WSL. YARA-X results preserve
-the standalone rule digest, matched rule metadata, bounded bytes, exact offsets, and truncation state. All typed
-drivers run without network access over immutable fleet-task evidence. Status and resolution never execute discovered
-binaries; fixed command-backed version checks run only during explicit sandboxed conformance, and a version result
-alone grants no executable capability.
+inspection, JADX Android mapping, and TShark packet-capture mapping on Linux/WSL. The TShark result retains packet
+order, protocol chains, transport streams, selected DNS/HTTP/TLS/QUIC/WebSocket metadata, and explicit truncation
+without exposing live capture or caller-defined decoder settings. All typed drivers run without network access over
+immutable fleet-task evidence. Status and resolution never execute discovered binaries; fixed command-backed version
+checks run only during explicit sandboxed conformance, and a version result alone grants no executable capability.
 Knowledge adapters cover MITRE ATT&CK STIX and capa rules; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
 remains in the intelligence layer. See
 [tools and knowledge adapters](docs/adapters.md).
