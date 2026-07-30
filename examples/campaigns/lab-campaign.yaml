@@ -46,7 +46,7 @@ objective:
   success_criteria: [One compatible agent can lease the exact deduplicated fixture task.]
   desired_artifacts: [finding/verified]
   priority_domains: [web, api]
-corpus_manifest_digest: 228c37674b4af27d2a8ae5c4324d2fc2d33a96b22c1f1fb22b12f5e9a295a296
+corpus_manifest_digest: a94591b2d860b15ab097b647bb93f879812bb15487768d48e46a53196844c8e8
 selected_playbooks: [http-response-surface-map]
 playbook_contracts:
   - playbook_id: http-response-surface-map

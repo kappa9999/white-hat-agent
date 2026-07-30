@@ -137,6 +137,21 @@
       "title": "CapaFileAnalyzePayload",
       "type": "object"
     },
+    "FridaExecutableRuntimeMapPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "frida.executable-runtime-map",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "FridaExecutableRuntimeMapPayload",
+      "type": "object"
+    },
     "GhidraBinarySummaryPayload": {
       "additionalProperties": false,
       "properties": {
@@ -264,6 +279,7 @@
       "discriminator": {
         "mapping": {
           "capa.file-analyze": "#/$defs/CapaFileAnalyzePayload",
+          "frida.executable-runtime-map": "#/$defs/FridaExecutableRuntimeMapPayload",
           "ghidra.binary-summary": "#/$defs/GhidraBinarySummaryPayload",
           "ghidra.native-code-map": "#/$defs/GhidraNativeCodeMapPayload",
           "jadx.android-static-map": "#/$defs/JadxAndroidStaticMapPayload",
@@ -291,6 +307,9 @@
         },
         {
           "$ref": "#/$defs/TsharkPacketCaptureMapPayload"
+        },
+        {
+          "$ref": "#/$defs/FridaExecutableRuntimeMapPayload"
         },
         {
           "$ref": "#/$defs/YaraXFileScanPayload"

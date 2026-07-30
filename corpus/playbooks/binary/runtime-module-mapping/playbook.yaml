@@ -1,0 +1,116 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: executable-runtime-module-map
+  version: 1.0.0
+  title: Map a local executable at load time with Frida
+  summary: Spawn one immutable executable before main inside an offline process sandbox, then recover bounded process, loaded-module, import, export, and dependency metadata without accepting caller-supplied instrumentation.
+  domains: [binary-security, dynamic-analysis, reverse-engineering]
+  tags: [frida, load-time, runtime-map]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-30T04:15:00Z
+  updated_at: 2026-07-30T04:15:00Z
+applicability:
+  target_kinds: [binary]
+  platforms: [linux]
+  technologies: [native-code]
+  preconditions:
+    - The executable is available as one immutable local evidence artifact compatible with the analysis host.
+  assumptions:
+    - Load-time module and symbol metadata are discovery inputs and do not establish vulnerability or exploitability.
+  exclusions:
+    - Existing processes, remote devices, process identifiers, process names, caller-supplied scripts, command-line arguments, environment variables, live targets, memory reads, hooks, or execution beyond the fixed pre-main observation.
+scope:
+  minimum_execution_class: analysis
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 0
+  recommended_concurrency: 1
+  action_tags: [runtime-instrumentation]
+  data_classes: [runtime-metadata]
+taxonomies: []
+inputs:
+  - name: executable
+    semantic_type: artifact/executable
+    description: Exact immutable executable artifact to load under the fixed observation agent.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: runtime-module-map
+    semantic_type: surface/runtime-module-map
+    description: Bounded process identity, main module, loaded modules, imports, exports, dependencies, collection errors, and truncation state.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: observe-load-time-map
+    kind: analyze
+    title: Observe the executable before main
+    instruction: Spawn only the exact evidence artifact in the offline PID and network sandbox; load the revision-bound fixed observation script; record process architecture and platform, the main module, loaded modules, imports, exports, dependencies, per-collection totals, errors, and broker truncation; then exit the injector and let PID-namespace teardown remove the spawned child.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [binary.runtime-inspect]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The normalized result is bound to exact executable, Frida binary, observation-script, operation-contract, and sandbox identities.
+      - The result explicitly reports every collection ceiling, error, and truncation state.
+    failure_signals:
+      - Spawn, injection, sandbox cleanup, schema validation, conformance, or a resource ceiling prevents a trustworthy map.
+    evidence:
+      - evidence_type: surface/runtime-module-map
+        description: Evidence-bound load-time runtime map and explicit completeness state.
+        minimum_count: 1
+        independent: false
+    side_effects:
+      - A disposable copy of the evidence artifact is spawned inside the isolated PID namespace.
+    cleanup:
+      - Eternalize the fixed agent, exit the injector, and require PID-namespace teardown to remove the child.
+    timeout_seconds: 30
+    max_repetitions: 1
+composition:
+  consumes: [artifact/executable]
+  provides: [surface/runtime-module-map]
+  compatible_after: []
+  compatible_before: [causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: surface/runtime-module-map
+    description: Exact input and instrumentation identities plus bounded runtime collections and cleanup outcome.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Treating a loaded module, import, export, or dependency as proof that a path is reachable or vulnerable.
+  - Reporting completeness when Frida, producer, broker, or evidence ceilings truncated a collection.
+  - Reusing load addresses from a different execution despite address-space randomization.
+variations:
+  - Compare the normalized module and symbol sets of exact vulnerable and fixed executable artifacts in a separate differential campaign.
+sources:
+  - source_id: frida-installation
+    kind: publication
+    title: Frida installation
+    url: https://frida.re/docs/installation/
+    authors: [Frida project]
+    license: wxWindows-Library-Licence-3.1
+    accessed_at: 2026-07-30T04:15:00Z
+    notes: Official installation and process-injection guidance informed the adapter boundary; playbook wording is original.
+  - source_id: frida-javascript-api
+    kind: publication
+    title: Frida JavaScript API
+    url: https://frida.re/docs/javascript-api/
+    authors: [Frida project]
+    license: wxWindows-Library-Licence-3.1
+    accessed_at: 2026-07-30T04:15:00Z
+    notes: Process and module enumeration semantics informed the fixed output contract; playbook wording is original.
+validation:
+  fixture_ids: [frida-runtime-map-elf64-x86-64-v1]
+  test_commands: ["pytest tests/test_adapter_execution.py tests/test_adapter_registry.py tests/test_corpus.py"]
+  known_limitations:
+    - The first operation supports local Linux or WSL execution only; remote devices and live attachments remain unavailable.
+    - The fixed observation intentionally excludes memory contents, function hooks, caller scripts, target arguments, and post-main behavior.
+  last_validated_at: 2026-07-30T04:15:00Z
+  validated_by: [white-hat-agent-test-suite]

@@ -19,6 +19,8 @@ from white_hat_agent.adapter_execution import (
     AdapterExecutionReceipt,
     AdapterExecutionRequest,
     AdapterLimitOverrides,
+    FridaExecutableRuntimeMapDriver,
+    FridaExecutableRuntimeMapPayload,
     GhidraNativeCodeMapDriver,
     GhidraNativeCodeMapPayload,
     JadxAndroidStaticMapDriver,
@@ -36,8 +38,11 @@ from white_hat_agent.adapter_execution import (
     YaraXFileScanPayload,
     _effective_limits,
     _fixture_bytes,
+    _frida_fixture_bytes,
+    _frida_runtime_map_script_bytes,
     _ghidra_native_map_fixture_bytes,
     _jadx_fixture_bytes,
+    _temporary_input_mode,
     _tree_usage,
     _tshark_fixture_bytes,
     _yara_x_conformance_rule,
@@ -346,6 +351,17 @@ def test_fixture_and_request_secret_contract() -> None:
             operation_id="tshark.packet-capture-map",
             display_filter="http",
         )
+
+    frida_fixture = _frida_fixture_bytes()
+    assert len(frida_fixture) == 15_584
+    assert hashlib.sha256(frida_fixture).hexdigest() == (
+        "57312d10cbae62727393380a716ce7ef5a35502c54030bf3a3420696f85ede21"
+    )
+    assert b"wha_runtime_marker" in frida_fixture
+    frida_request = request.model_copy(
+        update={"operation": FridaExecutableRuntimeMapPayload(operation_id="frida.executable-runtime-map")}
+    )
+    assert frida_request.operation.operation_id == "frida.executable-runtime-map"
 
 
 def test_limit_overrides_can_only_reduce_contract() -> None:
@@ -793,6 +809,223 @@ def test_tshark_invocation_is_fixed_and_offline(tmp_path) -> None:
             _limits(),
             {},
         )
+
+
+def _frida_output_payload() -> dict[str, object]:
+    main = {
+        "name": "artifact",
+        "path": "/input/artifact",
+        "base": "0x400000",
+        "size": 15_584,
+    }
+    return {
+        "schema_version": "1.0",
+        "producer": "frida-inject",
+        "execution_phase": "spawned-before-main",
+        "cleanup_strategy": "eternalize-then-pid-namespace-teardown",
+        "process": {
+            "arch": "x64",
+            "platform": "linux",
+            "pointer_size": 8,
+            "page_size": 4096,
+            "code_signing_policy": "optional",
+        },
+        "main_module": main,
+        "modules": {
+            "total": 2,
+            "returned": 2,
+            "truncated": False,
+            "items": [
+                main,
+                {
+                    "name": "libc.so.6",
+                    "path": "/usr/lib/libc.so.6",
+                    "base": "0x70000000",
+                    "size": 2_000_000,
+                },
+            ],
+        },
+        "imports": {
+            "total": 1,
+            "returned": 1,
+            "truncated": False,
+            "items": [
+                {
+                    "type": "function",
+                    "name": "__libc_start_main",
+                    "module": "libc.so.6",
+                    "address": "0x70000100",
+                    "slot": "0x403ff0",
+                }
+            ],
+        },
+        "exports": {
+            "total": 1,
+            "returned": 1,
+            "truncated": False,
+            "items": [
+                {
+                    "type": "function",
+                    "name": "wha_runtime_marker",
+                    "address": "0x401126",
+                    "offset_from_main": "0x1126",
+                }
+            ],
+        },
+        "dependencies": {
+            "total": 1,
+            "returned": 1,
+            "truncated": False,
+            "items": [{"name": "libc.so.6", "type": "regular"}],
+        },
+        "collection_errors": [],
+    }
+
+
+def test_frida_normalization_preserves_runtime_map_and_enforces_record_budget(tmp_path) -> None:
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    payload = _frida_output_payload()
+    stdout.write_text(
+        "WHA_FRIDA_RUNTIME_MAP_V1 " + json.dumps(payload) + "\nProcess terminated\n",
+        encoding="utf-8",
+    )
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    operation = FridaExecutableRuntimeMapPayload(operation_id="frida.executable-runtime-map")
+    driver = FridaExecutableRuntimeMapDriver()
+
+    normalized = driver.normalize(process, "a" * 64, _limits(), operation)
+
+    assert normalized.records_returned == 5
+    assert not normalized.truncated
+    assert normalized.data["main_module"] == payload["main_module"]
+    collections = normalized.data["collections"]
+    assert collections["exports"]["items"][0]["name"] == "wha_runtime_marker"
+    assert collections["dependencies"]["items"] == [{"name": "libc.so.6", "type": "regular"}]
+
+    capped = driver.normalize(
+        process,
+        "a" * 64,
+        _limits().model_copy(update={"max_records": 3}),
+        operation,
+    )
+    assert capped.records_returned == 3
+    assert capped.truncated
+    assert capped.data["record_limit_reached"] is True
+    assert capped.data["collections"]["exports"]["observed"] == 1
+    assert capped.data["collections"]["exports"]["returned"] == 0
+
+
+def test_frida_normalization_rejects_marker_and_schema_drift(tmp_path) -> None:
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=None,
+        output_complete=True,
+        warnings=(),
+    )
+    operation = FridaExecutableRuntimeMapPayload(operation_id="frida.executable-runtime-map")
+    driver = FridaExecutableRuntimeMapDriver()
+    encoded = json.dumps(_frida_output_payload())
+
+    stdout.write_text(
+        f"WHA_FRIDA_RUNTIME_MAP_V1 {encoded}\nWHA_FRIDA_RUNTIME_MAP_V1 {encoded}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AdapterExecutionError, match="exactly one marked JSON"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+    drifted = _frida_output_payload()
+    drifted["unexpected"] = True
+    stdout.write_text("WHA_FRIDA_RUNTIME_MAP_V1 " + json.dumps(drifted), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="unexpected outer schema"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+    invalid_pointer = _frida_output_payload()
+    invalid_pointer["main_module"] = {
+        **invalid_pointer["main_module"],
+        "base": "not-a-pointer",
+    }
+    stdout.write_text(
+        "WHA_FRIDA_RUNTIME_MAP_V1 " + json.dumps(invalid_pointer),
+        encoding="utf-8",
+    )
+    with pytest.raises(AdapterExecutionError, match="module base"):
+        driver.normalize(process, "a" * 64, _limits(), operation)
+
+
+def test_frida_invocation_is_fixed_local_spawn_and_binds_script(tmp_path) -> None:
+    executable = tmp_path / "frida-inject-17.16.4-linux-x86_64"
+    executable.write_bytes(b"fixture standalone Frida executable")
+    status = AdapterStatus(
+        adapter_id="frida",
+        manifest_digest="1" * 64,
+        observed_at=utc_now(),
+        platform="linux-x86_64",
+        supported=True,
+        installed=True,
+        healthy=True,
+        source="managed",
+        version="17.16.4",
+        entrypoints=[str(executable)],
+        observed_identity_sha256="2" * 64,
+    )
+    driver = FridaExecutableRuntimeMapDriver()
+    operation = FridaExecutableRuntimeMapPayload(operation_id="frida.executable-runtime-map")
+    limits = _limits().model_copy(update={"memory_mib": 2048})
+    original_digest = driver.tool_payload_digest(status.entrypoints)
+
+    invocation = driver.prepare(status, operation, limits, {})
+
+    assert invocation.argv == (
+        "/opt/tool/frida-inject",
+        "--file=/input/artifact",
+        "--script=/input/runtime-map.js",
+        "--runtime=qjs",
+        "--eternalize",
+    )
+    assert invocation.mounts == (SandboxMount(executable, "/opt/tool/frida-inject"),)
+    assert invocation.executable_input
+    assert len(invocation.inline_files) == 1
+    assert invocation.inline_files[0].destination == "/input/runtime-map.js"
+    assert invocation.inline_files[0].content == _frida_runtime_map_script_bytes()
+    assert not any(flag in " ".join(invocation.argv) for flag in ("--device", "--pid", "--name"))
+    executable.write_bytes(b"drifted standalone Frida executable")
+    assert driver.tool_payload_digest(status.entrypoints) != original_digest
+    with pytest.raises(AdapterExecutionError, match="different operation"):
+        driver.prepare(
+            status,
+            LlvmObjectInspectPayload(operation_id="llvm.object-inspect"),
+            limits,
+            {},
+        )
+
+
+def test_executable_input_mode_is_temporary_and_never_writable(tmp_path) -> None:
+    artifact = tmp_path / "artifact"
+    artifact.write_bytes(b"fixture")
+    artifact.chmod(0o400)
+
+    with _temporary_input_mode(artifact, executable=True):
+        assert artifact.stat().st_mode & 0o777 == 0o500
+
+    assert artifact.stat().st_mode & 0o777 == 0o400
 
 
 def test_jadx_normalization_preserves_code_graph_and_manifest(tmp_path) -> None:

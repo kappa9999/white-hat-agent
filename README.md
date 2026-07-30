@@ -108,14 +108,21 @@ wha adapter resolve --capability artifact.signature-match
 wha adapter conform tshark
 wha adapter resolve --capability network.capture-inspect
 
+# Install current standalone Frida and map one local executable before main.
+wha adapter install frida --yes
+wha adapter conform frida --operation frida.executable-runtime-map
+wha adapter resolve --capability binary.runtime-inspect
+
 # Add and query exact, revision-bound machine-readable knowledge on demand.
 wha adapter install mitre-attack --yes
 wha adapter search mitre-attack T1059.001
 ```
 
 The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Reviewed typed drivers
-execute Ghidra summaries and native-code maps, YARA-X signature evaluation, capa behavior identification, LLVM object
-inspection, JADX Android mapping, and TShark packet-capture mapping on Linux/WSL. The TShark result retains packet
+execute Ghidra summaries and native-code maps, a fixed Frida pre-main executable runtime map, YARA-X signature
+evaluation, capa behavior identification, LLVM object inspection, JADX Android mapping, and TShark packet-capture
+mapping on Linux/WSL. Frida is provisioned from the exact current standalone official release asset and exposes no
+remote target, process, script, argument, or environment field. The TShark result retains packet
 order, protocol chains, transport streams, selected DNS/HTTP/TLS/QUIC/WebSocket metadata, and explicit truncation
 without exposing live capture or caller-defined decoder settings. All typed drivers run without network access over
 immutable fleet-task evidence. Status and resolution never execute discovered binaries; fixed command-backed version
