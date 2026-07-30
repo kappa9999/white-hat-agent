@@ -906,6 +906,72 @@ def test_oci_supervisor_builds_an_offline_bounded_create_contract(tmp_path, monk
         supervisor._validate_invocation(mutable)
 
 
+def test_oci_supervisor_runs_through_the_fixed_docker_control_plane(tmp_path) -> None:
+    docker = tmp_path / "docker"
+    docker.write_text(
+        """#!/bin/sh
+if [ "$1" = "container" ] && [ "$2" = "create" ]; then
+  printf '%064d\\n' 0
+elif [ "$1" = "container" ] && [ "$2" = "start" ]; then
+  printf 'provider output\\n'
+elif [ "$1" = "container" ] && [ "$2" = "inspect" ]; then
+  printf '{"ExitCode":0,"OOMKilled":false}\\n'
+elif [ "$1" = "container" ] && { [ "$2" = "kill" ] || [ "$2" = "rm" ]; }; then
+  exit 0
+else
+  exit 2
+fi
+""",
+        encoding="utf-8",
+    )
+    docker.chmod(0o700)
+    artifact = tmp_path / "artifact"
+    artifact.write_bytes(b"fixture")
+    work = tmp_path / "work"
+    work.mkdir()
+    invocation = OciTrustedInvocation(
+        image_reference="ghcr.io/example/tool@sha256:" + "a" * 64,
+        platform="linux/amd64",
+        argv=("--fixed", "/data/input/artifact"),
+    )
+
+    result = OciSandboxSupervisor(docker).run(invocation, artifact, work, _limits())
+
+    assert result.outcome == AdapterExecutionOutcome.SUCCEEDED
+    assert result.return_code == 0
+    assert result.output_complete
+    assert result.stdout_path.read_text() == "provider output\n"
+    assert result.stderr_path.read_bytes() == b""
+    assert result.warnings == ()
+
+    comma_path = tmp_path / "artifact,unsafe"
+    comma_path.write_bytes(b"fixture")
+    rejected_work = tmp_path / "rejected"
+    rejected_work.mkdir()
+    with pytest.raises(AdapterExecutionError, match="mount delimiter"):
+        OciSandboxSupervisor(docker).run(invocation, comma_path, rejected_work, _limits())
+
+    with pytest.raises(AdapterExecutionError, match="result path"):
+        OciSandboxSupervisor(docker)._validate_invocation(
+            invocation.__class__(
+                image_reference=invocation.image_reference,
+                platform=invocation.platform,
+                argv=invocation.argv,
+                result_relative_path="../escape.json",
+            )
+        )
+    with pytest.raises(AdapterExecutionError, match="control command failed"):
+        OciSandboxSupervisor._control([str(docker), "unsupported"], timeout=5)
+    assert (
+        OciSandboxSupervisor._control(
+            [str(docker), "unsupported"],
+            timeout=5,
+            allow_failure=True,
+        )
+        == ""
+    )
+
+
 def test_yara_x_normalization_preserves_rule_identity_matches_and_limits(tmp_path) -> None:
     stdout = tmp_path / "stdout.bin"
     stderr = tmp_path / "stderr.bin"
