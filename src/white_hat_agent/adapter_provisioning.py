@@ -32,6 +32,7 @@ from .adapter_registry import (
     GitHubReleaseProvisioner,
     InstalledAdapterRecord,
     MitreCweProvisioner,
+    OciImageProvisioner,
     content_tree_digest,
     current_platform,
     platform_values,
@@ -43,6 +44,21 @@ from .models import Sha256, StrictModel, stable_digest, utc_now
 _USER_AGENT = "white-hat-agent-adapter-provisioner/1 (+https://github.com/kappa9999/white-hat-agent)"
 _MAX_RELEASE_METADATA_BYTES = 4_194_304
 _MAX_ARCHIVE_ENTRIES = 100_000
+_MAX_OCI_MANIFESTS = 128
+_MAX_OCI_LAYERS = 256
+_OCI_INDEX_MEDIA_TYPES = {
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+}
+_OCI_MANIFEST_MEDIA_TYPES = {
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+}
+_OCI_LAYER_MEDIA_TYPES = {
+    "application/vnd.oci.image.layer.v1.tar+gzip",
+    "application/vnd.oci.image.layer.v1.tar+zstd",
+    "application/vnd.docker.image.rootfs.diff.tar.gzip",
+}
 _CWE_VERSION_URL = "https://cwe-api.mitre.org/api/v1/cwe/version"
 _CWE_CATALOG_URL = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip"
 _CWE_CATALOG_NAME = "cwec_latest.xml.zip"
@@ -69,6 +85,29 @@ class ResolvedArtifact(StrictModel):
         return value
 
 
+class ResolvedOciLayer(StrictModel):
+    media_type: Literal[
+        "application/vnd.oci.image.layer.v1.tar+gzip",
+        "application/vnd.oci.image.layer.v1.tar+zstd",
+        "application/vnd.docker.image.rootfs.diff.tar.gzip",
+    ]
+    size: int = Field(ge=1, le=2_147_483_648)
+    sha256: Sha256
+
+
+class ResolvedOciImage(StrictModel):
+    image: str = Field(pattern=r"^ghcr\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$")
+    tag: str = Field(min_length=1, max_length=200)
+    platform: Literal["linux/amd64", "linux/arm64"]
+    index_sha256: Sha256
+    manifest_sha256: Sha256
+    config_sha256: Sha256
+    source_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    compressed_bytes: int = Field(ge=1, le=2_147_483_648)
+    entrypoint: list[str] = Field(min_length=1, max_length=8)
+    layers: list[ResolvedOciLayer] = Field(min_length=1, max_length=_MAX_OCI_LAYERS)
+
+
 class CweCatalogIdentity(StrictModel):
     content_date: date
     total_weaknesses: int = Field(ge=1, le=100_000)
@@ -81,7 +120,7 @@ class AdapterProvisionPlan(StrictModel):
     adapter_id: Slug
     manifest_digest: Sha256
     platform: str
-    method: Literal["github-release", "adoptium-api", "git-checkout", "mitre-cwe"]
+    method: Literal["github-release", "oci-image", "adoptium-api", "git-checkout", "mitre-cwe"]
     action: ProvisionAction
     current_version: str | None = None
     target_version: str = Field(min_length=1)
@@ -93,6 +132,7 @@ class AdapterProvisionPlan(StrictModel):
     max_download_bytes: int = Field(default=1, ge=1, le=2_147_483_648)
     max_install_bytes: int = Field(default=1, ge=1, le=8_589_934_592)
     cwe_identity: CweCatalogIdentity | None = None
+    oci_image: ResolvedOciImage | None = None
     created_at: AwareDatetime
     blockers: list[str] = Field(default_factory=list)
 
@@ -104,6 +144,10 @@ class AdapterProvisionPlan(StrictModel):
             raise ValueError("git checkout plans do not accept release artifacts")
         if (self.method == "mitre-cwe") != (self.cwe_identity is not None):
             raise ValueError("only MITRE CWE plans require a CWE catalog identity")
+        if (self.method == "oci-image") != (self.oci_image is not None):
+            raise ValueError("only OCI image plans require an OCI image identity")
+        if self.method == "oci-image" and (self.artifacts or self.strip_single_directory):
+            raise ValueError("OCI image plans do not accept archive extraction fields")
         return self
 
     def digest(self) -> str:
@@ -147,6 +191,14 @@ class AdapterProvisioner:
                 platform,
                 status.version,
             )
+        if isinstance(definition, OciImageProvisioner):
+            return self._plan_oci(
+                manifest,
+                definition,
+                platform,
+                status.version,
+                status.revision,
+            )
         if isinstance(definition, GitCheckoutProvisioner):
             return self._plan_git(manifest, definition, platform, status.revision)
         if isinstance(definition, MitreCweProvisioner):
@@ -169,6 +221,8 @@ class AdapterProvisioner:
             )
         if plan.method in {"github-release", "adoptium-api", "mitre-cwe"}:
             record = self._provision_archive(plan, manifest)
+        elif plan.method == "oci-image":
+            record = self._provision_oci(plan, manifest)
         else:
             record = self._provision_git(plan, manifest)
         return AdapterProvisionResult(
@@ -271,6 +325,61 @@ class AdapterProvisioner:
             max_download_bytes=definition.max_checkout_bytes,
             max_install_bytes=definition.max_checkout_bytes,
             created_at=utc_now(),
+        )
+
+    def _plan_oci(
+        self,
+        manifest: AdapterManifest,
+        definition: OciImageProvisioner,
+        platform: str,
+        current_version: str | None,
+        current_revision: str | None,
+    ) -> AdapterProvisionPlan:
+        image_platform = definition.platform_map.get(platform)
+        if image_platform is None:
+            raise AdapterRegistryError(f"no OCI image platform for {manifest.adapter_id} on {platform}")
+        release_url = f"https://api.github.com/repos/{definition.release_repository}/releases/latest"
+        release = _get_json(release_url)
+        tag = _required_string(release.get("tag_name"), "release tag")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", tag) is None:
+            raise AdapterRegistryError("GitHub release returned an invalid OCI tag")
+        target_version = _release_version(tag)
+        commit_url = (
+            f"https://api.github.com/repos/{definition.release_repository}/commits/{quote(tag, safe='')}"
+        )
+        commit = _get_json(commit_url)
+        source_revision = _required_string(commit.get("sha"), "release commit").lower()
+        if re.fullmatch(r"[0-9a-f]{40}", source_revision) is None:
+            raise AdapterRegistryError("GitHub release commit has an invalid identity")
+        image = _resolve_oci_image(
+            definition,
+            tag=tag,
+            platform=image_platform,
+            source_revision=source_revision,
+            provider_url=manifest.provider_url,
+        )
+        revision = _oci_revision(image)
+        action = (
+            ProvisionAction.NONE
+            if current_revision == revision
+            else (ProvisionAction.UPDATE if current_revision else ProvisionAction.INSTALL)
+        )
+        return AdapterProvisionPlan(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            platform=platform,
+            method="oci-image",
+            action=action,
+            current_version=current_version,
+            target_version=target_version,
+            revision=revision,
+            source_urls=_oci_source_urls(definition, tag, image),
+            entrypoints=[definition.descriptor_name],
+            max_download_bytes=definition.max_download_bytes,
+            max_install_bytes=definition.max_install_bytes,
+            oci_image=image,
+            created_at=utc_now(),
+            blockers=_oci_runtime_blockers(),
         )
 
     def _plan_adoptium(
@@ -413,6 +522,33 @@ class AdapterProvisioner:
             api_url = f"https://api.github.com/repos/{definition.repository}/releases/latest"
             if plan.source_urls != [api_url, *[artifact.url for artifact in plan.artifacts]]:
                 raise AdapterRegistryError("provision plan sources do not match the resolved artifacts")
+        elif isinstance(definition, OciImageProvisioner):
+            image = plan.oci_image
+            expected_platform = definition.platform_map.get(plan.platform)
+            if image is None or expected_platform is None:
+                raise AdapterRegistryError("OCI plan is missing its platform image identity")
+            if (
+                image.image != definition.image
+                or image.platform != expected_platform
+                or image.entrypoint != definition.entrypoint
+            ):
+                raise AdapterRegistryError("OCI plan image contract does not match the manifest")
+            if plan.target_version != _release_version(image.tag):
+                raise AdapterRegistryError("OCI plan version does not match its release tag")
+            if plan.revision != _oci_revision(image):
+                raise AdapterRegistryError("OCI plan revision does not match its image digests")
+            expected_layer_bytes = sum(layer.size for layer in image.layers)
+            if (
+                image.compressed_bytes != expected_layer_bytes
+                or image.compressed_bytes > definition.max_download_bytes
+                or plan.max_download_bytes != definition.max_download_bytes
+                or plan.max_install_bytes != definition.max_install_bytes
+            ):
+                raise AdapterRegistryError("OCI plan exceeds the manifest bounds")
+            if plan.entrypoints != [definition.descriptor_name]:
+                raise AdapterRegistryError("OCI plan descriptor does not match the manifest")
+            if plan.source_urls != _oci_source_urls(definition, image.tag, image):
+                raise AdapterRegistryError("OCI plan sources do not match the resolved image")
         elif isinstance(definition, AdoptiumProvisioner):
             if len(plan.artifacts) != 1:
                 raise AdapterRegistryError("Adoptium plans require exactly one package")
@@ -486,15 +622,18 @@ class AdapterProvisioner:
                 raise AdapterRegistryError("MITRE CWE plan has an invalid extraction layout")
             if plan.source_urls != [_CWE_VERSION_URL, _CWE_CATALOG_URL]:
                 raise AdapterRegistryError("MITRE CWE plan sources do not match the canonical catalog")
-        expected_current = current.revision if plan.method == "git-checkout" else current.version
+        expected_current = (
+            current.revision if plan.method in {"git-checkout", "oci-image"} else current.version
+        )
         serialized_current = (
             expected_current[:12] if plan.method == "git-checkout" and expected_current else expected_current
         )
-        if plan.current_version != serialized_current:
+        serialized_plan_current = current.version if plan.method == "oci-image" else serialized_current
+        if plan.current_version != serialized_plan_current:
             raise AdapterRegistryError("provision plan is stale for the current adapter state")
         expected_action = ProvisionAction.INSTALL
         if expected_current:
-            if plan.method == "git-checkout":
+            if plan.method in {"git-checkout", "oci-image"}:
                 expected_action = (
                     ProvisionAction.NONE if expected_current == plan.revision else ProvisionAction.UPDATE
                 )
@@ -506,7 +645,11 @@ class AdapterProvisioner:
                 )
         if plan.action != expected_action:
             raise AdapterRegistryError("provision plan action is stale for the current adapter state")
-        expected_blockers = _provision_requirement_blockers(manifest, current.blockers)
+        expected_blockers = (
+            _oci_runtime_blockers()
+            if plan.method == "oci-image"
+            else _provision_requirement_blockers(manifest, current.blockers)
+        )
         if plan.blockers != expected_blockers:
             raise AdapterRegistryError("provision plan blockers are stale for the current host")
 
@@ -561,6 +704,54 @@ class AdapterProvisioner:
                 revision=plan.revision,
                 source_urls=plan.source_urls,
                 artifact_sha256=[item.sha256 for item in plan.artifacts],
+                content_sha256=content_tree_digest(
+                    content,
+                    max_bytes=plan.max_install_bytes,
+                ),
+                entrypoints=plan.entrypoints,
+                installed_at=utc_now(),
+            )
+            (temporary_root / "installed.json").write_text(
+                record.model_dump_json(indent=2) + "\n", encoding="utf-8"
+            )
+            self._activate(temporary_root, plan.adapter_id)
+            return record
+        except BaseException:
+            shutil.rmtree(temporary_root, ignore_errors=True)
+            raise
+
+    def _provision_oci(
+        self,
+        plan: AdapterProvisionPlan,
+        manifest: AdapterManifest,
+    ) -> InstalledAdapterRecord:
+        image = plan.oci_image
+        definition = manifest.provisioner
+        if image is None or not isinstance(definition, OciImageProvisioner):
+            raise AdapterRegistryError("OCI provision requires an exact image identity")
+        docker = _trusted_docker_executable()
+        _pull_oci_image(docker, image)
+        _verify_local_oci_image(docker, image)
+        temporary_root = self._temporary_adapter_root(plan.adapter_id)
+        try:
+            content = temporary_root / "content"
+            content.mkdir()
+            descriptor = content / definition.descriptor_name
+            descriptor.write_text(_oci_descriptor_text(image), encoding="utf-8", newline="\n")
+            if descriptor.stat().st_size > definition.max_install_bytes:
+                raise AdapterRegistryError("OCI descriptor exceeds the manifest install bound")
+            record = InstalledAdapterRecord(
+                adapter_id=plan.adapter_id,
+                manifest_digest=manifest.digest(),
+                version=plan.target_version,
+                revision=plan.revision,
+                source_urls=plan.source_urls,
+                artifact_sha256=[
+                    image.index_sha256,
+                    image.manifest_sha256,
+                    image.config_sha256,
+                    *[layer.sha256 for layer in image.layers],
+                ],
                 content_sha256=content_tree_digest(
                     content,
                     max_bytes=plan.max_install_bytes,
@@ -675,6 +866,409 @@ class AdapterProvisioner:
                 os.replace(backup, destination)
             raise
         shutil.rmtree(backup, ignore_errors=True)
+
+
+def _resolve_oci_image(
+    definition: OciImageProvisioner,
+    *,
+    tag: str,
+    platform: str,
+    source_revision: str,
+    provider_url: str,
+) -> ResolvedOciImage:
+    token = _get_oci_token(definition.image)
+    index_url = _oci_manifest_url(definition.image, tag)
+    index, index_digest, _ = _get_oci_document(
+        index_url,
+        token=token,
+        accepted_media_types=_OCI_INDEX_MEDIA_TYPES,
+    )
+    if index.get("schemaVersion") != 2 or index.get("mediaType") not in _OCI_INDEX_MEDIA_TYPES:
+        raise AdapterRegistryError("OCI tag did not resolve to a supported image index")
+    manifests = index.get("manifests")
+    if not isinstance(manifests, list) or not 1 <= len(manifests) <= _MAX_OCI_MANIFESTS:
+        raise AdapterRegistryError("OCI image index has an invalid manifest list")
+    operating_system, architecture = platform.split("/", 1)
+    matching: list[dict[str, object]] = []
+    for item in manifests:
+        if not isinstance(item, dict):
+            raise AdapterRegistryError("OCI image index contains a non-object manifest")
+        item_platform = item.get("platform")
+        if (
+            isinstance(item_platform, dict)
+            and item_platform.get("os") == operating_system
+            and item_platform.get("architecture") == architecture
+            and item.get("mediaType") in _OCI_MANIFEST_MEDIA_TYPES
+        ):
+            matching.append(item)
+    if len(matching) != 1:
+        raise AdapterRegistryError(
+            f"OCI image index must contain exactly one {platform} manifest; matches={len(matching)}"
+        )
+    selected = matching[0]
+    manifest_digest = _oci_descriptor_digest(selected, "platform manifest")
+    declared_manifest_size = _oci_descriptor_size(selected, "platform manifest")
+    manifest_url = _oci_manifest_url(definition.image, f"sha256:{manifest_digest}")
+    manifest, observed_manifest_digest, manifest_bytes = _get_oci_document(
+        manifest_url,
+        token=token,
+        accepted_media_types=_OCI_MANIFEST_MEDIA_TYPES,
+        expected_sha256=manifest_digest,
+    )
+    if observed_manifest_digest != manifest_digest or manifest_bytes != declared_manifest_size:
+        raise AdapterRegistryError("OCI platform manifest identity differs from its image index")
+    if manifest.get("schemaVersion") != 2 or manifest.get("mediaType") not in _OCI_MANIFEST_MEDIA_TYPES:
+        raise AdapterRegistryError("OCI platform manifest has an unsupported schema")
+    config_descriptor = manifest.get("config")
+    layers_payload = manifest.get("layers")
+    if not isinstance(config_descriptor, dict):
+        raise AdapterRegistryError("OCI platform manifest has no config descriptor")
+    if not isinstance(layers_payload, list) or not 1 <= len(layers_payload) <= _MAX_OCI_LAYERS:
+        raise AdapterRegistryError("OCI platform manifest has an invalid layer list")
+    config_media_type = config_descriptor.get("mediaType")
+    if config_media_type not in {
+        "application/vnd.oci.image.config.v1+json",
+        "application/vnd.docker.container.image.v1+json",
+    }:
+        raise AdapterRegistryError("OCI image config has an unsupported media type")
+    config_digest = _oci_descriptor_digest(config_descriptor, "image config")
+    config_size = _oci_descriptor_size(config_descriptor, "image config")
+    if config_size > _MAX_RELEASE_METADATA_BYTES:
+        raise AdapterRegistryError("OCI image config exceeds the metadata byte limit")
+    layers: list[ResolvedOciLayer] = []
+    for layer in layers_payload:
+        if not isinstance(layer, dict) or layer.get("mediaType") not in _OCI_LAYER_MEDIA_TYPES:
+            raise AdapterRegistryError("OCI platform manifest has an unsupported layer")
+        layers.append(
+            ResolvedOciLayer(
+                media_type=layer["mediaType"],
+                size=_oci_descriptor_size(layer, "image layer"),
+                sha256=_oci_descriptor_digest(layer, "image layer"),
+            )
+        )
+    compressed_bytes = sum(layer.size for layer in layers)
+    if compressed_bytes > definition.max_download_bytes:
+        raise AdapterRegistryError(
+            f"OCI image is {compressed_bytes} compressed bytes; maximum is {definition.max_download_bytes}"
+        )
+    config_url = _oci_blob_url(definition.image, config_digest)
+    config = _get_oci_blob_json(
+        config_url,
+        token=token,
+        expected_sha256=config_digest,
+        expected_size=config_size,
+    )
+    image_config = config.get("config")
+    if (
+        config.get("os") != operating_system
+        or config.get("architecture") != architecture
+        or not isinstance(image_config, dict)
+    ):
+        raise AdapterRegistryError("OCI image config does not match the selected platform")
+    entrypoint = image_config.get("Entrypoint")
+    labels = image_config.get("Labels")
+    if entrypoint != definition.entrypoint or not isinstance(labels, dict):
+        raise AdapterRegistryError("OCI image entrypoint does not match the adapter manifest")
+    if (
+        labels.get("org.opencontainers.image.source") != provider_url
+        or labels.get("org.opencontainers.image.version") != tag
+        or labels.get("org.opencontainers.image.revision") != source_revision
+    ):
+        raise AdapterRegistryError("OCI image source labels do not match its GitHub release")
+    return ResolvedOciImage(
+        image=definition.image,
+        tag=tag,
+        platform=platform,
+        index_sha256=index_digest,
+        manifest_sha256=manifest_digest,
+        config_sha256=config_digest,
+        source_revision=source_revision,
+        compressed_bytes=compressed_bytes,
+        entrypoint=definition.entrypoint,
+        layers=layers,
+    )
+
+
+def _oci_repository(image: str) -> str:
+    prefix = "ghcr.io/"
+    if not image.startswith(prefix):
+        raise AdapterRegistryError("OCI image is outside the supported GHCR registry")
+    return image.removeprefix(prefix)
+
+
+def _oci_token_url(image: str) -> str:
+    repository = _oci_repository(image)
+    return "https://ghcr.io/token?" + urlencode(
+        {"service": "ghcr.io", "scope": f"repository:{repository}:pull"}
+    )
+
+
+def _oci_manifest_url(image: str, reference: str) -> str:
+    repository = _oci_repository(image)
+    encoded = quote(reference, safe="._:-")
+    return f"https://ghcr.io/v2/{repository}/manifests/{encoded}"
+
+
+def _oci_blob_url(image: str, digest: str) -> str:
+    repository = _oci_repository(image)
+    return f"https://ghcr.io/v2/{repository}/blobs/sha256:{digest}"
+
+
+def _get_oci_token(image: str) -> str:
+    url = _oci_token_url(image)
+    _validate_oci_token_url(url, image)
+    request = Request(
+        url,
+        headers={"Accept": "application/json", "User-Agent": _USER_AGENT},
+        method="GET",
+    )
+    try:
+        with build_opener(_OciMetadataRedirectHandler()).open(request, timeout=30) as response:
+            body = response.read(65_537)
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        raise AdapterRegistryError(f"OCI token request failed: {type(exc).__name__}") from exc
+    if len(body) > 65_536:
+        raise AdapterRegistryError("OCI token response exceeds the metadata byte limit")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AdapterRegistryError("OCI token endpoint returned invalid JSON") from exc
+    token = payload.get("token") if isinstance(payload, dict) else None
+    if (
+        not isinstance(token, str)
+        or not 1 <= len(token) <= 16_384
+        or re.fullmatch(r"[A-Za-z0-9._~+/=-]+", token) is None
+    ):
+        raise AdapterRegistryError("OCI token endpoint returned an invalid bearer token")
+    return token
+
+
+def _get_oci_document(
+    url: str,
+    *,
+    token: str,
+    accepted_media_types: set[str],
+    expected_sha256: str | None = None,
+) -> tuple[dict[str, object], str, int]:
+    _validate_oci_registry_url(url)
+    request = Request(
+        url,
+        headers={
+            "Accept": ", ".join(sorted(accepted_media_types)),
+            "Authorization": f"Bearer {token}",
+            "User-Agent": _USER_AGENT,
+        },
+        method="GET",
+    )
+    try:
+        with build_opener(_OciMetadataRedirectHandler()).open(request, timeout=30) as response:
+            media_type = response.headers.get_content_type()
+            digest_header = response.headers.get("Docker-Content-Digest", "")
+            body = response.read(_MAX_RELEASE_METADATA_BYTES + 1)
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        raise AdapterRegistryError(f"OCI registry request failed: {type(exc).__name__}") from exc
+    if len(body) > _MAX_RELEASE_METADATA_BYTES:
+        raise AdapterRegistryError("OCI registry response exceeds the metadata byte limit")
+    observed = hashlib.sha256(body).hexdigest()
+    if media_type not in accepted_media_types:
+        raise AdapterRegistryError("OCI registry returned an unexpected media type")
+    if digest_header != f"sha256:{observed}":
+        raise AdapterRegistryError("OCI registry digest header does not match its response")
+    if expected_sha256 is not None and observed != expected_sha256:
+        raise AdapterRegistryError("OCI registry response does not match its expected digest")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AdapterRegistryError("OCI registry returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise AdapterRegistryError("OCI registry document must be an object")
+    return payload, observed, len(body)
+
+
+def _get_oci_blob_json(
+    url: str,
+    *,
+    token: str,
+    expected_sha256: str,
+    expected_size: int,
+) -> dict[str, object]:
+    _validate_oci_registry_url(url)
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/vnd.oci.image.config.v1+json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": _USER_AGENT,
+        },
+        method="GET",
+    )
+    try:
+        with build_opener(_OciBlobRedirectHandler()).open(request, timeout=30) as response:
+            body = response.read(_MAX_RELEASE_METADATA_BYTES + 1)
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        raise AdapterRegistryError(f"OCI config request failed: {type(exc).__name__}") from exc
+    if len(body) > _MAX_RELEASE_METADATA_BYTES or len(body) != expected_size:
+        raise AdapterRegistryError("OCI image config size does not match its descriptor")
+    if hashlib.sha256(body).hexdigest() != expected_sha256:
+        raise AdapterRegistryError("OCI image config digest does not match its descriptor")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AdapterRegistryError("OCI image config is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise AdapterRegistryError("OCI image config must be an object")
+    return payload
+
+
+def _oci_descriptor_digest(value: dict[str, object], label: str) -> str:
+    digest = value.get("digest")
+    if not isinstance(digest, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+        raise AdapterRegistryError(f"OCI {label} has an invalid digest")
+    return digest.removeprefix("sha256:")
+
+
+def _oci_descriptor_size(value: dict[str, object], label: str) -> int:
+    size = value.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 2_147_483_648:
+        raise AdapterRegistryError(f"OCI {label} has an invalid size")
+    return size
+
+
+def _oci_revision(image: ResolvedOciImage) -> str:
+    return f"{image.tag}@sha256:{image.index_sha256}/sha256:{image.manifest_sha256}"
+
+
+def _oci_source_urls(
+    definition: OciImageProvisioner,
+    tag: str,
+    image: ResolvedOciImage,
+) -> list[str]:
+    encoded_tag = quote(tag, safe="")
+    return [
+        f"https://api.github.com/repos/{definition.release_repository}/releases/latest",
+        f"https://api.github.com/repos/{definition.release_repository}/commits/{encoded_tag}",
+        _oci_manifest_url(definition.image, tag),
+        _oci_manifest_url(definition.image, f"sha256:{image.manifest_sha256}"),
+        _oci_blob_url(definition.image, image.config_sha256),
+    ]
+
+
+def _oci_descriptor_text(image: ResolvedOciImage) -> str:
+    values = {
+        "schema_version": "1.0",
+        "version": image.tag,
+        "image": image.image,
+        "platform": image.platform,
+        "index_sha256": image.index_sha256,
+        "manifest_sha256": image.manifest_sha256,
+        "config_sha256": image.config_sha256,
+        "source_revision": image.source_revision,
+        "compressed_bytes": str(image.compressed_bytes),
+        "entrypoint_json": json.dumps(image.entrypoint, ensure_ascii=True, separators=(",", ":")),
+    }
+    return "".join(f"{key}={value}\n" for key, value in values.items())
+
+
+def _trusted_docker_executable() -> Path:
+    selected = shutil.which("docker")
+    if not selected:
+        raise AdapterRegistryError("Docker CLI is required for OCI image adapters")
+    path = Path(selected).resolve(strict=True)
+    metadata = path.stat()
+    if not path.is_file() or not os.access(path, os.X_OK) or metadata.st_mode & 0o022:
+        raise AdapterRegistryError("Docker CLI must be an executable not writable by group or world")
+    return path
+
+
+def _oci_runtime_blockers() -> list[str]:
+    try:
+        docker = _trusted_docker_executable()
+        output = _run_docker(
+            [str(docker), "version", "--format", "{{.Server.Version}}"],
+            timeout=15,
+        )
+        if re.fullmatch(r"[0-9]+(?:\.[0-9]+)+(?:[-+][A-Za-z0-9.-]+)?", output.strip()) is None:
+            return ["Docker engine returned an invalid server version"]
+    except (AdapterRegistryError, OSError):
+        return ["Docker engine is unavailable"]
+    return []
+
+
+def _run_docker(command: list[str], *, timeout: int) -> str:
+    try:
+        result = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise AdapterRegistryError(f"Docker command failed: {type(exc).__name__}") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()[:2_000]
+        raise AdapterRegistryError(f"Docker command failed with exit {result.returncode}: {detail}")
+    output = result.stdout.strip()
+    if len(output.encode("utf-8")) > 65_536:
+        raise AdapterRegistryError("Docker command output exceeds the metadata byte limit")
+    return output
+
+
+def _pull_oci_image(docker: Path, image: ResolvedOciImage) -> None:
+    _run_docker(
+        [
+            str(docker),
+            "image",
+            "pull",
+            "--platform",
+            image.platform,
+            f"{image.image}@sha256:{image.manifest_sha256}",
+        ],
+        timeout=1_200,
+    )
+
+
+def _verify_local_oci_image(docker: Path, image: ResolvedOciImage) -> None:
+    reference = f"{image.image}@sha256:{image.manifest_sha256}"
+    output = _run_docker(
+        [str(docker), "image", "inspect", "--format", "{{json .}}", reference],
+        timeout=30,
+    )
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise AdapterRegistryError("Docker image inspection returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise AdapterRegistryError("Docker image inspection must return an object")
+    operating_system, architecture = image.platform.split("/", 1)
+    config = payload.get("Config")
+    descriptor = payload.get("Descriptor")
+    repo_digests = payload.get("RepoDigests")
+    expected_ids = {
+        f"sha256:{image.config_sha256}",
+        f"sha256:{image.manifest_sha256}",
+    }
+    if (
+        payload.get("Id") not in expected_ids
+        or payload.get("Os") != operating_system
+        or payload.get("Architecture") != architecture
+        or not isinstance(config, dict)
+        or config.get("Entrypoint") != image.entrypoint
+        or not isinstance(repo_digests, list)
+        or reference not in repo_digests
+    ):
+        raise AdapterRegistryError("local Docker image does not match the resolved OCI identity")
+    if descriptor is not None and (
+        not isinstance(descriptor, dict) or descriptor.get("digest") != f"sha256:{image.manifest_sha256}"
+    ):
+        raise AdapterRegistryError("local Docker descriptor does not match the OCI manifest")
+    labels = config.get("Labels")
+    if not isinstance(labels, dict) or (
+        labels.get("org.opencontainers.image.revision") != image.source_revision
+        or labels.get("org.opencontainers.image.version") != image.tag
+    ):
+        raise AdapterRegistryError("local Docker image labels do not match the release identity")
 
 
 def _get_json(url: str) -> dict[str, object]:
@@ -1301,6 +1895,45 @@ def _validate_release_asset_url(url: str, repository: str | None) -> None:
         raise AdapterRegistryError("release asset URL is outside GitHub releases")
 
 
+def _validate_oci_token_url(url: str, image: str) -> None:
+    parsed = urlsplit(url)
+    query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+    repository = _oci_repository(image)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "ghcr.io"
+        or parsed.path != "/token"
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+        or query
+        != {
+            "service": ["ghcr.io"],
+            "scope": [f"repository:{repository}:pull"],
+        }
+    ):
+        raise AdapterRegistryError("URL is outside the bounded GHCR token surface")
+
+
+def _validate_oci_registry_url(url: str) -> None:
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "ghcr.io"
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or re.fullmatch(
+            r"/v2/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+/"
+            r"(?:manifests/[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,270}|blobs/sha256:[0-9a-f]{64})",
+            parsed.path,
+        )
+        is None
+    ):
+        raise AdapterRegistryError("URL is outside the bounded GHCR registry surface")
+
+
 class _GitHubApiRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise AdapterRegistryError("GitHub API redirects require adapter manifest review")
@@ -1329,3 +1962,30 @@ class _ReleaseAssetRedirectHandler(HTTPRedirectHandler):
         ):
             raise AdapterRegistryError("release asset redirected outside GitHub content hosting")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class _OciMetadataRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise AdapterRegistryError("OCI metadata redirects require adapter review")
+
+
+class _OciBlobRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urlsplit(newurl)
+        host = (parsed.hostname or "").casefold()
+        if (
+            parsed.scheme != "https"
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+            or not host.endswith(".githubusercontent.com")
+        ):
+            raise AdapterRegistryError("OCI blob redirected outside GitHub content hosting")
+        return Request(
+            newurl,
+            headers={
+                "Accept": req.headers.get("Accept", "application/octet-stream"),
+                "User-Agent": _USER_AGENT,
+            },
+            method="GET",
+        )

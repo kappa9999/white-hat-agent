@@ -242,6 +242,21 @@
       "title": "TsharkPacketCaptureMapPayload",
       "type": "object"
     },
+    "UnblobExtractionMapPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "unblob.extraction-map",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "UnblobExtractionMapPayload",
+      "type": "object"
+    },
     "YaraXFileScanPayload": {
       "additionalProperties": false,
       "properties": {
@@ -301,6 +316,7 @@
           "jadx.android-static-map": "#/$defs/JadxAndroidStaticMapPayload",
           "llvm.object-inspect": "#/$defs/LlvmObjectInspectPayload",
           "tshark.packet-capture-map": "#/$defs/TsharkPacketCaptureMapPayload",
+          "unblob.extraction-map": "#/$defs/UnblobExtractionMapPayload",
           "yara-x.file-scan": "#/$defs/YaraXFileScanPayload"
         },
         "propertyName": "operation_id"
@@ -320,6 +336,9 @@
         },
         {
           "$ref": "#/$defs/GoReSymSymbolMapPayload"
+        },
+        {
+          "$ref": "#/$defs/UnblobExtractionMapPayload"
         },
         {
           "$ref": "#/$defs/JadxAndroidStaticMapPayload"

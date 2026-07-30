@@ -102,6 +102,30 @@ class GitHubReleaseProvisioner(StrictModel):
         return self
 
 
+class OciImageProvisioner(StrictModel):
+    kind: Literal["oci-image"] = "oci-image"
+    image: str = Field(pattern=r"^ghcr\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$")
+    release_repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+    platform_map: dict[str, Literal["linux/amd64", "linux/arm64"]]
+    entrypoint: list[str] = Field(min_length=1, max_length=8)
+    descriptor_name: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,128}$")
+    max_download_bytes: int = Field(ge=1, le=2_147_483_648)
+    max_install_bytes: int = Field(ge=1, le=1_048_576)
+
+    @model_validator(mode="after")
+    def valid_image_contract(self) -> Self:
+        if not self.platform_map:
+            raise ValueError("OCI image provisioner requires platform mappings")
+        if self.descriptor_name in {".", ".."}:
+            raise ValueError("OCI descriptor must be a portable file name")
+        if any(
+            not value or len(value) > 1_024 or "\x00" in value or "\r" in value or "\n" in value
+            for value in self.entrypoint
+        ):
+            raise ValueError("OCI entrypoint components must be bounded single-line strings")
+        return self
+
+
 class AdoptiumProvisioner(StrictModel):
     kind: Literal["adoptium-api"] = "adoptium-api"
     feature_version: int = Field(ge=21, le=99)
@@ -139,7 +163,11 @@ class MitreCweProvisioner(StrictModel):
 
 
 ProvisionerDefinition = Annotated[
-    GitHubReleaseProvisioner | AdoptiumProvisioner | GitCheckoutProvisioner | MitreCweProvisioner,
+    GitHubReleaseProvisioner
+    | OciImageProvisioner
+    | AdoptiumProvisioner
+    | GitCheckoutProvisioner
+    | MitreCweProvisioner,
     Field(discriminator="kind"),
 ]
 
@@ -263,6 +291,21 @@ class AdapterManifest(StrictModel):
                 if missing:
                     raise ValueError(
                         "provisioned tool adapters require entrypoints for: " + ", ".join(missing)
+                    )
+            if isinstance(self.provisioner, OciImageProvisioner):
+                missing = [
+                    platform for platform in self.platforms if platform not in self.provisioner.platform_map
+                ]
+                if missing:
+                    raise ValueError("OCI tool adapters require platform mappings for: " + ", ".join(missing))
+                if (
+                    self.probe is None
+                    or self.probe.version_file != self.provisioner.descriptor_name
+                    or self.probe.version_property != "version"
+                    or self.probe.version_args
+                ):
+                    raise ValueError(
+                        "OCI tool adapters require a passive version property in their descriptor"
                     )
             if self.search_globs:
                 raise ValueError("tool adapters cannot declare knowledge search globs")
@@ -1480,7 +1523,7 @@ def _terms(value: str) -> set[str]:
 def _managed_content_limit(manifest: AdapterManifest) -> int:
     if isinstance(
         manifest.provisioner,
-        (GitHubReleaseProvisioner, AdoptiumProvisioner, MitreCweProvisioner),
+        (GitHubReleaseProvisioner, OciImageProvisioner, AdoptiumProvisioner, MitreCweProvisioner),
     ):
         return manifest.provisioner.max_install_bytes
     if isinstance(manifest.provisioner, GitCheckoutProvisioner):

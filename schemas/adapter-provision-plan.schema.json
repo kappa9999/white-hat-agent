@@ -77,6 +77,120 @@
       ],
       "title": "ResolvedArtifact",
       "type": "object"
+    },
+    "ResolvedOciImage": {
+      "additionalProperties": false,
+      "properties": {
+        "compressed_bytes": {
+          "maximum": 2147483648,
+          "minimum": 1,
+          "title": "Compressed Bytes",
+          "type": "integer"
+        },
+        "config_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Config Sha256",
+          "type": "string"
+        },
+        "entrypoint": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Entrypoint",
+          "type": "array"
+        },
+        "image": {
+          "pattern": "^ghcr\\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$",
+          "title": "Image",
+          "type": "string"
+        },
+        "index_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Index Sha256",
+          "type": "string"
+        },
+        "layers": {
+          "items": {
+            "$ref": "#/$defs/ResolvedOciLayer"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Layers",
+          "type": "array"
+        },
+        "manifest_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "platform": {
+          "enum": [
+            "linux/amd64",
+            "linux/arm64"
+          ],
+          "title": "Platform",
+          "type": "string"
+        },
+        "source_revision": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Source Revision",
+          "type": "string"
+        },
+        "tag": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tag",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image",
+        "tag",
+        "platform",
+        "index_sha256",
+        "manifest_sha256",
+        "config_sha256",
+        "source_revision",
+        "compressed_bytes",
+        "entrypoint",
+        "layers"
+      ],
+      "title": "ResolvedOciImage",
+      "type": "object"
+    },
+    "ResolvedOciLayer": {
+      "additionalProperties": false,
+      "properties": {
+        "media_type": {
+          "enum": [
+            "application/vnd.oci.image.layer.v1.tar+gzip",
+            "application/vnd.oci.image.layer.v1.tar+zstd",
+            "application/vnd.docker.image.rootfs.diff.tar.gzip"
+          ],
+          "title": "Media Type",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "maximum": 2147483648,
+          "minimum": 1,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "media_type",
+        "size",
+        "sha256"
+      ],
+      "title": "ResolvedOciLayer",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -160,12 +274,24 @@
     "method": {
       "enum": [
         "github-release",
+        "oci-image",
         "adoptium-api",
         "git-checkout",
         "mitre-cwe"
       ],
       "title": "Method",
       "type": "string"
+    },
+    "oci_image": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedOciImage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "platform": {
       "title": "Platform",

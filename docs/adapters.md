@@ -80,6 +80,7 @@ content-digested into the report, so dependency drift invalidates cached health 
 | Eclipse Temurin JDK 21 | Managed Java runtime closure for reviewed JVM-backed tools | Platform-specific Adoptium package |
 | Ghidra | Multi-ISA static analysis, decompilation, headless scripting, binary comparison | Official release asset |
 | GoReSym | Go build, function, source, type, interface, and embedded-string recovery | Official release asset |
+| unblob | Recursive archive, firmware-container, filesystem, and compressed-stream extraction | Exact official OCI image |
 | Frida | Fixed load-time process, module, import, export, and dependency mapping | Exact standalone official release asset |
 | LLVM | LLDB, object/symbol tools, sanitizers, coverage, libFuzzer | Detect existing; OS channels vary |
 | YARA-X | Deterministic artifact and rule matching | Official release asset |
@@ -105,6 +106,7 @@ The first executable family is deliberately small:
 | `ghidra.binary-summary` | Program, memory-block, function, and external-symbol summary | bundled `WhaBinarySummary.java` only |
 | `ghidra.native-code-map` | Decompiled functions, exact callsites, defined strings, and anchored string xrefs | bundled `WhaNativeCodeMap.java` only |
 | `goresym.symbol-map` | Go build/module identity, functions, source paths, types, interfaces, strings, dependencies, and settings | fixed full JSON extraction against one artifact |
+| `unblob.extraction-map` | Verified files, directories, links, hashes, magic, chunks, handlers, and extraction errors | fixed depth-three extraction in the exact release/platform OCI image |
 | `frida.executable-runtime-map` | Pre-main process, module, import, export, and dependency map | standalone `frida-inject` plus bundled `WhaRuntimeModuleMap.js` only |
 | `yara-x.file-scan` | Rule identities, metadata, tags, string offsets, and bounded matched bytes | fixed YARA-X NDJSON mode against one artifact |
 | `jadx.android-static-map` | Decompiled class JSON, method code, call graph, manifest text, and resource inventory | fixed JADX JSON and JSON call-graph modes |
@@ -124,6 +126,16 @@ strings with virtual addresses, module dependencies, and build settings. A share
 collection initial capacity before redistributing unused space, retains exact raw JSON as evidence, and marks both
 collection and field truncation. Conformance analyzes the exact installed GoReSym payload itself, proving the parser
 without shipping a redundant megabyte-scale fixture.
+
+The unblob driver accepts one `artifact/file` and emits one `surface/extracted-file-map`. Provisioning resolves the
+latest stable GitHub release to one source commit, GHCR index digest, platform-manifest digest, config digest, and
+bounded layer set, then pulls only the exact platform manifest and stores a small identity descriptor. Execution uses
+that digest with Docker pull disabled, no network, a read-only root filesystem, dropped capabilities, disabled
+privilege escalation, read-only input, one private output mount, and CPU, memory, PID, wall, file, and byte ceilings.
+The request exposes no image, tag, plugin, path, flag, process count, depth, extractor, environment, or network field.
+Normalization independently hashes the complete transient extraction tree and rejects report/tree disagreement,
+duplicate or escaped paths, special files, identity drift, schema drift, and invalid chunk ranges. The raw report and
+normalized map are retained; bulk extracted contents remain transient.
 
 The Frida driver accepts one `artifact/executable` evidence object and emits one
 `surface/runtime-module-map`. Provisioning resolves the current platform-specific `frida-inject` asset from the
@@ -169,7 +181,7 @@ evidence campaign/task/target/type/digest/length, conformance identity, and curr
 It renews the active lease for the bounded run, snapshots the verified input through a no-follow file descriptor, and
 rechecks the lease before evidence registration.
 
-On Linux/WSL, the broker executes through the fixed root-owned `/usr/bin/bwrap` with a minimal launch environment,
+On Linux/WSL, native-tool operations execute through the fixed root-owned `/usr/bin/bwrap` with a minimal launch environment,
 cleared sandbox environment, no network namespace, dropped capabilities, isolated PID/IPC/UTS namespaces, empty
 home/tmp/var, no host `/etc`, read-only system/tool/input mounts, one tool work directory, and broker-private capture
 files outside that mount. Wall time, CPU, memory, monitored process count, open files, all work-directory entries,
@@ -235,6 +247,12 @@ small catalog once to bind its exact size and SHA-256; application downloads it 
 then requires one version-named XML file whose version, content date, and weakness/category/view counts exactly match
 the version response before atomic activation. The XML itself remains the bounded searchable source—no duplicate
 index or transformed corpus is generated.
+
+OCI image provisioning is currently restricted to reviewed public GHCR repositories. It resolves a stable GitHub
+release tag and commit, verifies registry response bodies and digest headers, selects one declared Linux architecture,
+checks config source/version/revision labels and the fixed entrypoint, enforces compressed-layer limits, pulls by the
+platform-manifest digest, and verifies the local platform, repo digest, entrypoint, and release labels. Mutable tags
+are never used during execution.
 
 Managed state records the manifest digest, upstream URLs, tag/commit, asset digests, deterministic content-tree digest,
 version, entrypoints, and install time. Knowledge status, search, and read fail closed if current bytes no longer match

@@ -109,6 +109,10 @@ wha adapter ensure --yes --capability binary.go-symbol-recover
 wha adapter conform goresym
 wha adapter resolve --capability binary.go-symbol-recover
 
+# Recursively map archives, firmware containers, filesystems, and compressed streams.
+wha adapter ensure --yes --capability artifact.recursive-unpack
+wha adapter resolve --capability artifact.recursive-unpack
+
 # Evaluate a standalone signature against one immutable artifact.
 wha adapter install yara-x --yes
 wha adapter conform yara-x
