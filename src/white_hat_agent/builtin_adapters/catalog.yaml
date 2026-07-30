@@ -12,7 +12,7 @@ adapters:
       name: Apache-2.0
       url: https://github.com/NationalSecurityAgency/ghidra/blob/master/LICENSE
       attribution: Ghidra by the National Security Agency
-    capabilities: [artifact.inspect, binary.diff, code.search, graph.reason]
+    capabilities: [artifact.inspect, binary.diff, binary.static-inspect, code.search, graph.reason]
     modes: [offline, sandbox]
     max_execution_class: analysis
     platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64]
@@ -59,7 +59,24 @@ adapters:
           cpu_seconds: 300
           memory_mib: 8192
           max_processes: 64
-    updated_at: 2026-07-29T21:00:00Z
+      - operation_id: ghidra.native-code-map
+        operation_version: 1.0.0
+        capabilities: [binary.static-inspect]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/file]
+        output_types: [surface/native-code-map]
+        conformance_suite_id: native-code-map-elf64-x86-64-v1
+        limits:
+          max_input_bytes: 268435456
+          max_output_bytes: 134217728
+          max_files: 20000
+          max_records: 25000
+          wall_seconds: 1200
+          cpu_seconds: 900
+          memory_mib: 8192
+          max_processes: 64
+    updated_at: 2026-07-30T02:00:00Z
 
   - schema_version: "1.0"
     adapter_id: frida

@@ -152,6 +152,21 @@
       "title": "GhidraBinarySummaryPayload",
       "type": "object"
     },
+    "GhidraNativeCodeMapPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "const": "ghidra.native-code-map",
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "title": "GhidraNativeCodeMapPayload",
+      "type": "object"
+    },
     "JadxAndroidStaticMapPayload": {
       "additionalProperties": false,
       "properties": {
@@ -213,6 +228,7 @@
         "mapping": {
           "capa.file-analyze": "#/$defs/CapaFileAnalyzePayload",
           "ghidra.binary-summary": "#/$defs/GhidraBinarySummaryPayload",
+          "ghidra.native-code-map": "#/$defs/GhidraNativeCodeMapPayload",
           "jadx.android-static-map": "#/$defs/JadxAndroidStaticMapPayload",
           "llvm.object-inspect": "#/$defs/LlvmObjectInspectPayload"
         },
@@ -221,6 +237,9 @@
       "oneOf": [
         {
           "$ref": "#/$defs/GhidraBinarySummaryPayload"
+        },
+        {
+          "$ref": "#/$defs/GhidraNativeCodeMapPayload"
         },
         {
           "$ref": "#/$defs/CapaFileAnalyzePayload"

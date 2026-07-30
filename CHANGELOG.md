@@ -3,6 +3,26 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.9.0] - 2026-07-29
+
+### Added
+
+- a reviewed `ghidra.native-code-map` operation exposing bounded decompiler text, exact callsites, defined strings,
+  and string xrefs with function anchors from one immutable native artifact;
+- the provider-neutral `binary.static-inspect` capability and `surface/native-code-map` result contract; and
+- a deterministic 1,496-byte ELF conformance fixture proving decompilation, an internal call edge, a defined marker
+  string, and its source-function xref on Ghidra 12.1.2, plus a production broker run that captured 28 complete
+  records with no warnings or truncation.
+
+### Security
+
+- callers cannot supply Ghidra scripts, project names, symbols, addresses, options, arguments, paths, environment, or
+  output locations;
+- the packaged script divides record and character ceilings across functions, calls, strings, and xrefs, and exposes
+  decompiler failures plus every truncation state; and
+- conformance binds the exact Ghidra, Java, script, operation, sandbox, and fixture identities before the new
+  capability becomes available to an agent.
+
 ## [0.8.0] - 2026-07-29
 
 ### Added
@@ -179,6 +199,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.9.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.5.0...v0.6.0

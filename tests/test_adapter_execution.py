@@ -18,6 +18,8 @@ from white_hat_agent.adapter_execution import (
     AdapterExecutionReceipt,
     AdapterExecutionRequest,
     AdapterLimitOverrides,
+    GhidraNativeCodeMapDriver,
+    GhidraNativeCodeMapPayload,
     JadxAndroidStaticMapDriver,
     JadxAndroidStaticMapPayload,
     LlvmObjectInspectDriver,
@@ -27,6 +29,7 @@ from white_hat_agent.adapter_execution import (
     TrustedInvocation,
     _effective_limits,
     _fixture_bytes,
+    _ghidra_native_map_fixture_bytes,
     _jadx_fixture_bytes,
     _tree_usage,
     conformance_report_is_current,
@@ -271,6 +274,16 @@ def test_fixture_and_request_secret_contract() -> None:
     )
     assert jadx_request.operation.operation_id == "jadx.android-static-map"
 
+    native_map_fixture = _ghidra_native_map_fixture_bytes()
+    assert len(native_map_fixture) == 1496
+    assert hashlib.sha256(native_map_fixture).hexdigest() == (
+        "160fad2a70818a93807bc01ccfff766f7c3702756e8135ee5239132de9fe56b0"
+    )
+    native_map_request = request.model_copy(
+        update={"operation": GhidraNativeCodeMapPayload(operation_id="ghidra.native-code-map")}
+    )
+    assert native_map_request.operation.operation_id == "ghidra.native-code-map"
+
 
 def test_limit_overrides_can_only_reduce_contract() -> None:
     reduced = _effective_limits(_limits(), AdapterLimitOverrides(max_records=10, wall_seconds=5))
@@ -448,6 +461,200 @@ def test_jadx_normalization_preserves_code_graph_and_manifest(tmp_path) -> None:
     )
     assert reduced.records_returned == 2
     assert reduced.truncated
+
+
+def test_ghidra_native_map_normalization_preserves_code_calls_strings_and_xrefs(
+    tmp_path,
+) -> None:
+    output = tmp_path / "native-code-map.json"
+    output.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "program": {
+                    "name": "fixture.elf",
+                    "format": "Executable and Linking Format (ELF)",
+                    "language": "x86:LE:64:default",
+                    "compiler_spec": "gcc",
+                    "image_base": "00400000",
+                },
+                "analysis": {
+                    "decompile_failures": 0,
+                    "code_truncated_functions": 0,
+                    "decompiled_characters": 57,
+                },
+                "functions": {
+                    "total": 2,
+                    "returned": 2,
+                    "truncated": False,
+                    "items": [
+                        {
+                            "name": "wha_marker",
+                            "namespace": "Global",
+                            "entry": "00401000",
+                            "signature": "char * wha_marker(void)",
+                            "body_addresses": 8,
+                            "external": False,
+                            "thunk": False,
+                            "decompile_status": "completed",
+                            "decompiler_message": "",
+                            "code_truncated": False,
+                            "code": 'return "WHA_NATIVE_CODE_MAP_MARKER";',
+                        },
+                        {
+                            "name": "wha_marker_length",
+                            "namespace": "Global",
+                            "entry": "0040100f",
+                            "signature": "ulong wha_marker_length(void)",
+                            "body_addresses": 60,
+                            "external": False,
+                            "thunk": False,
+                            "decompile_status": "completed",
+                            "decompiler_message": "",
+                            "code_truncated": False,
+                            "code": "value = wha_marker();",
+                        },
+                    ],
+                },
+                "call_edges": {
+                    "returned": 1,
+                    "truncated": False,
+                    "items": [
+                        {
+                            "from_entry": "0040100f",
+                            "from_name": "wha_marker_length",
+                            "callsite": "0040101b",
+                            "to_address": "00401000",
+                            "to_entry": "00401000",
+                            "to_name": "wha_marker",
+                            "reference_type": "UNCONDITIONAL_CALL",
+                            "external": False,
+                        }
+                    ],
+                },
+                "strings": {
+                    "returned": 1,
+                    "truncated": False,
+                    "items": [
+                        {
+                            "address": "00402000",
+                            "data_type": "string",
+                            "byte_length": 27,
+                            "value_truncated": False,
+                            "value": "WHA_NATIVE_CODE_MAP_MARKER",
+                        }
+                    ],
+                },
+                "string_xrefs": {
+                    "returned": 1,
+                    "truncated": False,
+                    "items": [
+                        {
+                            "from_address": "00401008",
+                            "to_address": "00402000",
+                            "reference_type": "DATA",
+                            "operand_index": 1,
+                            "source_function_entry": "00401000",
+                            "source_function_name": "wha_marker",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    stdout = tmp_path / "stdout.bin"
+    stderr = tmp_path / "stderr.bin"
+    stdout.write_bytes(b"")
+    stderr.write_bytes(b"")
+    process = SupervisedProcessResult(
+        outcome=AdapterExecutionOutcome.SUCCEEDED,
+        return_code=0,
+        signal_number=None,
+        stdout_path=stdout,
+        stderr_path=stderr,
+        result_path=output,
+        output_complete=True,
+        warnings=(),
+    )
+
+    driver = GhidraNativeCodeMapDriver()
+    normalized = driver.normalize(process, "a" * 64, _limits())
+
+    assert normalized.records_returned == 5
+    assert not normalized.truncated
+    assert all(check.ok for check in driver.fixture_checks(normalized))
+
+    malformed = json.loads(output.read_text(encoding="utf-8"))
+    malformed["functions"]["returned"] = 1
+    output.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="section counters"):
+        driver.normalize(process, "a" * 64, _limits())
+
+    malformed["functions"]["returned"] = 2
+    malformed["unexpected"] = True
+    output.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="top-level schema drifted"):
+        driver.normalize(process, "a" * 64, _limits())
+
+    del malformed["unexpected"]
+    malformed["analysis"]["decompiled_characters"] = 58
+    output.write_text(json.dumps(malformed), encoding="utf-8")
+    with pytest.raises(AdapterExecutionError, match="counters do not match"):
+        driver.normalize(process, "a" * 64, _limits())
+
+
+def test_ghidra_native_map_invocation_is_fixed(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "ghidra"
+    entrypoint = root / "support/analyzeHeadless"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_bytes(b"reviewed launcher")
+    script = tmp_path / "WhaNativeCodeMap.java"
+    script.write_bytes(b"reviewed script")
+    java = tmp_path / "java"
+    java.mkdir()
+    monkeypatch.setattr(
+        adapter_execution,
+        "_system_java_mounts",
+        lambda: (adapter_execution.SandboxMount(java, "/opt/java"),),
+    )
+    status = AdapterStatus(
+        adapter_id="ghidra",
+        manifest_digest="1" * 64,
+        observed_at=utc_now(),
+        platform="linux-x86_64",
+        supported=True,
+        installed=True,
+        healthy=True,
+        source="system",
+        version="12.1.2",
+        entrypoints=[str(entrypoint)],
+        observed_identity_sha256="2" * 64,
+    )
+    driver = GhidraNativeCodeMapDriver()
+    invocation = driver.prepare(
+        status,
+        GhidraNativeCodeMapPayload(operation_id="ghidra.native-code-map"),
+        _limits(),
+        {"ghidra_native_map_script": script},
+    )
+
+    assert invocation.result_relative_path == "native-code-map.json"
+    assert invocation.argv[0] == "/opt/tool/support/analyzeHeadless"
+    assert invocation.argv[invocation.argv.index("-postScript") + 1] == "WhaNativeCodeMap.java"
+    assert invocation.argv[invocation.argv.index("-import") + 1] == "/input/artifact"
+    assert {mount.destination for mount in invocation.mounts} == {
+        "/opt/tool",
+        "/opt/java",
+        "/opt/wha-assets/WhaNativeCodeMap.java",
+    }
+    with pytest.raises(AdapterExecutionError, match="different payload"):
+        driver.prepare(
+            status,
+            LlvmObjectInspectPayload(operation_id="llvm.object-inspect"),
+            _limits(),
+            {"ghidra_native_map_script": script},
+        )
 
 
 def test_jadx_normalization_rejects_untrusted_output_paths(tmp_path) -> None:

@@ -36,6 +36,15 @@ capabilities:
     adapter_contract: [Bind rule, tool, and artifact identities; report match counts and truncation.]
     status: experimental
     updated_at: 2026-07-29T22:00:00Z
+  - capability_id: binary.static-inspect
+    title: Map native binary code
+    description: Recover bounded decompiler text, exact callsites, defined strings, and anchored xrefs.
+    execution_class: analysis
+    input_types: [artifact/file]
+    output_types: [surface/native-code-map]
+    adapter_contract: [Bind the map to the exact artifact, tool, script, analysis limits, failures, and truncation state.]
+    status: experimental
+    updated_at: 2026-07-30T02:00:00Z
   - capability_id: code.search
     title: Search code or decompiler text
     description: Run bounded structural or textual searches over a captured code corpus.

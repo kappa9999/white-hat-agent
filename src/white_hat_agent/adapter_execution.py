@@ -55,6 +55,10 @@ class GhidraBinarySummaryPayload(StrictModel):
     operation_id: Literal["ghidra.binary-summary"]
 
 
+class GhidraNativeCodeMapPayload(StrictModel):
+    operation_id: Literal["ghidra.native-code-map"]
+
+
 class CapaFileAnalyzePayload(StrictModel):
     operation_id: Literal["capa.file-analyze"]
     operating_system: Literal["auto", "linux", "macos", "windows"] = "auto"
@@ -70,6 +74,7 @@ class JadxAndroidStaticMapPayload(StrictModel):
 
 AdapterOperationPayload = Annotated[
     GhidraBinarySummaryPayload
+    | GhidraNativeCodeMapPayload
     | CapaFileAnalyzePayload
     | LlvmObjectInspectPayload
     | JadxAndroidStaticMapPayload,
@@ -307,6 +312,12 @@ ELF_FIXTURE = ConformanceFixture(
     resource_name="minimal_elf64.b64",
     sha256="daf49381748b12d617a3c645f9932ade03d7c0cac6b804da1bd35ae80cf37cad",
 )
+GHIDRA_NATIVE_MAP_FIXTURE = ConformanceFixture(
+    fixture_id="native-code-map-elf64-x86-64-v1",
+    filename="fixture.elf",
+    resource_name="native_code_map_elf64.b64",
+    sha256="160fad2a70818a93807bc01ccfff766f7c3702756e8135ee5239132de9fe56b0",
+)
 JADX_FIXTURE = ConformanceFixture(
     fixture_id="minimal-dex35-v1",
     filename="fixture.dex",
@@ -317,7 +328,9 @@ JADX_FIXTURE = ConformanceFixture(
 FIXTURE_ID = ELF_FIXTURE.fixture_id
 FIXTURE_SHA256 = ELF_FIXTURE.sha256
 GHIDRA_SCRIPT_SHA256 = "87e15c8b2368cc739e4cca74ca306c1cbbddef9cc673626737de7dbc6317a5a9"
+GHIDRA_NATIVE_MAP_SCRIPT_SHA256 = "59fc8004e838a78d169db17f356a37de437397d5f244c65e0317cc30909c2e28"
 DRIVER_VERSION = "1.2.0"
+GHIDRA_NATIVE_MAP_DRIVER_VERSION = "1.0.0"
 JADX_DRIVER_VERSION = "1.0.0"
 MINIMUM_EVIDENCE_IMPORT_BYTES = 65_536
 
@@ -766,49 +779,57 @@ class CapaFileAnalyzeDriver:
         ]
 
 
+def _ghidra_entrypoint(entrypoints: list[str]) -> Path:
+    entrypoint = next(
+        (Path(path).resolve() for path in entrypoints if Path(path).name == "analyzeHeadless"),
+        None,
+    )
+    if entrypoint is None or not entrypoint.is_file():
+        raise AdapterExecutionError("Ghidra operation requires an observed analyzeHeadless entrypoint")
+    return entrypoint
+
+
+def _ghidra_root(entrypoints: list[str]) -> Path:
+    return _ghidra_entrypoint(entrypoints).parent.parent
+
+
+def _ghidra_tool_payload_digest(entrypoints: list[str], script_payload: bytes) -> str:
+    root = _ghidra_root(entrypoints)
+    operation_files = [
+        root / "ghidraRun",
+        root / "support/analyzeHeadless",
+        root / "Ghidra/application.properties",
+        root / "Ghidra/Framework/Generic/lib/Generic.jar",
+        root / "Ghidra/Framework/Project/lib/Project.jar",
+        root / "Ghidra/Framework/SoftwareModeling/lib/SoftwareModeling.jar",
+        root / "Ghidra/Features/Base/lib/Base.jar",
+        root / "Ghidra/Features/Decompiler/lib/Decompiler.jar",
+        root / "Ghidra/Processors/x86/data/languages/x86-64.sla",
+        root / "Ghidra/Processors/x86/data/languages/x86.ldefs",
+    ]
+    provider_digest = _hash_file_set(root, operation_files)
+    java_digest, java_config_digest = _system_java_payload_digests()
+    return stable_digest(
+        {
+            "provider_payload_sha256": provider_digest,
+            "java_payload_sha256": java_digest,
+            "java_config_sha256": java_config_digest,
+            "driver_asset_sha256": hashlib.sha256(script_payload).hexdigest(),
+        }
+    )
+
+
 class GhidraBinarySummaryDriver:
     adapter_id = "ghidra"
     operation_id = "ghidra.binary-summary"
     driver_id = "whitehat.ghidra-headless-summary"
     driver_version = DRIVER_VERSION
 
-    def _entrypoint(self, entrypoints: list[str]) -> Path:
-        entrypoint = next(
-            (Path(path).resolve() for path in entrypoints if Path(path).name == "analyzeHeadless"),
-            None,
-        )
-        if entrypoint is None or not entrypoint.is_file():
-            raise AdapterExecutionError("Ghidra operation requires an observed analyzeHeadless entrypoint")
-        return entrypoint
-
     def _root(self, entrypoints: list[str]) -> Path:
-        return self._entrypoint(entrypoints).parent.parent
+        return _ghidra_root(entrypoints)
 
     def tool_payload_digest(self, entrypoints: list[str]) -> str:
-        root = self._root(entrypoints)
-        operation_files = [
-            root / "ghidraRun",
-            root / "support/analyzeHeadless",
-            root / "Ghidra/application.properties",
-            root / "Ghidra/Framework/Generic/lib/Generic.jar",
-            root / "Ghidra/Framework/Project/lib/Project.jar",
-            root / "Ghidra/Framework/SoftwareModeling/lib/SoftwareModeling.jar",
-            root / "Ghidra/Features/Base/lib/Base.jar",
-            root / "Ghidra/Features/Decompiler/lib/Decompiler.jar",
-            root / "Ghidra/Processors/x86/data/languages/x86-64.sla",
-            root / "Ghidra/Processors/x86/data/languages/x86.ldefs",
-        ]
-        provider_digest = _hash_file_set(root, operation_files)
-        java_digest, java_config_digest = _system_java_payload_digests()
-        script_digest = hashlib.sha256(_ghidra_script_bytes()).hexdigest()
-        return stable_digest(
-            {
-                "provider_payload_sha256": provider_digest,
-                "java_payload_sha256": java_digest,
-                "java_config_sha256": java_config_digest,
-                "driver_asset_sha256": script_digest,
-            }
-        )
+        return _ghidra_tool_payload_digest(entrypoints, _ghidra_script_bytes())
 
     def prepare(
         self,
@@ -909,6 +930,334 @@ class GhidraBinarySummaryDriver:
                 name="fixture-function",
                 ok=bool(items),
                 detail=f"returned_functions={len(items)}",
+            ),
+        ]
+
+
+class GhidraNativeCodeMapDriver:
+    adapter_id = "ghidra"
+    operation_id = "ghidra.native-code-map"
+    driver_id = "whitehat.ghidra-native-code-map"
+    driver_version = GHIDRA_NATIVE_MAP_DRIVER_VERSION
+
+    def tool_payload_digest(self, entrypoints: list[str]) -> str:
+        return _ghidra_tool_payload_digest(entrypoints, _ghidra_native_map_script_bytes())
+
+    def prepare(
+        self,
+        status: AdapterStatus,
+        operation: AdapterOperationPayload,
+        limits: OperationResourceLimits,
+        assets: dict[str, Path],
+    ) -> TrustedInvocation:
+        if not isinstance(operation, GhidraNativeCodeMapPayload):
+            raise AdapterExecutionError("Ghidra native-code-map driver received a different payload")
+        script = assets.get("ghidra_native_map_script")
+        if script is None:
+            raise AdapterExecutionError("bundled Ghidra native-code-map script is unavailable")
+        analysis_timeout = max(1, min(limits.wall_seconds - 5, limits.cpu_seconds, 900))
+        decompile_timeout = max(1, min(30, analysis_timeout, limits.cpu_seconds))
+        json_character_limit = max(1024, min(16_000_000, limits.max_output_bytes // 8))
+        return TrustedInvocation(
+            argv=(
+                "/opt/tool/support/analyzeHeadless",
+                "/work",
+                "wha-project",
+                "-import",
+                "/input/artifact",
+                "-scriptPath",
+                "/opt/wha-assets",
+                "-postScript",
+                "WhaNativeCodeMap.java",
+                "/work/native-code-map.json",
+                str(min(limits.max_records, 25_000)),
+                str(json_character_limit),
+                str(decompile_timeout),
+                "-analysisTimeoutPerFile",
+                str(analysis_timeout),
+                "-max-cpu",
+                "1",
+                "-deleteProject",
+            ),
+            mounts=(
+                SandboxMount(_ghidra_root(status.entrypoints), "/opt/tool"),
+                *_system_java_mounts(),
+                SandboxMount(script, "/opt/wha-assets/WhaNativeCodeMap.java"),
+            ),
+            result_relative_path="native-code-map.json",
+        )
+
+    def normalize(
+        self,
+        process: SupervisedProcessResult,
+        artifact_sha256: str,
+        limits: OperationResourceLimits,
+    ) -> AdapterNormalizedResult:
+        if process.result_path is None or not process.result_path.is_file():
+            raise AdapterExecutionError("Ghidra native code map output is missing")
+        payload = _read_json(process.result_path, limits.max_output_bytes)
+        if not isinstance(payload, dict) or payload.get("schema_version") != "1.0":
+            raise AdapterExecutionError("Ghidra native code map has an unexpected schema")
+        expected_top_level = {
+            "schema_version",
+            "program",
+            "analysis",
+            "functions",
+            "call_edges",
+            "strings",
+            "string_xrefs",
+        }
+        if set(payload) != expected_top_level:
+            raise AdapterExecutionError("Ghidra native code map top-level schema drifted")
+        program = payload.get("program")
+        analysis = payload.get("analysis")
+        if not isinstance(program, dict) or not isinstance(analysis, dict):
+            raise AdapterExecutionError("Ghidra native code map metadata is malformed")
+        expected_program_fields = {"name", "format", "language", "compiler_spec", "image_base"}
+        if set(program) != expected_program_fields or not all(
+            isinstance(program.get(field), str) for field in expected_program_fields
+        ):
+            raise AdapterExecutionError("Ghidra native code map program metadata is malformed")
+        expected_analysis_fields = {
+            "decompile_failures",
+            "code_truncated_functions",
+            "decompiled_characters",
+        }
+        if set(analysis) != expected_analysis_fields or not all(
+            type(analysis.get(field)) is int and int(analysis[field]) >= 0
+            for field in expected_analysis_fields
+        ):
+            raise AdapterExecutionError("Ghidra native code map analysis counters are malformed")
+
+        sections: dict[str, dict[str, JsonValue]] = {}
+        aggregate = 0
+        truncated = False
+        record_fields = {
+            "functions": {
+                "name",
+                "namespace",
+                "entry",
+                "signature",
+                "body_addresses",
+                "external",
+                "thunk",
+                "decompile_status",
+                "decompiler_message",
+                "code_truncated",
+                "code",
+            },
+            "call_edges": {
+                "from_entry",
+                "from_name",
+                "callsite",
+                "to_address",
+                "to_entry",
+                "to_name",
+                "reference_type",
+                "external",
+            },
+            "strings": {"address", "data_type", "byte_length", "value_truncated", "value"},
+            "string_xrefs": {
+                "from_address",
+                "to_address",
+                "reference_type",
+                "operand_index",
+                "source_function_entry",
+                "source_function_name",
+            },
+        }
+        required_string_fields = {
+            "functions": {
+                "name",
+                "namespace",
+                "entry",
+                "signature",
+                "decompile_status",
+                "decompiler_message",
+                "code",
+            },
+            "call_edges": {
+                "from_entry",
+                "from_name",
+                "callsite",
+                "to_address",
+                "to_entry",
+                "to_name",
+                "reference_type",
+            },
+            "strings": {"address", "data_type", "value"},
+            "string_xrefs": {
+                "from_address",
+                "to_address",
+                "reference_type",
+                "source_function_entry",
+                "source_function_name",
+            },
+        }
+        for label, expected_fields in record_fields.items():
+            section = payload.get(label)
+            if not isinstance(section, dict):
+                raise AdapterExecutionError(f"Ghidra {label} section is malformed")
+            expected_section_fields = {"returned", "truncated", "items"}
+            if label == "functions":
+                expected_section_fields.add("total")
+            if set(section) != expected_section_fields:
+                raise AdapterExecutionError(f"Ghidra {label} section schema drifted")
+            items = section.get("items")
+            returned = section.get("returned")
+            section_truncated = section.get("truncated")
+            if (
+                not isinstance(items, list)
+                or type(returned) is not int
+                or returned < 0
+                or returned != len(items)
+                or type(section_truncated) is not bool
+            ):
+                raise AdapterExecutionError(f"Ghidra {label} section counters are malformed")
+            if label == "functions":
+                total = section.get("total")
+                if type(total) is not int or total < returned:
+                    raise AdapterExecutionError("Ghidra function total is malformed")
+            for item in items:
+                if (
+                    not isinstance(item, dict)
+                    or set(item) != expected_fields
+                    or not all(isinstance(item.get(field), str) for field in required_string_fields[label])
+                ):
+                    raise AdapterExecutionError(f"Ghidra {label} contains a malformed record")
+            sections[label] = _json_value(section)
+            aggregate += returned
+            truncated = truncated or section_truncated
+        if aggregate > limits.max_records:
+            raise AdapterExecutionError("Ghidra native code map exceeds the aggregate record limit")
+
+        function_items = sections["functions"]["items"]
+        function_entries: set[str] = set()
+        failed_functions = 0
+        code_truncated_functions = 0
+        decompiled_characters = 0
+        for function in function_items:
+            assert isinstance(function, dict)
+            if function.get("decompile_status") not in {
+                "completed",
+                "failed",
+                "skipped-external",
+            }:
+                raise AdapterExecutionError("Ghidra function has an unknown decompile status")
+            if (
+                type(function.get("body_addresses")) is not int
+                or int(function["body_addresses"]) < 0
+                or type(function.get("external")) is not bool
+                or type(function.get("thunk")) is not bool
+                or type(function.get("code_truncated")) is not bool
+                or len(str(function["code"])) > 64_000
+                or len(str(function["decompiler_message"])) > 512
+            ):
+                raise AdapterExecutionError("Ghidra function record exceeds its fixed schema")
+            entry = str(function["entry"])
+            if not entry or entry in function_entries:
+                raise AdapterExecutionError("Ghidra function entries are empty or duplicated")
+            function_entries.add(entry)
+            failed_functions += int(function["decompile_status"] == "failed")
+            code_truncated_functions += int(bool(function["code_truncated"]))
+            decompiled_characters += len(str(function["code"]))
+        if (
+            int(analysis["decompile_failures"]) != failed_functions
+            or int(analysis["code_truncated_functions"]) != code_truncated_functions
+            or int(analysis["decompiled_characters"]) != decompiled_characters
+        ):
+            raise AdapterExecutionError("Ghidra analysis counters do not match returned functions")
+        if int(sections["functions"]["total"]) > len(function_items) and not bool(
+            sections["functions"]["truncated"]
+        ):
+            raise AdapterExecutionError("Ghidra function truncation state is inconsistent")
+
+        string_addresses: set[str] = set()
+        for string_record in sections["strings"]["items"]:
+            assert isinstance(string_record, dict)
+            if (
+                type(string_record.get("byte_length")) is not int
+                or int(string_record["byte_length"]) < 0
+                or type(string_record.get("value_truncated")) is not bool
+                or len(str(string_record["value"])) > 4096
+            ):
+                raise AdapterExecutionError("Ghidra string record exceeds its fixed schema")
+            address = str(string_record["address"])
+            if not address or address in string_addresses:
+                raise AdapterExecutionError("Ghidra string addresses are empty or duplicated")
+            string_addresses.add(address)
+        for edge in sections["call_edges"]["items"]:
+            assert isinstance(edge, dict)
+            if type(edge.get("external")) is not bool or edge.get("from_entry") not in function_entries:
+                raise AdapterExecutionError("Ghidra call edge has an invalid external flag")
+        for xref in sections["string_xrefs"]["items"]:
+            assert isinstance(xref, dict)
+            if type(xref.get("operand_index")) is not int or xref.get("to_address") not in string_addresses:
+                raise AdapterExecutionError("Ghidra string xref has an invalid operand index")
+
+        data: dict[str, JsonValue] = {
+            "program": _json_value(program),
+            "analysis": _json_value(analysis),
+            **sections,
+        }
+        return AdapterNormalizedResult(
+            operation_id=self.operation_id,
+            artifact_sha256=artifact_sha256,
+            records_returned=aggregate,
+            truncated=truncated,
+            data=data,
+        )
+
+    def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]:
+        program = normalized.data.get("program", {})
+        function_section = normalized.data.get("functions", {})
+        call_section = normalized.data.get("call_edges", {})
+        string_section = normalized.data.get("strings", {})
+        xref_section = normalized.data.get("string_xrefs", {})
+        functions = function_section.get("items", []) if isinstance(function_section, dict) else []
+        calls = call_section.get("items", []) if isinstance(call_section, dict) else []
+        strings = string_section.get("items", []) if isinstance(string_section, dict) else []
+        xrefs = xref_section.get("items", []) if isinstance(xref_section, dict) else []
+        marker_function = next(
+            (item for item in functions if isinstance(item, dict) and item.get("name") == "wha_marker"),
+            {},
+        )
+        return [
+            AdapterConformanceCheck(
+                name="fixture-format",
+                ok=isinstance(program, dict) and "ELF" in str(program.get("format", "")),
+                detail=str(program.get("format", "")) if isinstance(program, dict) else "missing",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-decompiled-marker",
+                ok="WHA_NATIVE_CODE_MAP_MARKER" in str(marker_function.get("code", "")),
+                detail=f"returned_functions={len(functions)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-call-edge",
+                ok=any(
+                    isinstance(item, dict)
+                    and item.get("from_name") == "wha_marker_length"
+                    and item.get("to_name") == "wha_marker"
+                    for item in calls
+                ),
+                detail=f"returned_call_edges={len(calls)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-defined-string",
+                ok=any(
+                    isinstance(item, dict) and item.get("value") == "WHA_NATIVE_CODE_MAP_MARKER"
+                    for item in strings
+                ),
+                detail=f"returned_strings={len(strings)}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-string-xref",
+                ok=any(
+                    isinstance(item, dict) and item.get("source_function_name") == "wha_marker"
+                    for item in xrefs
+                ),
+                detail=f"returned_string_xrefs={len(xrefs)}",
             ),
         ]
 
@@ -1217,6 +1566,7 @@ class JadxAndroidStaticMapDriver:
 
 DRIVERS: dict[tuple[str, str], ProviderDriver] = {
     ("ghidra", "ghidra.binary-summary"): GhidraBinarySummaryDriver(),
+    ("ghidra", "ghidra.native-code-map"): GhidraNativeCodeMapDriver(),
     ("capa", "capa.file-analyze"): CapaFileAnalyzeDriver(),
     ("llvm", "llvm.object-inspect"): LlvmObjectInspectDriver(),
     ("jadx", "jadx.android-static-map"): JadxAndroidStaticMapDriver(),
@@ -1757,7 +2107,16 @@ class AdapterExecutionBroker:
         script = stack.enter_context(
             importlib.resources.as_file(resource_root.joinpath("WhaBinarySummary.java"))
         )
-        return _AssetContext(stack, {"ghidra_script": script})
+        native_map_script = stack.enter_context(
+            importlib.resources.as_file(resource_root.joinpath("WhaNativeCodeMap.java"))
+        )
+        return _AssetContext(
+            stack,
+            {
+                "ghidra_script": script,
+                "ghidra_native_map_script": native_map_script,
+            },
+        )
 
 
 class _AssetContext:
@@ -1818,6 +2177,8 @@ def _driver_for_operation(operation_id: str) -> ProviderDriver:
 def _fixture_operation(operation_id: str) -> AdapterOperationPayload:
     if operation_id == "ghidra.binary-summary":
         return GhidraBinarySummaryPayload(operation_id=operation_id)
+    if operation_id == "ghidra.native-code-map":
+        return GhidraNativeCodeMapPayload(operation_id=operation_id)
     if operation_id == "capa.file-analyze":
         return CapaFileAnalyzePayload(operation_id=operation_id, operating_system="linux")
     if operation_id == "llvm.object-inspect":
@@ -1834,6 +2195,8 @@ def _conformance_fixture(operation_id: str) -> ConformanceFixture:
         "llvm.object-inspect",
     }:
         return ELF_FIXTURE
+    if operation_id == "ghidra.native-code-map":
+        return GHIDRA_NATIVE_MAP_FIXTURE
     if operation_id == "jadx.android-static-map":
         return JADX_FIXTURE
     raise AdapterExecutionError(f"operation has no fixed conformance fixture: {operation_id}")
@@ -1858,6 +2221,10 @@ def _jadx_fixture_bytes() -> bytes:
     return _fixture_payload(JADX_FIXTURE)
 
 
+def _ghidra_native_map_fixture_bytes() -> bytes:
+    return _fixture_payload(GHIDRA_NATIVE_MAP_FIXTURE)
+
+
 def _ghidra_script_bytes() -> bytes:
     resource = importlib.resources.files("white_hat_agent").joinpath(
         "builtin_adapter_fixtures/WhaBinarySummary.java"
@@ -1865,6 +2232,16 @@ def _ghidra_script_bytes() -> bytes:
     payload = resource.read_bytes()
     if hashlib.sha256(payload).hexdigest() != GHIDRA_SCRIPT_SHA256:
         raise AdapterExecutionError("bundled Ghidra script digest mismatch")
+    return payload
+
+
+def _ghidra_native_map_script_bytes() -> bytes:
+    resource = importlib.resources.files("white_hat_agent").joinpath(
+        "builtin_adapter_fixtures/WhaNativeCodeMap.java"
+    )
+    payload = resource.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != GHIDRA_NATIVE_MAP_SCRIPT_SHA256:
+        raise AdapterExecutionError("bundled Ghidra native-code-map script digest mismatch")
     return payload
 
 

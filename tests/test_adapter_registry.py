@@ -199,6 +199,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
             "artifact.inspect": ExecutionClass.ANALYSIS,
             "binary.behavior-identify": ExecutionClass.ANALYSIS,
             "binary.diff": ExecutionClass.ANALYSIS,
+            "binary.static-inspect": ExecutionClass.ANALYSIS,
             "code.search": ExecutionClass.ANALYSIS,
             "graph.reason": ExecutionClass.ANALYSIS,
             "hypothesis.generate": ExecutionClass.ANALYSIS,
@@ -223,6 +224,13 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     assert [operation.operation_id for operation in jadx.operations] == ["jadx.android-static-map"]
     assert jadx.operations[0].input_types == ["artifact/mobile-build"]
     assert jadx.operations[0].output_types == ["surface/static-map"]
+    ghidra = registry.get("ghidra")
+    assert [operation.operation_id for operation in ghidra.operations] == [
+        "ghidra.binary-summary",
+        "ghidra.native-code-map",
+    ]
+    assert ghidra.operations[1].capabilities == ["binary.static-inspect"]
+    assert ghidra.operations[1].output_types == ["surface/native-code-map"]
 
 
 def test_status_defers_path_execution_and_uses_cached_conformance(tmp_path, monkeypatch) -> None:
