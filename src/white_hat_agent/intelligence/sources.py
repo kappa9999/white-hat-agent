@@ -76,6 +76,7 @@ _MAX_VERSIONS_PER_PACKAGE = 100_000
 _MAX_REFERENCES = 10_000
 _MAX_SEVERITY_SIGNALS = 1_000
 _MAX_EPSS_ITEMS = 10_000
+_MAX_EPSS_HISTORY_ITEMS = 31
 _MAX_CVE_ADP_CONTAINERS = 1_000
 _MAX_NVD_WEAKNESSES = 10_000
 _MAX_NVD_CONFIGURATIONS = 10_000
@@ -152,6 +153,7 @@ class OsvIndexSelection:
 class ParsedEpssSignal:
     cve: str
     signal: SeveritySignal
+    history: tuple[SeveritySignal, ...]
     raw_record_sha256: str
     metadata: dict[str, Any]
 
@@ -1036,35 +1038,67 @@ def parse_epss(document: dict[str, Any], provenance: RawSnapshotProvenance) -> l
         if not isinstance(row, dict):
             continue
         cve = _required_identifier(row.get("cve"), "EPSS cve")
-        try:
-            probability = float(row["epss"])
-            percentile = float(row["percentile"]) if row.get("percentile") is not None else None
-        except (KeyError, TypeError, ValueError) as exc:
-            raise IntelligenceParseError(
-                f"EPSS record has invalid score: {cve}", source=IntelligenceSource.EPSS
-            ) from exc
-        observed_at = _optional_datetime(row.get("date")) or provenance.retrieved_at
-        signal = SeveritySignal(
-            kind=SeverityKind.EPSS,
-            source=IntelligenceSource.EPSS,
-            probability=probability,
-            percentile=percentile,
-            observed_at=observed_at,
-            source_url=provenance.source_url,
-            metadata={
-                "model_version": _optional_string(document.get("model_version")),
-                "score_date": _optional_string(row.get("date")),
-            },
+        signal = _parse_epss_observation(row, cve=cve, document=document, provenance=provenance)
+        historical_rows = _bounded_list(
+            row.get("time-series"),
+            "EPSS time-series",
+            _MAX_EPSS_HISTORY_ITEMS,
         )
+        signals_by_date = {signal.observed_at.date(): signal}
+        for historical_row in historical_rows:
+            if not isinstance(historical_row, dict):
+                continue
+            historical_signal = _parse_epss_observation(
+                historical_row,
+                cve=cve,
+                document=document,
+                provenance=provenance,
+            )
+            signals_by_date.setdefault(historical_signal.observed_at.date(), historical_signal)
+        history = tuple(signals_by_date[score_date] for score_date in sorted(signals_by_date, reverse=True))
+        compact_record = {key: value for key, value in row.items() if key != "time-series"}
         result.append(
             ParsedEpssSignal(
                 cve=cve,
                 signal=signal,
+                history=history,
                 raw_record_sha256=_canonical_sha256(row),
-                metadata={"record": row},
+                metadata={
+                    "record": compact_record,
+                    "history_observation_count": len(history),
+                },
             )
         )
     return result
+
+
+def _parse_epss_observation(
+    row: dict[str, Any],
+    *,
+    cve: str,
+    document: dict[str, Any],
+    provenance: RawSnapshotProvenance,
+) -> SeveritySignal:
+    try:
+        probability = float(row["epss"])
+        percentile = float(row["percentile"]) if row.get("percentile") is not None else None
+    except (KeyError, TypeError, ValueError) as exc:
+        raise IntelligenceParseError(
+            f"EPSS record has invalid score: {cve}", source=IntelligenceSource.EPSS
+        ) from exc
+    observed_at = _optional_datetime(row.get("date")) or provenance.retrieved_at
+    return SeveritySignal(
+        kind=SeverityKind.EPSS,
+        source=IntelligenceSource.EPSS,
+        probability=probability,
+        percentile=percentile,
+        observed_at=observed_at,
+        source_url=provenance.source_url,
+        metadata={
+            "model_version": _optional_string(document.get("model_version")),
+            "score_date": observed_at.date().isoformat(),
+        },
+    )
 
 
 def _parse_cve_affected(value: Any, *, container_pointer: str) -> list[AffectedPackage]:

@@ -469,8 +469,8 @@
       "description": "Fully disclosed inputs for deterministic KEV-first priority ranking.",
       "properties": {
         "algorithm_version": {
-          "const": "kev-epss-recency-severity-evidence-v1",
-          "default": "kev-epss-recency-severity-evidence-v1",
+          "const": "kev-epss-recency-severity-evidence-v2",
+          "default": "kev-epss-recency-severity-evidence-v2",
           "title": "Algorithm Version",
           "type": "string"
         },
@@ -488,6 +488,19 @@
           "title": "Epss Component",
           "type": "number"
         },
+        "epss_observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epss Observed At"
+        },
         "epss_probability": {
           "anyOf": [
             {
@@ -501,6 +514,18 @@
           ],
           "default": null,
           "title": "Epss Probability"
+        },
+        "epss_provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epss Provider"
         },
         "epss_weight": {
           "default": 100.0,

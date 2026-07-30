@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "IntelligenceSource": {
+      "enum": [
+        "cisa-kev",
+        "cve-list-v5",
+        "nvd",
+        "osv",
+        "epss"
+      ],
+      "title": "IntelligenceSource",
+      "type": "string"
+    },
+    "JsonValue": {},
+    "SeverityKind": {
+      "enum": [
+        "cvss",
+        "epss",
+        "ssvc",
+        "qualitative",
+        "other"
+      ],
+      "title": "SeverityKind",
+      "type": "string"
+    },
+    "SeveritySignal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SeverityKind"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "percentile": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Percentile"
+        },
+        "probability": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 10.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "source": {
+          "$ref": "#/$defs/IntelligenceSource"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "vector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vector"
+        }
+      },
+      "required": [
+        "kind",
+        "source"
+      ],
+      "title": "SeveritySignal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One dated FIRST EPSS observation backed by an immutable snapshot.",
+  "properties": {
+    "cve": {
+      "pattern": "^CVE-\\d{4}-\\d{4,}$",
+      "title": "Cve",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "score_date": {
+      "format": "date",
+      "title": "Score Date",
+      "type": "string"
+    },
+    "signal": {
+      "$ref": "#/$defs/SeveritySignal"
+    },
+    "snapshot_id": {
+      "minLength": 1,
+      "title": "Snapshot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "cve",
+    "score_date",
+    "signal",
+    "snapshot_id"
+  ],
+  "title": "EpssObservation",
+  "type": "object"
+}

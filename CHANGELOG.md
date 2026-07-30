@@ -3,6 +3,23 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.14.0] - 2026-07-30
+
+### Added
+
+- bounded FIRST EPSS time-series ingestion with a compact dated observation index, latest and point-in-time CLI/MCP
+  queries, and legacy-score backfill from existing workspaces;
+- deterministic EPSS selection that prioritizes current-run KEV and unscored CVEs before KEV backfill and stale
+  history, with selected and omitted counts disclosed by reason; and
+- explicit interrupted-run accounting so an operator cancellation cannot leave a sync recorded as running.
+
+### Changed
+
+- EPSS enrichment writes each response page through bounded batch transactions and removes redundant advisory
+  readbacks; ranking uses the latest dated FIRST observation instead of a historical maximum and identifies its
+  provider and observation time; and
+- the MCP intelligence sync contract now exposes the already-supported NVD source.
+
 ## [0.13.0] - 2026-07-30
 
 ### Added

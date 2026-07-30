@@ -21,12 +21,24 @@ def rank_advisory(advisory: NormalizedAdvisory, *, as_of: datetime) -> PriorityF
     )
     kev_component = 1000.0 if confirmed_kev else 0.0
 
-    epss_values = [
-        signal.probability
+    epss_signals = [
+        signal
         for signal in advisory.severity
-        if signal.kind == SeverityKind.EPSS and signal.probability is not None
+        if signal.kind == SeverityKind.EPSS
+        and signal.probability is not None
+        and (signal.observed_at is None or _aware_utc(signal.observed_at) <= as_of)
     ]
-    epss_probability = max(epss_values, default=None)
+    epss_signal = max(
+        epss_signals,
+        key=lambda signal: (
+            _aware_utc(signal.observed_at).timestamp() if signal.observed_at else float("-inf"),
+            signal.probability or 0.0,
+        ),
+        default=None,
+    )
+    epss_probability = epss_signal.probability if epss_signal else None
+    epss_provider = "FIRST EPSS" if epss_signal else None
+    epss_observed_at = epss_signal.observed_at if epss_signal else None
     epss_component = (epss_probability or 0.0) * 100.0
 
     reference_time = advisory.modified_at or advisory.published_at
@@ -53,7 +65,10 @@ def rank_advisory(advisory: NormalizedAdvisory, *, as_of: datetime) -> PriorityF
     if epss_probability is None:
         reasons.append("no EPSS probability (+0.000)")
     else:
-        reasons.append(f"EPSS probability {epss_probability:.6f} (+{epss_component:.3f})")
+        observed = epss_observed_at.date().isoformat() if epss_observed_at else "undated"
+        reasons.append(
+            f"FIRST EPSS probability {epss_probability:.6f} observed {observed} (+{epss_component:.3f})"
+        )
     if recency_age_days is None:
         reasons.append("no advisory timestamp (+0.000)")
     else:
@@ -65,6 +80,8 @@ def rank_advisory(advisory: NormalizedAdvisory, *, as_of: datetime) -> PriorityF
         confirmed_kev=confirmed_kev,
         kev_component=_rounded(kev_component),
         epss_probability=epss_probability,
+        epss_provider=epss_provider,
+        epss_observed_at=epss_observed_at,
         epss_component=_rounded(epss_component),
         recency_age_days=None if recency_age_days is None else _rounded(recency_age_days),
         recency_score=_rounded(recency_score),

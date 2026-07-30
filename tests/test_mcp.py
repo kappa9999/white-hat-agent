@@ -18,7 +18,8 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
     server = create_server(tmp_path)
 
     async with Client(server) as client:
-        tools = {tool.name for tool in await client.list_tools()}
+        listed_tools = await client.list_tools()
+        tools = {tool.name for tool in listed_tools}
         resources = {str(resource.uri) for resource in await client.list_resources()}
         prompts = {prompt.name for prompt in await client.list_prompts()}
         templates = {str(item.uriTemplate) for item in await client.list_resource_templates()}
@@ -46,6 +47,7 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
             "campaign_enqueue",
             "intelligence_sync",
             "intelligence_status",
+            "intelligence_epss_history",
             "opportunity_add",
             "opportunity_rank",
             "evidence_import_file",
@@ -59,6 +61,9 @@ async def test_namespaced_mcp_surface_and_structured_results(tmp_path) -> None:
         assert "whitehat://adapter/adapters/catalog" in resources
         assert "whitehat://knowledge/playbook/{playbook_id}" in templates
         assert "knowledge_compile_submission" in prompts
+        sync_tool = next(tool for tool in listed_tools if tool.name == "intelligence_sync")
+        source_items = sync_tool.inputSchema["properties"]["sources"]["anyOf"][0]["items"]
+        assert source_items["enum"] == ["cisa-kev", "cve-list-v5", "nvd", "osv"]
 
         adapter_search = await client.call_tool("adapter_search", {"query": "reverse"})
         assert not adapter_search.is_error

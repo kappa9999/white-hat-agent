@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -347,6 +348,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _workspace_option(intelligence_status)
     intelligence_status.add_argument("--out", type=Path)
+
+    intelligence_epss_history = intelligence_commands.add_parser(
+        "epss-history",
+        help="query locally stored FIRST EPSS history for one CVE",
+    )
+    _workspace_option(intelligence_epss_history)
+    intelligence_epss_history.add_argument("cve")
+    intelligence_epss_history.add_argument("--as-of", type=date.fromisoformat)
+    intelligence_epss_history.add_argument("--limit", type=int, default=31)
+    intelligence_epss_history.add_argument("--out", type=Path)
 
     intelligence_brief = intelligence_commands.add_parser(
         "brief",
@@ -908,6 +919,11 @@ def _run_intelligence(args: argparse.Namespace) -> None:
         )
     elif args.intelligence_command == "status":
         _emit(service.status(), args.out)
+    elif args.intelligence_command == "epss-history":
+        _emit(
+            service.epss_history(args.cve, as_of=args.as_of, limit=args.limit),
+            args.out,
+        )
     elif args.intelligence_command == "brief":
         _emit_text(
             service.brief(
