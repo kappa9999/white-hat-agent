@@ -11,7 +11,7 @@ def test_workspace_init_is_idempotent_and_doctor_is_healthy(tmp_path) -> None:
 
     assert first.doctor().healthy
     assert second.doctor().healthy
-    assert first.corpus.load().playbook_count == 5
+    assert first.corpus.load().playbook_count == 6
     assert len(first.adapter_registry.all()) == 9
     assert first.state_database.is_file()
 

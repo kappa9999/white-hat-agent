@@ -156,7 +156,7 @@ adapters:
       name: BSD-3-Clause
       url: https://github.com/VirusTotal/yara-x/blob/main/LICENSE
       attribution: YARA-X by VirusTotal
-    capabilities: [artifact.inspect, code.search]
+    capabilities: [artifact.signature-match]
     modes: [offline, sandbox]
     max_execution_class: analysis
     platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64]
@@ -182,7 +182,25 @@ adapters:
       strip_single_directory: true
       max_download_bytes: 67108864
       max_install_bytes: 134217728
-    updated_at: 2026-07-29T21:00:00Z
+    operations:
+      - operation_id: yara-x.file-scan
+        operation_version: "1.0.0"
+        capabilities: [artifact.signature-match]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/file]
+        output_types: [evidence/signature-match]
+        conformance_suite_id: yara-x-marker-elf64-x86-64-v1
+        limits:
+          max_input_bytes: 536870912
+          max_output_bytes: 67108864
+          max_files: 64
+          max_records: 5000
+          wall_seconds: 300
+          cpu_seconds: 240
+          memory_mib: 4096
+          max_processes: 8
+    updated_at: 2026-07-30T02:40:00Z
 
   - schema_version: "1.0"
     adapter_id: tshark

@@ -153,6 +153,7 @@
       "title": "AdapterExecutionReceipt",
       "type": "object"
     },
+    "JsonValue": {},
     "OperationResourceLimits": {
       "additionalProperties": false,
       "properties": {
@@ -276,6 +277,13 @@
       "title": "Operation Contract Digest",
       "type": "string"
     },
+    "operation_payload": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Operation Payload",
+      "type": "object"
+    },
     "operation_version": {
       "title": "Operation Version",
       "type": "string"
@@ -335,6 +343,7 @@
     "sandbox_profile_sha256",
     "input_evidence_ids",
     "input_content_sha256",
+    "operation_payload",
     "effective_limits"
   ],
   "title": "AdapterExecutionManifest",

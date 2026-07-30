@@ -99,17 +99,23 @@ wha adapter install jadx --yes
 wha adapter conform jadx
 wha adapter resolve --capability mobile.static-inspect
 
+# Evaluate a standalone signature against one immutable artifact.
+wha adapter install yara-x --yes
+wha adapter conform yara-x
+wha adapter resolve --capability artifact.signature-match
+
 # Add and query exact, revision-bound machine-readable knowledge on demand.
 wha adapter install mitre-attack --yes
 wha adapter search mitre-attack T1059.001
 ```
 
 The initial nonredundant tool set covers Ghidra, Frida, LLVM, YARA-X, TShark, capa, and JADX. Reviewed typed drivers
-execute Ghidra summaries and native-code maps, capa behavior identification, LLVM object inspection, and JADX Android
-class, call-graph, manifest, and resource mapping on Linux/WSL. Ghidra native-code maps include bounded decompiler
-text, exact callsites, defined strings, and anchored string xrefs. They run without network access over immutable
-fleet-task evidence. Status and resolution never execute discovered binaries; fixed command-backed version checks
-run only during explicit sandboxed conformance, and a version result alone grants no executable capability.
+execute Ghidra summaries and native-code maps, YARA-X signature evaluation, capa behavior identification, LLVM object
+inspection, and JADX Android class, call-graph, manifest, and resource mapping on Linux/WSL. YARA-X results preserve
+the standalone rule digest, matched rule metadata, bounded bytes, exact offsets, and truncation state. All typed
+drivers run without network access over immutable fleet-task evidence. Status and resolution never execute discovered
+binaries; fixed command-backed version checks run only during explicit sandboxed conformance, and a version result
+alone grants no executable capability.
 Knowledge adapters cover MITRE ATT&CK STIX and capa rules; CVE List V5, NVD 2.0, CISA KEV, OSV, and EPSS ingestion
 remains in the intelligence layer. See
 [tools and knowledge adapters](docs/adapters.md).

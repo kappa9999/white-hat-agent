@@ -18,6 +18,15 @@ capabilities:
     adapter_contract: [Report the exact artifact digest and every parser or tool version used.]
     status: stable
     updated_at: 2026-07-29T12:00:00Z
+  - capability_id: artifact.signature-match
+    title: Match artifact signatures
+    description: Evaluate bounded revision-bound detection rules against one immutable artifact.
+    execution_class: analysis
+    input_types: [artifact/file]
+    output_types: [evidence/signature-match]
+    adapter_contract: [Bind the rule source, engine, artifact, match offsets, output limits, and truncation state.]
+    status: experimental
+    updated_at: 2026-07-30T02:40:00Z
   - capability_id: binary.diff
     title: Diff binary semantics
     description: Compare related binary artifacts after normalizing known layout and symbol noise.

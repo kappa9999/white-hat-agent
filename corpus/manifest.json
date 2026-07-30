@@ -1,6 +1,35 @@
 {
-  "corpus_version": "sha256:99ed899add3d6d9f",
+  "corpus_version": "sha256:a4ca7dd4a67a0448",
   "entries": [
+    {
+      "capabilities": [
+        "artifact.signature-match"
+      ],
+      "consumes": [
+        "artifact/file",
+        "configuration/signature-rule"
+      ],
+      "digest": "cab88610c63a991c3052be1129aca41bf2e4ee992c24012129ece12dc9508d14",
+      "domains": [
+        "artifact-analysis",
+        "malware-analysis",
+        "reverse-engineering"
+      ],
+      "playbook_id": "artifact-signature-evaluation",
+      "provides": [
+        "evidence/signature-match"
+      ],
+      "relative_path": "artifact/signature-evaluation/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Bind one detection rule and one immutable artifact, preserve every bounded match offset, and treat a complete no-match as reusable negative evidence.",
+      "tags": [
+        "signature",
+        "static-analysis",
+        "yara"
+      ],
+      "title": "Evaluate a revision-bound signature against an exact artifact",
+      "version": "1.0.0"
+    },
     {
       "capabilities": [
         "evidence.capture",
@@ -184,7 +213,7 @@
       "version": "1.0.0"
     }
   ],
-  "generated_at": "2026-07-29T15:37:41Z",
-  "manifest_digest": "1d730f283e6b8c11c5974218568d6149fd68bfa103a84af805baa609931a54e9",
+  "generated_at": "2026-07-30T02:40:00Z",
+  "manifest_digest": "c92d2837415787f7af616cefbe6ee5365ffa53eb2975b229d1960ce95439da40",
   "schema_version": "1.0"
 }

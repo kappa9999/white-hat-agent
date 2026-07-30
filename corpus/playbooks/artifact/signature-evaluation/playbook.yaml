@@ -1,0 +1,109 @@
+schema_version: "1.0"
+metadata:
+  playbook_id: artifact-signature-evaluation
+  version: 1.0.0
+  title: Evaluate a revision-bound signature against an exact artifact
+  summary: Bind one detection rule and one immutable artifact, preserve every bounded match offset, and treat a complete no-match as reusable negative evidence.
+  domains: [artifact-analysis, malware-analysis, reverse-engineering]
+  tags: [signature, static-analysis, yara]
+  original_languages: [en]
+  maintainers: [white-hat-agent-core]
+  contributors: []
+  review_state: validated
+  created_at: 2026-07-30T02:40:00Z
+  updated_at: 2026-07-30T02:40:00Z
+applicability:
+  target_kinds: [binary, mobile-app, package, repository]
+  platforms: []
+  technologies: []
+  preconditions:
+    - The artifact bytes and complete standalone signature source are available.
+  assumptions:
+    - A signature match is a triage signal, not proof of behavior, provenance, or impact.
+  exclusions:
+    - Rules that require external include files, network access, process memory, or an unbounded directory scan.
+scope:
+  minimum_execution_class: analysis
+  requires_scope_manifest: true
+  requires_target_match: true
+  authorization_evidence_required: true
+  minimum_request_budget: 0
+  recommended_concurrency: 1
+  action_tags: [static-analysis]
+  data_classes: [artifact, signature-rule]
+taxonomies: []
+inputs:
+  - name: artifact
+    semantic_type: artifact/file
+    description: Exact immutable artifact to evaluate.
+    required: true
+    secret: false
+    examples: []
+  - name: signature-rule
+    semantic_type: configuration/signature-rule
+    description: Complete standalone rule source whose digest is preserved with the result.
+    required: true
+    secret: false
+    examples: []
+outputs:
+  - name: signature-result
+    semantic_type: evidence/signature-match
+    description: Rule identities, metadata, tags, offsets, bounded matched bytes, and explicit truncation state.
+    required: true
+    secret: false
+    examples: []
+steps:
+  - step_id: evaluate-signature
+    kind: analyze
+    title: Evaluate the bounded signature
+    instruction: Scan only the exact artifact with the captured standalone rule source; preserve the artifact digest, rule digest, engine identity, rule matches, string offsets, configured match ceilings, and whether any ceiling was reached.
+    localized_instructions: {}
+    depends_on: []
+    required_capabilities: [artifact.signature-match]
+    inputs: []
+    outputs: []
+    success_signals:
+      - The operation returns a complete match or no-match result bound to both artifact and rule identities.
+    failure_signals:
+      - The rule fails to compile, output validation fails, the engine identity drifts, or a resource limit prevents a complete result.
+    evidence:
+      - evidence_type: evidence/signature-match
+        description: Normalized bounded signature evaluation result.
+        minimum_count: 1
+        independent: false
+    side_effects: []
+    cleanup: []
+    timeout_seconds: 300
+    max_repetitions: 1
+composition:
+  consumes: [artifact/file, configuration/signature-rule]
+  provides: [evidence/signature-match]
+  compatible_after: []
+  compatible_before: [causal-differential-verification]
+  conflicts_with: []
+evidence_requirements:
+  - evidence_type: evidence/signature-match
+    description: Exact rule and artifact identities plus normalized matches or a complete negative result.
+    minimum_count: 1
+    independent: false
+failure_modes:
+  - Treating a signature hit as proof that the matched behavior executes.
+  - Reporting a no-match without checking compilation, engine identity, output completeness, and truncation.
+variations:
+  - Use a community rule revision, a campaign-specific rule, or a rule distilled from a validated static-analysis hypothesis.
+sources:
+  - source_id: yara-x
+    kind: code
+    title: YARA-X
+    url: https://github.com/VirusTotal/yara-x
+    authors: [VirusTotal]
+    license: BSD-3-Clause
+    accessed_at: 2026-07-30T02:40:00Z
+    notes: Tool semantics and bounded machine-readable output informed the adapter contract; playbook wording is original.
+validation:
+  fixture_ids: [yara-x-marker-elf64-x86-64-v1]
+  test_commands: ["pytest tests/test_adapter_execution.py tests/test_corpus.py"]
+  known_limitations:
+    - Static signatures can identify bytes and metadata but cannot establish that matched code is reachable or security-relevant.
+  last_validated_at: 2026-07-30T02:40:00Z
+  validated_by: [white-hat-agent-test-suite]

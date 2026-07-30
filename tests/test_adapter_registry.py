@@ -197,6 +197,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
         REPOSITORY_ROOT / "adapters/catalog.yaml",
         capability_execution_classes={
             "artifact.inspect": ExecutionClass.ANALYSIS,
+            "artifact.signature-match": ExecutionClass.ANALYSIS,
             "binary.behavior-identify": ExecutionClass.ANALYSIS,
             "binary.diff": ExecutionClass.ANALYSIS,
             "binary.static-inspect": ExecutionClass.ANALYSIS,
@@ -231,6 +232,10 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
     ]
     assert ghidra.operations[1].capabilities == ["binary.static-inspect"]
     assert ghidra.operations[1].output_types == ["surface/native-code-map"]
+    yara_x = registry.get("yara-x")
+    assert yara_x.capabilities == ["artifact.signature-match"]
+    assert [operation.operation_id for operation in yara_x.operations] == ["yara-x.file-scan"]
+    assert yara_x.operations[0].output_types == ["evidence/signature-match"]
 
 
 def test_status_defers_path_execution_and_uses_cached_conformance(tmp_path, monkeypatch) -> None:

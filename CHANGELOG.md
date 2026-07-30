@@ -3,6 +3,32 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.10.0] - 2026-07-29
+
+### Added
+
+- the provider-neutral `artifact.signature-match` capability, a reviewed `yara-x.file-scan` operation, and a lean
+  signature-evaluation playbook for one immutable artifact and one standalone rule;
+- normalized YARA-X evidence retaining rule identity, metadata, tags, exact string offsets, bounded matched bytes,
+  rule/artifact digests, match ceilings, and explicit truncation state; and
+- a production YARA-X 1.19.0 fleet run against the inert native-code fixture, preserving one rule and one string match
+  with no warning or truncation.
+
+### Security
+
+- callers cannot supply paths, commands, options, namespaces, module-data files, external variables, or external
+  includes;
+- the fixed offline one-file invocation caps occurrences and matched bytes, while strict NDJSON normalization rejects
+  extra targets, records, fields, duplicate identities, malformed offsets, and inconsistent XOR output; and
+- conformance binds the exact executable, rule, fixture, driver, operation, and sandbox identities, and measured YARA-X
+  address-space and process/thread floors fail closed before execution.
+
+### Fixed
+
+- fleet heartbeats can extend but never shorten an active lease; and
+- conformance and execution timestamps use monotonic elapsed time, preserving start/finish ordering across wall-clock
+  corrections.
+
 ## [0.9.0] - 2026-07-29
 
 ### Added
@@ -199,6 +225,7 @@ Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 Initial public alpha with typed knowledge intake, corpus composition, campaign scope, fleet leasing, evidence-bound
 findings, adaptive discovery, MCP, CLI, JSON Schema, installers, governance, and CI.
 
+[0.10.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kappa9999/white-hat-agent/compare/v0.6.0...v0.7.0
