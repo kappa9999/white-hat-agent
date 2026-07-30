@@ -3,6 +3,26 @@
 All notable changes to White Hat Agent are documented here. The project follows semantic versioning while public
 Python, CLI, MCP, and JSON Schema contracts remain pre-1.0.
 
+## [0.12.0] - 2026-07-30
+
+### Added
+
+- exact cross-platform provisioning for the current official standalone Frida release, including bounded raw `.xz`
+  materialization and versioned entrypoint resolution;
+- the provider-neutral `binary.runtime-inspect` capability, reviewed `frida.executable-runtime-map` operation, and a
+  deterministic load-time mapping playbook for one immutable local executable; and
+- a production Frida 17.16.4 fleet run over the owned 15,584-byte ELF, retaining 8 modules, 1 import, 4 exports, and
+  1 dependency with the `wha_runtime_marker` export, no collection errors, and no truncation.
+
+### Security
+
+- callers cannot select devices, remote endpoints, process identifiers or names, scripts, hooks, arguments,
+  environment variables, memory reads, commands, paths, or flags;
+- the fixed script observes only pre-`main` process and module metadata inside the offline PID and network sandbox,
+  while namespace teardown removes the spawned child; and
+- strict normalization binds the exact executable, Frida binary, observation script, operation contract, fixture,
+  and sandbox identities and rejects marker, schema, pointer, count, error, and resource-limit drift.
+
 ## [0.11.0] - 2026-07-29
 
 ### Added

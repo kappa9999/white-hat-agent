@@ -15,7 +15,7 @@ def test_capability_catalog_covers_and_classifies_builtin_corpus() -> None:
     corpus_report = corpus.load()
 
     assert catalog_report.valid
-    assert catalog_report.capability_count == 22
+    assert catalog_report.capability_count == 23
     assert corpus_report.valid
     compatibility = catalog.validate_playbooks(corpus.all())
     assert compatibility.valid, compatibility.issues

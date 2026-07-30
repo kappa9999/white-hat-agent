@@ -1,5 +1,5 @@
 {
-  "corpus_version": "sha256:4af9070ca2277cdd",
+  "corpus_version": "sha256:c89b63b514d3f4ea",
   "entries": [
     {
       "capabilities": [
@@ -61,6 +61,34 @@
         "evidence"
       ],
       "title": "Verify a candidate finding through causal and differential evidence",
+      "version": "1.0.0"
+    },
+    {
+      "capabilities": [
+        "binary.runtime-inspect"
+      ],
+      "consumes": [
+        "artifact/executable"
+      ],
+      "digest": "3d953a0b1cad5c35f1f8ef9458a1d75d6cad8ae9697404e406d6f03b8c8c7f59",
+      "domains": [
+        "binary-security",
+        "dynamic-analysis",
+        "reverse-engineering"
+      ],
+      "playbook_id": "executable-runtime-module-map",
+      "provides": [
+        "surface/runtime-module-map"
+      ],
+      "relative_path": "binary/runtime-module-mapping/playbook.yaml",
+      "review_state": "validated",
+      "summary": "Spawn one immutable executable before main inside an offline process sandbox, then recover bounded process, loaded-module, import, export, and dependency metadata without accepting caller-supplied instrumentation.",
+      "tags": [
+        "frida",
+        "load-time",
+        "runtime-map"
+      ],
+      "title": "Map a local executable at load time with Frida",
       "version": "1.0.0"
     },
     {
@@ -241,7 +269,7 @@
       "version": "1.0.0"
     }
   ],
-  "generated_at": "2026-07-30T04:00:00Z",
-  "manifest_digest": "228c37674b4af27d2a8ae5c4324d2fc2d33a96b22c1f1fb22b12f5e9a295a296",
+  "generated_at": "2026-07-30T04:15:00Z",
+  "manifest_digest": "a94591b2d860b15ab097b647bb93f879812bb15487768d48e46a53196844c8e8",
   "schema_version": "1.0"
 }

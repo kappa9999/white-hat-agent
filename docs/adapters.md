@@ -46,7 +46,8 @@ execution boundary and writes its identity-bound conformance report.
 
 `adapter conform` is the separate local execution gate. It never reads campaign evidence: inside the same offline
 supervisor it runs fixed version/dependency probes, then the reviewed driver against its bundled inert fixture (the
-784-byte summary ELF, 1,496-byte native-map ELF, 211-byte standalone YARA-X rule, 904-byte DEX, or 755-byte PCAP), and writes one
+784-byte summary ELF, 1,496-byte native-map ELF, 15,584-byte Frida runtime ELF, 211-byte standalone YARA-X rule,
+904-byte DEX, or 755-byte PCAP), and writes one
 identity-bound report under `.whitehat/adapters/.conformance/`. A tool or manifest change invalidates the report.
 `adapter resolve` reports a
 present, identity-observable but unproven provider under `conformance_required`, not `ready_adapters`. An installed
@@ -64,7 +65,7 @@ content-digested into the report, so dependency drift invalidates cached health 
 | Provider | Unique role | Provisioning |
 |---|---|---|
 | Ghidra | Multi-ISA static analysis, decompilation, headless scripting, binary comparison | Official release asset |
-| Frida | Cross-platform dynamic instrumentation | Detect existing; no unverified PyPI install path |
+| Frida | Fixed load-time process, module, import, export, and dependency mapping | Exact standalone official release asset |
 | LLVM | LLDB, object/symbol tools, sanitizers, coverage, libFuzzer | Detect existing; OS channels vary |
 | YARA-X | Deterministic artifact and rule matching | Official release asset |
 | TShark | Headless packet and protocol decoding | Detect existing; capture privileges remain external |
@@ -86,6 +87,7 @@ The first executable family is deliberately small:
 | `capa.file-analyze` | Bounded behavior-rule summaries and analysis identity | capa JSON with embedded reviewed rules |
 | `ghidra.binary-summary` | Program, memory-block, function, and external-symbol summary | bundled `WhaBinarySummary.java` only |
 | `ghidra.native-code-map` | Decompiled functions, exact callsites, defined strings, and anchored string xrefs | bundled `WhaNativeCodeMap.java` only |
+| `frida.executable-runtime-map` | Pre-main process, module, import, export, and dependency map | standalone `frida-inject` plus bundled `WhaRuntimeModuleMap.js` only |
 | `yara-x.file-scan` | Rule identities, metadata, tags, string offsets, and bounded matched bytes | fixed YARA-X NDJSON mode against one artifact |
 | `jadx.android-static-map` | Decompiled class JSON, method code, call graph, manifest text, and resource inventory | fixed JADX JSON and JSON call-graph modes |
 | `tshark.packet-capture-map` | Ordered packets, protocol counts, stream endpoints, and selected application metadata | fixed TShark JSON fields against one offline capture |
@@ -96,6 +98,17 @@ payloads. Record and character budgets are divided across functions, call edges,
 cannot consume the complete result. Every decompiler failure, per-function code truncation, section truncation, exact
 callsite, and xref anchor remains explicit. The request has no script, symbol, address, option, path, environment, or
 project field.
+
+The Frida driver accepts one `artifact/executable` evidence object and emits one
+`surface/runtime-module-map`. Provisioning resolves the current platform-specific `frida-inject` asset from the
+official Frida GitHub release, requires GitHub's declared size and SHA-256, decompresses the single-file `.xz` stream
+under the install ceiling, and records the resulting content-tree identity. Execution temporarily adds only the user
+execute bit to the broker's verified snapshot, mounts it read-only, and spawns that exact file in the offline PID
+namespace. The bundled content-digested script observes the process before main, caps modules/imports/exports/
+dependencies, emits one marked JSON record, and uses `--eternalize` so injector exit triggers namespace cleanup. No
+request can select a device, PID, name, remote endpoint, script, hook, argument, environment, memory read, or CLI flag.
+Normalization rejects duplicate markers, extra fields, malformed pointers, inconsistent counts, unknown collection
+errors, and record/byte overruns; absolute load addresses remain run-specific evidence and must not be replayed.
 
 The YARA-X driver accepts one `artifact/file` evidence object plus at most 64 KiB of complete standalone rule source
 and emits one `evidence/signature-match`. The exact rule source is retained in the execution manifest and its digest is
@@ -173,7 +186,7 @@ GitHub release provisioning:
 2. requires each platform pattern to select exactly one asset;
 3. requires GitHub's `sha256:` asset digest and declared size;
 4. downloads with byte limits and verifies size plus SHA-256;
-5. rejects archive traversal, links, devices, duplicate paths, excess entries, and decompression bombs; and
+5. rejects archive traversal, links, devices, duplicate paths, excess entries, malformed raw `.xz` streams, and decompression bombs; and
 6. atomically activates a complete workspace-local installation.
 
 Git knowledge provisioning resolves a reviewed branch/ref through GitHub to one commit, fetches that commit with

@@ -13,12 +13,13 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import ExitStack, suppress
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Literal, Protocol, Self
+from typing import Annotated, ClassVar, Literal, Protocol, Self
 
 from pydantic import AwareDatetime, Field, JsonValue, SecretStr, field_validator, model_validator
 
@@ -75,6 +76,10 @@ class JadxAndroidStaticMapPayload(StrictModel):
 
 class TsharkPacketCaptureMapPayload(StrictModel):
     operation_id: Literal["tshark.packet-capture-map"]
+
+
+class FridaExecutableRuntimeMapPayload(StrictModel):
+    operation_id: Literal["frida.executable-runtime-map"]
 
 
 def _contains_yara_include_directive(source: str) -> bool:
@@ -175,6 +180,7 @@ AdapterOperationPayload = Annotated[
     | LlvmObjectInspectPayload
     | JadxAndroidStaticMapPayload
     | TsharkPacketCaptureMapPayload
+    | FridaExecutableRuntimeMapPayload
     | YaraXFileScanPayload,
     Field(discriminator="operation_id"),
 ]
@@ -378,6 +384,7 @@ class TrustedInvocation:
     mounts: tuple[SandboxMount, ...]
     result_relative_path: str | None = None
     inline_files: tuple[SandboxInlineFile, ...] = ()
+    executable_input: bool = False
 
 
 @dataclass(frozen=True)
@@ -448,6 +455,12 @@ TSHARK_FIXTURE = ConformanceFixture(
     resource_name="protocol_map_ethernet_ipv4.b64",
     sha256="a932f9b0da893cc34f3ad70d9e51291896ca0c80fd68b923803364797adb619b",
 )
+FRIDA_RUNTIME_MAP_FIXTURE = ConformanceFixture(
+    fixture_id="frida-runtime-map-elf64-x86-64-v1",
+    filename="fixture.elf",
+    resource_name="frida_runtime_elf64.b64",
+    sha256="57312d10cbae62727393380a716ce7ef5a35502c54030bf3a3420696f85ede21",
+)
 # Backward-compatible public constants for the original shared ELF fixture.
 FIXTURE_ID = ELF_FIXTURE.fixture_id
 FIXTURE_SHA256 = ELF_FIXTURE.sha256
@@ -459,6 +472,8 @@ GHIDRA_NATIVE_MAP_DRIVER_VERSION = "1.0.0"
 JADX_DRIVER_VERSION = "1.0.0"
 YARA_X_DRIVER_VERSION = "1.0.4"
 TSHARK_DRIVER_VERSION = "1.0.0"
+FRIDA_RUNTIME_MAP_SCRIPT_SHA256 = "810cc52ec4f789f01742f4d974419056923d07e66966f39e46c6df2a88b30ebf"
+FRIDA_DRIVER_VERSION = "1.0.0"
 MINIMUM_EVIDENCE_IMPORT_BYTES = 65_536
 
 
@@ -487,6 +502,22 @@ class ProviderDriver(Protocol):
     ) -> AdapterNormalizedResult: ...
 
     def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]: ...
+
+
+@contextmanager
+def _temporary_input_mode(path: Path, *, executable: bool) -> Iterator[None]:
+    if not executable:
+        yield
+        return
+    original_mode = stat.S_IMODE(path.stat().st_mode)
+    sandbox_mode = (original_mode | stat.S_IRUSR | stat.S_IXUSR) & ~(
+        stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
+    )
+    path.chmod(sandbox_mode)
+    try:
+        yield
+    finally:
+        path.chmod(original_mode)
 
 
 class OfflineSandboxSupervisor:
@@ -528,7 +559,11 @@ class OfflineSandboxSupervisor:
         limited = False
         timed_out = False
         warnings: list[str] = []
-        with stdout_path.open("wb") as stdout_handle, stderr_path.open("wb") as stderr_handle:
+        with (
+            _temporary_input_mode(input_path, executable=invocation.executable_input),
+            stdout_path.open("wb") as stdout_handle,
+            stderr_path.open("wb") as stderr_handle,
+        ):
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL,
@@ -643,6 +678,7 @@ class OfflineSandboxSupervisor:
             argv=invocation.argv,
             mounts=tuple(mounts),
             result_relative_path=invocation.result_relative_path,
+            executable_input=invocation.executable_input,
         )
 
     def _command(
@@ -1141,6 +1177,234 @@ class YaraXFileScanDriver:
                 name="fixture-rule-identity",
                 ok=normalized.data.get("rule_source_sha256") == YARA_X_CONFORMANCE_RULE_SHA256,
                 detail=str(normalized.data.get("rule_source_sha256", "")),
+            ),
+        ]
+
+
+class FridaExecutableRuntimeMapDriver:
+    adapter_id = "frida"
+    operation_id = "frida.executable-runtime-map"
+    driver_id = "whitehat.frida-inject-runtime-map"
+    driver_version = FRIDA_DRIVER_VERSION
+    output_marker = "WHA_FRIDA_RUNTIME_MAP_V1 "
+    collection_limits: ClassVar[dict[str, int]] = {
+        "modules": 1024,
+        "imports": 4096,
+        "exports": 4096,
+        "dependencies": 1024,
+    }
+
+    def _executable(self, entrypoints: list[str]) -> Path:
+        executable = next(
+            (
+                Path(path).resolve()
+                for path in entrypoints
+                if re.fullmatch(
+                    r"frida-inject(?:-[0-9][A-Za-z0-9._-]*)?(?:\.exe)?",
+                    Path(path).name,
+                    flags=re.IGNORECASE,
+                )
+            ),
+            None,
+        )
+        if executable is None or not executable.is_file():
+            raise AdapterExecutionError(
+                "Frida runtime map requires an observed standalone frida-inject entrypoint"
+            )
+        return executable
+
+    def tool_payload_digest(self, entrypoints: list[str]) -> str:
+        script = _frida_runtime_map_script_bytes()
+        return stable_digest(
+            {
+                "executable_sha256": _hash_file(self._executable(entrypoints)),
+                "observation_script_sha256": hashlib.sha256(script).hexdigest(),
+                "output_contract": "frida-runtime-module-map-v1",
+            }
+        )
+
+    def prepare(
+        self,
+        status: AdapterStatus,
+        operation: AdapterOperationPayload,
+        limits: OperationResourceLimits,
+        assets: dict[str, Path],
+    ) -> TrustedInvocation:
+        del assets
+        if not isinstance(operation, FridaExecutableRuntimeMapPayload):
+            raise AdapterExecutionError("Frida driver received a different operation payload")
+        if limits.max_processes < 8:
+            raise AdapterExecutionError("Frida runtime map requires a process limit of at least 8")
+        if limits.memory_mib < 1024:
+            raise AdapterExecutionError("Frida runtime map requires at least 1024 MiB of address space")
+        return TrustedInvocation(
+            argv=(
+                "/opt/tool/frida-inject",
+                "--file=/input/artifact",
+                "--script=/input/runtime-map.js",
+                "--runtime=qjs",
+                "--eternalize",
+            ),
+            mounts=(SandboxMount(self._executable(status.entrypoints), "/opt/tool/frida-inject"),),
+            inline_files=(
+                SandboxInlineFile(
+                    "/input/runtime-map.js",
+                    _frida_runtime_map_script_bytes(),
+                ),
+            ),
+            executable_input=True,
+        )
+
+    def normalize(
+        self,
+        process: SupervisedProcessResult,
+        artifact_sha256: str,
+        limits: OperationResourceLimits,
+        operation: AdapterOperationPayload | None = None,
+    ) -> AdapterNormalizedResult:
+        if not isinstance(operation, FridaExecutableRuntimeMapPayload):
+            raise AdapterExecutionError("Frida normalization requires its exact operation payload")
+        raw = _read_marked_json(
+            process.stdout_path,
+            limits.max_output_bytes,
+            marker=self.output_marker,
+        )
+        required = {
+            "schema_version",
+            "producer",
+            "execution_phase",
+            "cleanup_strategy",
+            "process",
+            "main_module",
+            "modules",
+            "imports",
+            "exports",
+            "dependencies",
+            "collection_errors",
+        }
+        if set(raw) != required:
+            raise AdapterExecutionError("Frida result has an unexpected outer schema")
+        if (
+            raw.get("schema_version") != "1.0"
+            or raw.get("producer") != "frida-inject"
+            or raw.get("execution_phase") != "spawned-before-main"
+            or raw.get("cleanup_strategy") != "eternalize-then-pid-namespace-teardown"
+        ):
+            raise AdapterExecutionError("Frida result has an invalid producer contract")
+
+        process_record = _normalize_frida_process(raw["process"])
+        main_module = _normalize_frida_module(raw["main_module"])
+        normalizers = {
+            "modules": _normalize_frida_module,
+            "imports": _normalize_frida_import,
+            "exports": _normalize_frida_export,
+            "dependencies": _normalize_frida_dependency,
+        }
+        remaining = limits.max_records
+        collections: dict[str, JsonValue] = {}
+        producer_truncated = False
+        broker_truncated = False
+        raw_module_items: list[dict[str, JsonValue]] = []
+        for name, normalizer in normalizers.items():
+            total, items, collection_truncated = _normalize_frida_collection(
+                raw[name],
+                name=name,
+                maximum_items=self.collection_limits[name],
+                item_normalizer=normalizer,
+            )
+            if name == "modules":
+                raw_module_items = items
+            selected = items[:remaining]
+            remaining -= len(selected)
+            limited = len(selected) != len(items)
+            producer_truncated = producer_truncated or collection_truncated
+            broker_truncated = broker_truncated or limited
+            collections[name] = {
+                "total": total,
+                "observed": len(items),
+                "returned": len(selected),
+                "producer_truncated": collection_truncated,
+                "broker_truncated": limited,
+                "items": selected,
+            }
+
+        if raw_module_items and not any(
+            item.get("base") == main_module["base"] and item.get("name") == main_module["name"]
+            for item in raw_module_items
+        ):
+            raise AdapterExecutionError("Frida module list does not contain the main module")
+        collection_errors = _normalize_frida_collection_errors(raw["collection_errors"])
+        truncated = producer_truncated or broker_truncated or bool(collection_errors)
+        records_returned = sum(
+            int(collection["returned"]) for collection in collections.values() if isinstance(collection, dict)
+        )
+        data: dict[str, JsonValue] = {
+            "engine": "frida-inject",
+            "execution_phase": "spawned-before-main",
+            "cleanup_strategy": raw["cleanup_strategy"],
+            "observation_script_sha256": FRIDA_RUNTIME_MAP_SCRIPT_SHA256,
+            "record_limit": limits.max_records,
+            "record_limit_reached": broker_truncated,
+            "process": process_record,
+            "main_module": main_module,
+            "collections": collections,
+            "collection_errors": collection_errors,
+        }
+        return AdapterNormalizedResult(
+            operation_id=self.operation_id,
+            artifact_sha256=artifact_sha256,
+            records_returned=records_returned,
+            truncated=truncated,
+            data=data,
+        )
+
+    def fixture_checks(self, normalized: AdapterNormalizedResult) -> list[AdapterConformanceCheck]:
+        process = normalized.data.get("process")
+        main = normalized.data.get("main_module")
+        collections = normalized.data.get("collections")
+        modules = collections.get("modules") if isinstance(collections, dict) else None
+        module_items = modules.get("items") if isinstance(modules, dict) else None
+        return [
+            AdapterConformanceCheck(
+                name="fixture-process",
+                ok=(
+                    isinstance(process, dict)
+                    and process.get("platform") == "linux"
+                    and process.get("arch") == "x64"
+                    and process.get("pointer_size") == 8
+                ),
+                detail=f"platform={process.get('platform') if isinstance(process, dict) else None}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-main-module",
+                ok=(
+                    isinstance(main, dict)
+                    and main.get("path") == "/input/artifact"
+                    and isinstance(main.get("base"), str)
+                ),
+                detail=f"path={main.get('path') if isinstance(main, dict) else None}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-module-list",
+                ok=(
+                    isinstance(module_items, list)
+                    and isinstance(main, dict)
+                    and any(
+                        isinstance(item, dict)
+                        and item.get("base") == main.get("base")
+                        and item.get("name") == main.get("name")
+                        for item in module_items
+                    )
+                ),
+                detail=f"returned_modules={len(module_items) if isinstance(module_items, list) else 0}",
+            ),
+            AdapterConformanceCheck(
+                name="fixture-cleanup-and-errors",
+                ok=(
+                    normalized.data.get("cleanup_strategy") == "eternalize-then-pid-namespace-teardown"
+                    and normalized.data.get("collection_errors") == []
+                ),
+                detail=f"truncated={normalized.truncated}",
             ),
         ]
 
@@ -2176,6 +2440,7 @@ DRIVERS: dict[tuple[str, str], ProviderDriver] = {
     ("capa", "capa.file-analyze"): CapaFileAnalyzeDriver(),
     ("llvm", "llvm.object-inspect"): LlvmObjectInspectDriver(),
     ("jadx", "jadx.android-static-map"): JadxAndroidStaticMapDriver(),
+    ("frida", "frida.executable-runtime-map"): FridaExecutableRuntimeMapDriver(),
     ("tshark", "tshark.packet-capture-map"): TsharkPacketCaptureMapDriver(),
     ("yara-x", "yara-x.file-scan"): YaraXFileScanDriver(),
 }
@@ -2339,7 +2604,7 @@ class AdapterExecutionBroker:
                     AdapterConformanceCheck(
                         name="sandbox-process",
                         ok=process.outcome == AdapterExecutionOutcome.SUCCEEDED,
-                        detail=f"outcome={process.outcome.value}; exit={process.return_code}",
+                        detail=_conformance_process_detail(process),
                     )
                 )
                 warnings.extend(process.warnings)
@@ -2761,11 +3026,15 @@ def _probe_entrypoint(probe: ProbeDefinition, status: AdapterStatus) -> Path:
         for key in (status.platform, status.platform.split("-", 1)[0], "any")
         for name in probe.executable_names.get(key, [])
     }
-    matches = [
-        Path(path).resolve()
-        for path in status.entrypoints
-        if Path(path).name.casefold() in names and Path(path).is_file()
-    ]
+    matches = []
+    for value in status.entrypoints:
+        path = Path(value)
+        candidate = path.name.casefold()
+        candidate_stem = candidate.removesuffix(".exe")
+        if path.is_file() and any(
+            candidate == name or candidate_stem.startswith(name.removesuffix(".exe") + "-") for name in names
+        ):
+            matches.append(path.resolve())
     if len(matches) != 1:
         raise AdapterExecutionError("version probe does not map to exactly one observed entrypoint")
     return matches[0]
@@ -2775,6 +3044,17 @@ def _read_probe_text(path: Path) -> str:
     if path.is_symlink() or not path.is_file():
         return ""
     return path.read_bytes()[:16_384].decode("utf-8", errors="replace")
+
+
+def _conformance_process_detail(process: SupervisedProcessResult) -> str:
+    detail = f"outcome={process.outcome.value}; exit={process.return_code}"
+    if process.outcome == AdapterExecutionOutcome.SUCCEEDED:
+        return detail
+    diagnostic = process.stderr_path.read_bytes()[:2048].decode("utf-8", errors="replace")
+    diagnostic = " ".join(diagnostic.split())
+    if diagnostic:
+        detail += f"; stderr={diagnostic[:1024]}"
+    return detail
 
 
 def _operation(operations: list[AdapterOperationBinding], operation_id: str) -> AdapterOperationBinding:
@@ -2809,6 +3089,8 @@ def _fixture_operation(operation_id: str) -> AdapterOperationPayload:
         return LlvmObjectInspectPayload(operation_id=operation_id)
     if operation_id == "jadx.android-static-map":
         return JadxAndroidStaticMapPayload(operation_id=operation_id)
+    if operation_id == "frida.executable-runtime-map":
+        return FridaExecutableRuntimeMapPayload(operation_id=operation_id)
     if operation_id == "tshark.packet-capture-map":
         return TsharkPacketCaptureMapPayload(operation_id=operation_id)
     if operation_id == "yara-x.file-scan":
@@ -2830,6 +3112,8 @@ def _conformance_fixture(operation_id: str) -> ConformanceFixture:
         return GHIDRA_NATIVE_MAP_FIXTURE
     if operation_id == "jadx.android-static-map":
         return JADX_FIXTURE
+    if operation_id == "frida.executable-runtime-map":
+        return FRIDA_RUNTIME_MAP_FIXTURE
     if operation_id == "tshark.packet-capture-map":
         return TSHARK_FIXTURE
     if operation_id == "yara-x.file-scan":
@@ -2864,6 +3148,10 @@ def _tshark_fixture_bytes() -> bytes:
     return _fixture_payload(TSHARK_FIXTURE)
 
 
+def _frida_fixture_bytes() -> bytes:
+    return _fixture_payload(FRIDA_RUNTIME_MAP_FIXTURE)
+
+
 def _ghidra_script_bytes() -> bytes:
     resource = importlib.resources.files("white_hat_agent").joinpath(
         "builtin_adapter_fixtures/WhaBinarySummary.java"
@@ -2881,6 +3169,16 @@ def _ghidra_native_map_script_bytes() -> bytes:
     payload = resource.read_bytes()
     if hashlib.sha256(payload).hexdigest() != GHIDRA_NATIVE_MAP_SCRIPT_SHA256:
         raise AdapterExecutionError("bundled Ghidra native-code-map script digest mismatch")
+    return payload
+
+
+def _frida_runtime_map_script_bytes() -> bytes:
+    resource = importlib.resources.files("white_hat_agent").joinpath(
+        "builtin_adapter_fixtures/WhaRuntimeModuleMap.js"
+    )
+    payload = resource.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != FRIDA_RUNTIME_MAP_SCRIPT_SHA256:
+        raise AdapterExecutionError("bundled Frida observation script digest mismatch")
     return payload
 
 
@@ -2992,6 +3290,177 @@ def _read_json(path: Path, max_bytes: int) -> JsonValue:
     if path.stat().st_size > max_bytes:
         raise AdapterExecutionError("adapter JSON output exceeds the byte limit")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_marked_json(path: Path, max_bytes: int, *, marker: str) -> dict[str, object]:
+    if path.is_symlink() or not path.is_file():
+        raise AdapterExecutionError("adapter marked JSON output is not a regular file")
+    if path.stat().st_size > max_bytes:
+        raise AdapterExecutionError("adapter marked JSON output exceeds the byte limit")
+    matches = [
+        line.removeprefix(marker)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.startswith(marker)
+    ]
+    if len(matches) != 1:
+        raise AdapterExecutionError("adapter output must contain exactly one marked JSON record")
+    try:
+        value = json.loads(matches[0])
+    except json.JSONDecodeError as exc:
+        raise AdapterExecutionError("adapter marked JSON record is invalid") from exc
+    if not isinstance(value, dict):
+        raise AdapterExecutionError("adapter marked JSON record is not an object")
+    return value
+
+
+def _frida_text(
+    value: object,
+    field: str,
+    *,
+    max_length: int,
+    nullable: bool = False,
+) -> str | None:
+    if value is None and nullable:
+        return None
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > max_length
+        or "\x00" in value
+        or "\r" in value
+        or "\n" in value
+    ):
+        raise AdapterExecutionError(f"Frida result has an invalid {field}")
+    return value
+
+
+def _frida_pointer(value: object, field: str, *, nullable: bool = False) -> str | None:
+    if value is None and nullable:
+        return None
+    if not isinstance(value, str) or re.fullmatch(r"0x[0-9a-fA-F]{1,16}", value) is None:
+        raise AdapterExecutionError(f"Frida result has an invalid {field}")
+    return value.casefold()
+
+
+def _frida_integer(value: object, field: str, *, maximum: int = (1 << 63) - 1) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+        raise AdapterExecutionError(f"Frida result has an invalid {field}")
+    return value
+
+
+def _normalize_frida_process(value: object) -> dict[str, JsonValue]:
+    required = {"arch", "platform", "pointer_size", "page_size", "code_signing_policy"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise AdapterExecutionError("Frida result has an unexpected process schema")
+    arch = _frida_text(value["arch"], "process architecture", max_length=16)
+    platform = _frida_text(value["platform"], "process platform", max_length=16)
+    policy = _frida_text(value["code_signing_policy"], "code-signing policy", max_length=16)
+    if arch not in {"ia32", "x64", "arm", "arm64"}:
+        raise AdapterExecutionError("Frida result has an unknown process architecture")
+    if platform not in {"windows", "darwin", "linux", "freebsd", "qnx", "barebone"}:
+        raise AdapterExecutionError("Frida result has an unknown process platform")
+    if policy not in {"optional", "required"}:
+        raise AdapterExecutionError("Frida result has an unknown code-signing policy")
+    pointer_size = _frida_integer(value["pointer_size"], "pointer size", maximum=16)
+    if pointer_size not in {4, 8}:
+        raise AdapterExecutionError("Frida result has an unsupported pointer size")
+    page_size = _frida_integer(value["page_size"], "page size", maximum=1_048_576)
+    if page_size < 256 or page_size & (page_size - 1):
+        raise AdapterExecutionError("Frida result has an invalid page size")
+    return {
+        "arch": arch,
+        "platform": platform,
+        "pointer_size": pointer_size,
+        "page_size": page_size,
+        "code_signing_policy": policy,
+    }
+
+
+def _normalize_frida_module(value: object) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or set(value) != {"name", "path", "base", "size"}:
+        raise AdapterExecutionError("Frida result has an unexpected module schema")
+    return {
+        "name": _frida_text(value["name"], "module name", max_length=1024),
+        "path": _frida_text(value["path"], "module path", max_length=4096),
+        "base": _frida_pointer(value["base"], "module base"),
+        "size": _frida_integer(value["size"], "module size", maximum=(1 << 63) - 1),
+    }
+
+
+def _normalize_frida_import(value: object) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or set(value) != {"type", "name", "module", "address", "slot"}:
+        raise AdapterExecutionError("Frida result has an unexpected import schema")
+    return {
+        "type": _frida_text(value["type"], "import type", max_length=64),
+        "name": _frida_text(value["name"], "import name", max_length=4096),
+        "module": _frida_text(value["module"], "import module", max_length=4096, nullable=True),
+        "address": _frida_pointer(value["address"], "import address", nullable=True),
+        "slot": _frida_pointer(value["slot"], "import slot", nullable=True),
+    }
+
+
+def _normalize_frida_export(value: object) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or set(value) != {
+        "type",
+        "name",
+        "address",
+        "offset_from_main",
+    }:
+        raise AdapterExecutionError("Frida result has an unexpected export schema")
+    return {
+        "type": _frida_text(value["type"], "export type", max_length=64),
+        "name": _frida_text(value["name"], "export name", max_length=4096),
+        "address": _frida_pointer(value["address"], "export address"),
+        "offset_from_main": _frida_pointer(value["offset_from_main"], "export offset"),
+    }
+
+
+def _normalize_frida_dependency(value: object) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or set(value) != {"name", "type"}:
+        raise AdapterExecutionError("Frida result has an unexpected dependency schema")
+    return {
+        "name": _frida_text(value["name"], "dependency name", max_length=4096),
+        "type": _frida_text(value["type"], "dependency type", max_length=64),
+    }
+
+
+def _normalize_frida_collection(
+    value: object,
+    *,
+    name: str,
+    maximum_items: int,
+    item_normalizer: Callable[[object], dict[str, JsonValue]],
+) -> tuple[int, list[dict[str, JsonValue]], bool]:
+    if not isinstance(value, dict) or set(value) != {"total", "returned", "truncated", "items"}:
+        raise AdapterExecutionError(f"Frida result has an unexpected {name} collection schema")
+    total = _frida_integer(value["total"], f"{name} total", maximum=10_000_000)
+    returned = _frida_integer(value["returned"], f"{name} returned", maximum=maximum_items)
+    truncated = value["truncated"]
+    items = value["items"]
+    if not isinstance(truncated, bool) or not isinstance(items, list):
+        raise AdapterExecutionError(f"Frida result has an invalid {name} collection")
+    if len(items) != returned or returned > total or truncated != (returned < total):
+        raise AdapterExecutionError(f"Frida result has inconsistent {name} counts")
+    return total, [item_normalizer(item) for item in items], truncated
+
+
+def _normalize_frida_collection_errors(value: object) -> list[JsonValue]:
+    if not isinstance(value, list) or len(value) > 4:
+        raise AdapterExecutionError("Frida result has an invalid collection error list")
+    records: list[JsonValue] = []
+    observed: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"collection", "error"}:
+            raise AdapterExecutionError("Frida result has an invalid collection error")
+        collection = _frida_text(item["collection"], "error collection", max_length=32)
+        error = _frida_text(item["error"], "collection error", max_length=2048)
+        if collection not in {"modules", "imports", "exports", "dependencies"}:
+            raise AdapterExecutionError("Frida result names an unknown failed collection")
+        if collection in observed:
+            raise AdapterExecutionError("Frida result repeats a collection error")
+        observed.add(collection)
+        records.append({"collection": collection, "error": error})
+    return records
 
 
 def _tshark_values(layers: dict[str, object], field: str) -> list[str]:

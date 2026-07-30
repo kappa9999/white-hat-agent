@@ -90,8 +90,8 @@ adapters:
       name: wxWindows Library Licence 3.1
       url: https://github.com/frida/frida/blob/main/COPYING
       attribution: Frida dynamic instrumentation toolkit
-    capabilities: [mobile.runtime-observe, trace.capture]
-    modes: [sandbox, live-readonly]
+    capabilities: [binary.runtime-inspect, mobile.runtime-observe, trace.capture]
+    modes: [offline, sandbox, live-readonly]
     max_execution_class: read-only
     platforms: [linux-x86_64, linux-arm64, macos-x86_64, macos-arm64, windows-x86_64, windows-arm64]
     priority: 10
@@ -100,7 +100,45 @@ adapters:
         any: [frida]
       version_args: [--version]
       version_pattern: '(?P<version>[0-9]+(?:\.[0-9]+)+)'
-    updated_at: 2026-07-29T21:00:00Z
+    provisioner:
+      kind: github-release
+      repository: frida/frida
+      asset_patterns:
+        linux-x86_64: ['^frida-inject-[0-9.]+-linux-x86_64\.xz$']
+        linux-arm64: ['^frida-inject-[0-9.]+-linux-arm64\.xz$']
+        macos-x86_64: ['^frida-inject-[0-9.]+-macos-x86_64\.xz$']
+        macos-arm64: ['^frida-inject-[0-9.]+-macos-arm64\.xz$']
+        windows-x86_64: ['^frida-inject-[0-9.]+-windows-x86_64\.exe\.xz$']
+        windows-arm64: ['^frida-inject-[0-9.]+-windows-arm64\.exe\.xz$']
+      entrypoints:
+        linux-x86_64: ["frida-inject-{version}-linux-x86_64"]
+        linux-arm64: ["frida-inject-{version}-linux-arm64"]
+        macos-x86_64: ["frida-inject-{version}-macos-x86_64"]
+        macos-arm64: ["frida-inject-{version}-macos-arm64"]
+        windows-x86_64: ["frida-inject-{version}-windows-x86_64.exe"]
+        windows-arm64: ["frida-inject-{version}-windows-arm64.exe"]
+      strip_single_directory: false
+      max_download_bytes: 134217728
+      max_install_bytes: 268435456
+    operations:
+      - operation_id: frida.executable-runtime-map
+        operation_version: "1.0.0"
+        capabilities: [binary.runtime-inspect]
+        execution_class: analysis
+        modes: [offline, sandbox]
+        input_types: [artifact/executable]
+        output_types: [surface/runtime-module-map]
+        conformance_suite_id: frida-runtime-map-elf64-x86-64-v1
+        limits:
+          max_input_bytes: 134217728
+          max_output_bytes: 134217728
+          max_files: 64
+          max_records: 5000
+          wall_seconds: 30
+          cpu_seconds: 30
+          memory_mib: 2048
+          max_processes: 32
+    updated_at: 2026-07-30T04:15:00Z
 
   - schema_version: "1.0"
     adapter_id: llvm

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import lzma
 import shutil
 import sys
 import zipfile
@@ -200,6 +201,7 @@ def test_builtin_registry_is_nonredundant_and_searchable() -> None:
             "artifact.signature-match": ExecutionClass.ANALYSIS,
             "binary.behavior-identify": ExecutionClass.ANALYSIS,
             "binary.diff": ExecutionClass.ANALYSIS,
+            "binary.runtime-inspect": ExecutionClass.ANALYSIS,
             "binary.static-inspect": ExecutionClass.ANALYSIS,
             "code.search": ExecutionClass.ANALYSIS,
             "graph.reason": ExecutionClass.ANALYSIS,
@@ -735,6 +737,73 @@ def test_release_plan_requires_exact_asset_digest_and_is_update_aware(tmp_path, 
         AdapterProvisioner(manager).provision(forged)
 
 
+def test_release_plan_resolves_one_versioned_entrypoint(tmp_path, monkeypatch) -> None:
+    definition = GitHubReleaseProvisioner(
+        repository="example/tool",
+        asset_patterns={"any": [r"^tool-[0-9.]+\.xz$"]},
+        entrypoints={"any": ["tool-{version}"]},
+        strip_single_directory=False,
+        max_download_bytes=1_000_000,
+        max_install_bytes=2_000_000,
+    )
+    manifest = _tool_manifest(provisioner=definition)
+    manager = AdapterManager(_registry(tmp_path, [manifest]), tmp_path / "managed")
+    monkeypatch.setattr(
+        manager,
+        "status",
+        lambda _: AdapterStatus(
+            adapter_id=manifest.adapter_id,
+            manifest_digest=manifest.digest(),
+            observed_at=utc_now(),
+            platform=current_platform(),
+            supported=True,
+            installed=False,
+            healthy=False,
+        ),
+    )
+    monkeypatch.setattr(
+        adapter_provisioning,
+        "_get_json",
+        lambda _: {
+            "tag_name": "2.3.4",
+            "assets": [
+                {
+                    "name": "tool-2.3.4.xz",
+                    "size": 123,
+                    "digest": "sha256:" + "a" * 64,
+                    "browser_download_url": (
+                        "https://github.com/example/tool/releases/download/2.3.4/tool-2.3.4.xz"
+                    ),
+                }
+            ],
+        },
+    )
+
+    plan = AdapterProvisioner(manager).plan(manifest.adapter_id)
+
+    assert plan.entrypoints == ["tool-2.3.4"]
+    assert plan.target_version == "2.3.4"
+
+
+def test_release_entrypoint_rejects_unknown_or_repeated_templates() -> None:
+    with pytest.raises(ValueError, match=r"one \{version\} placeholder"):
+        GitHubReleaseProvisioner(
+            repository="example/tool",
+            asset_patterns={"any": [r"^tool\.xz$"]},
+            entrypoints={"any": ["tool-{revision}"]},
+            max_download_bytes=1_000,
+            max_install_bytes=2_000,
+        )
+    with pytest.raises(ValueError, match=r"one \{version\} placeholder"):
+        GitHubReleaseProvisioner(
+            repository="example/tool",
+            asset_patterns={"any": [r"^tool\.xz$"]},
+            entrypoints={"any": ["tool-{version}-{version}"]},
+            max_download_bytes=1_000,
+            max_install_bytes=2_000,
+        )
+
+
 def test_provision_materializes_bounded_archive_atomically(tmp_path, monkeypatch) -> None:
     definition = GitHubReleaseProvisioner(
         repository="example/tool",
@@ -852,6 +921,32 @@ def test_archive_traversal_is_rejected(tmp_path) -> None:
             max_install_bytes=1_000_000,
         )
     assert not (tmp_path / "escape").exists()
+
+
+def test_raw_xz_release_asset_is_bounded_and_materialized(tmp_path) -> None:
+    archive = tmp_path / "tool-2.3.4.xz"
+    archive.write_bytes(lzma.compress(b"standalone executable payload"))
+    destination = tmp_path / "output"
+    destination.mkdir()
+
+    _materialize_assets(
+        [archive],
+        destination,
+        strip_single_directory=False,
+        max_install_bytes=128,
+    )
+
+    assert (destination / "tool-2.3.4").read_bytes() == b"standalone executable payload"
+
+    bounded = tmp_path / "bounded"
+    bounded.mkdir()
+    with pytest.raises(AdapterRegistryError, match="extracted-byte limit"):
+        _materialize_assets(
+            [archive],
+            bounded,
+            strip_single_directory=False,
+            max_install_bytes=8,
+        )
 
 
 def test_knowledge_search_preserves_snapshot_revision_and_locations(tmp_path) -> None:

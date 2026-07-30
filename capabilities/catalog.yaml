@@ -54,6 +54,15 @@ capabilities:
     adapter_contract: [Bind the map to the exact artifact, tool, script, analysis limits, failures, and truncation state.]
     status: experimental
     updated_at: 2026-07-30T02:00:00Z
+  - capability_id: binary.runtime-inspect
+    title: Map a local executable at runtime
+    description: Spawn one immutable executable in an offline sandbox and recover bounded process, module, import, export, and dependency metadata.
+    execution_class: analysis
+    input_types: [artifact/executable]
+    output_types: [surface/runtime-module-map]
+    adapter_contract: [Bind the executable, instrumentation engine, fixed observation script, sandbox, record ceilings, collection errors, and cleanup outcome.]
+    status: experimental
+    updated_at: 2026-07-30T04:15:00Z
   - capability_id: code.search
     title: Search code or decompiler text
     description: Run bounded structural or textual searches over a captured code corpus.

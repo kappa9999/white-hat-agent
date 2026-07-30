@@ -87,7 +87,13 @@ class GitHubReleaseProvisioner(StrictModel):
                 re.compile(pattern)
         for paths in self.entrypoints.values():
             for value in paths:
-                path = Path(value)
+                if ("{" in value or "}" in value) and (
+                    value.count("{version}") != 1
+                    or "{" in value.replace("{version}", "")
+                    or "}" in value.replace("{version}", "")
+                ):
+                    raise ValueError("adapter entrypoints only support one {version} placeholder")
+                path = Path(value.replace("{version}", "0"))
                 if path.is_absolute() or ".." in path.parts:
                     raise ValueError("adapter entrypoints must be contained relative paths")
         return self

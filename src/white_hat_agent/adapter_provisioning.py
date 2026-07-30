@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import lzma
 import os
 import re
 import shutil
@@ -193,7 +194,7 @@ class AdapterProvisioner:
                 if version_key(current_version) >= version_key(target_version)
                 else ProvisionAction.UPDATE
             )
-        entrypoints = platform_values(definition.entrypoints, platform) or []
+        entrypoints = _resolved_release_entrypoints(definition, platform, target_version)
         return AdapterProvisionPlan(
             adapter_id=manifest.adapter_id,
             manifest_digest=manifest.digest(),
@@ -269,7 +270,11 @@ class AdapterProvisioner:
                 raise AdapterRegistryError("provision plan contains duplicate release artifacts")
             if sum(artifact.size for artifact in plan.artifacts) > definition.max_download_bytes:
                 raise AdapterRegistryError("provision plan exceeds the manifest download bound")
-            expected_entries = platform_values(definition.entrypoints, plan.platform) or []
+            expected_entries = _resolved_release_entrypoints(
+                definition,
+                plan.platform,
+                plan.target_version,
+            )
             if plan.entrypoints != expected_entries:
                 raise AdapterRegistryError("provision plan entrypoints do not match the adapter manifest")
             if plan.strip_single_directory != definition.strip_single_directory:
@@ -585,6 +590,27 @@ def _materialize_assets(
                     extracted += max(item.size, 0)
                     _check_archive_bounds(entries, extracted, max_install_bytes)
                     _extract_tar_item(archive, item, destination)
+        elif lower.endswith(".xz"):
+            entries += 1
+            _check_archive_bounds(entries, extracted, max_install_bytes)
+            output_name = asset.name[:-3]
+            relative = _safe_archive_path(output_name)
+            if relative is None or len(relative.parts) != 1:
+                raise AdapterRegistryError("compressed release asset has an unsafe output name")
+            target = destination / relative.name
+            if target.exists():
+                raise AdapterRegistryError(f"release assets collide at {relative.name}")
+            try:
+                with lzma.open(asset, mode="rb") as source, target.open("xb") as output:
+                    while chunk := source.read(1_048_576):
+                        extracted += len(chunk)
+                        _check_archive_bounds(entries, extracted, max_install_bytes)
+                        output.write(chunk)
+            except (lzma.LZMAError, OSError) as exc:
+                target.unlink(missing_ok=True)
+                raise AdapterRegistryError(
+                    f"compressed release asset could not be materialized: {type(exc).__name__}"
+                ) from exc
         else:
             entries += 1
             extracted += asset.stat().st_size
@@ -697,6 +723,29 @@ def _required_string(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AdapterRegistryError(f"GitHub response is missing {label}")
     return value.strip()
+
+
+def _resolved_release_entrypoints(
+    definition: GitHubReleaseProvisioner,
+    platform: str,
+    target_version: str,
+) -> list[str]:
+    templates = platform_values(definition.entrypoints, platform) or []
+    if (
+        any("{version}" in value for value in templates)
+        and re.fullmatch(
+            r"[0-9]+(?:\.[0-9]+)+",
+            target_version,
+        )
+        is None
+    ):
+        raise AdapterRegistryError("release version cannot be used in an entrypoint path")
+    resolved = [value.replace("{version}", target_version) for value in templates]
+    for value in resolved:
+        path = Path(value)
+        if path.is_absolute() or ".." in path.parts:
+            raise AdapterRegistryError("resolved adapter entrypoint escapes the install root")
+    return resolved
 
 
 def _release_version(tag: str) -> str:
