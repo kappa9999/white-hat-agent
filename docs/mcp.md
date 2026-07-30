@@ -62,8 +62,8 @@ operator or host agent still persists the manifest, explicitly transitions its l
 
 Four built-in tools are open-world. `intelligence_sync` performs bounded GET requests to fixed official CVE List V5,
 NVD 2.0, CISA, OSV, and optional FIRST EPSS endpoints, then mutates only the local workspace state and snapshot store.
-`adapter_plan_provision` performs read-only resolution against the reviewed provider's official GitHub release or
-commit API. `adapter_provision` applies an exact plan by downloading only its resolved official artifacts or commit
+`adapter_plan_provision` performs read-only resolution against the reviewed provider's official GitHub release,
+commit API, Adoptium API, or fixed MITRE CWE catalog endpoints. `adapter_provision` applies an exact plan by downloading only its resolved official artifacts or commit
 into `.whitehat/adapters/`; it is both networked and mutating. `adapter_ensure` composes deterministic capability
 resolution, those same exact provision plans, managed runtime closure, and relevant fixed-fixture conformance. None
 contacts advisory targets. Clients should require approval for synchronization and provisioning when those side

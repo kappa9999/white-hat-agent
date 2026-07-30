@@ -130,8 +130,14 @@ class GitCheckoutProvisioner(StrictModel):
     max_checkout_bytes: int = Field(ge=1, le=2_147_483_648)
 
 
+class MitreCweProvisioner(StrictModel):
+    kind: Literal["mitre-cwe"] = "mitre-cwe"
+    max_download_bytes: int = Field(ge=1, le=2_147_483_648)
+    max_install_bytes: int = Field(ge=1, le=8_589_934_592)
+
+
 ProvisionerDefinition = Annotated[
-    GitHubReleaseProvisioner | AdoptiumProvisioner | GitCheckoutProvisioner,
+    GitHubReleaseProvisioner | AdoptiumProvisioner | GitCheckoutProvisioner | MitreCweProvisioner,
     Field(discriminator="kind"),
 ]
 
@@ -244,6 +250,8 @@ class AdapterManifest(StrictModel):
                 raise ValueError("a tool's own executable probe cannot reference another adapter")
             if isinstance(self.provisioner, GitCheckoutProvisioner):
                 raise ValueError("tool adapters cannot provision executable code through Git checkout")
+            if isinstance(self.provisioner, MitreCweProvisioner):
+                raise ValueError("the MITRE CWE provisioner is only valid for knowledge adapters")
             if isinstance(self.provisioner, (GitHubReleaseProvisioner, AdoptiumProvisioner)):
                 missing = [
                     platform
@@ -1093,7 +1101,12 @@ class AdapterManager:
                     paths[path.relative_to(root).as_posix()] = path
                     if len(paths) > max_files:
                         raise AdapterRegistryError("knowledge search exceeds file-count limit")
-        needle = query.casefold()
+        query_text = query.strip()
+        if isinstance(manifest.provisioner, MitreCweProvisioner):
+            cwe_id = re.fullmatch(r"cwe-([1-9][0-9]{0,5})", query_text, flags=re.IGNORECASE)
+            if cwe_id is not None:
+                query_text = f'<Weakness ID="{cwe_id.group(1)}"'
+        needle = query_text.casefold()
         scanned = 0
         hits: list[KnowledgeSearchHit] = []
         for relative, path in sorted(paths.items()):
@@ -1463,7 +1476,10 @@ def _terms(value: str) -> set[str]:
 
 
 def _managed_content_limit(manifest: AdapterManifest) -> int:
-    if isinstance(manifest.provisioner, (GitHubReleaseProvisioner, AdoptiumProvisioner)):
+    if isinstance(
+        manifest.provisioner,
+        (GitHubReleaseProvisioner, AdoptiumProvisioner, MitreCweProvisioner),
+    ):
         return manifest.provisioner.max_install_bytes
     if isinstance(manifest.provisioner, GitCheckoutProvisioner):
         return manifest.provisioner.max_checkout_bytes
