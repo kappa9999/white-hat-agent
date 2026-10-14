@@ -147,7 +147,7 @@ jobs:
             --epoch "$SOURCE_DATE_EPOCH"
 
       - name: Upload isolated build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-build-${{ matrix.copy }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
@@ -205,7 +205,7 @@ jobs:
             --tag "$TAG"
 
       - name: Upload exact dry-run candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-candidate-${{ needs.gate.outputs.tag }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .release/candidate/
